@@ -14,6 +14,17 @@ import { prismaRead as prisma } from '../db';
 
 export const simulateRouter = Router();
 
+const SIMULATION_TIMEOUT_MS = 10_000;
+
+function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
+  return Promise.race([
+    promise,
+    new Promise<never>((_, reject) =>
+      setTimeout(() => reject(new Error(`Simulation timed out after ${ms}ms`)), ms),
+    ),
+  ]);
+}
+
 // ── Param diagnostics ─────────────────────────────────────────────────────────
 
 interface ParamDiagnostic {
@@ -105,9 +116,13 @@ simulateRouter.post('/', async (req: Request, res: Response) => {
 
   let rpcResult: SorobanRpc.Api.SimulateTransactionResponse;
   try {
-    rpcResult = await rpc.simulateTransaction(txObj);
+    rpcResult = await withTimeout(rpc.simulateTransaction(txObj), SIMULATION_TIMEOUT_MS);
   } catch (err) {
-    return res.status(502).json({ error: 'RPC request failed', detail: String(err) });
+    const isTimeout = String(err).includes('timed out');
+    return res.status(isTimeout ? 504 : 502).json({
+      error: isTimeout ? 'Simulation timed out' : 'RPC request failed',
+      detail: String(err),
+    });
   }
 
   // ── Success ───────────────────────────────────────────────────────────────

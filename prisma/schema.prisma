@@ -688,6 +688,28 @@ model AccountActivation {
   @@index([ledgerSequence])
 }
 
+// Yield/distribution event from RWA treasury contracts — individual recipient rows
+// grouped by windowLabel for the "Corporate Yield Distribution Sync" dashboard.
+model YieldDistribution {
+  id              String   @id @default(cuid())
+  transactionHash String
+  contractAddress String
+  distributionId  String?  // batch/event-level grouping id from the contract event
+  recipient       String
+  amount          String   // decimal string (big number)
+  tokenSymbol     String?  // e.g. "USDC", "USDT"
+  windowLabel     String   @default("Corporate Yield Distribution Sync")
+  ledgerSequence  Int
+  ledgerCloseTime DateTime
+  createdAt       DateTime @default(now())
+
+  @@index([contractAddress])
+  @@index([contractAddress, windowLabel])
+  @@index([contractAddress, ledgerCloseTime])
+  @@index([windowLabel])
+  @@index([distributionId])
+}
+
 // i18n translation dictionary
 model TranslationKey {
   id              String   @id @default(cuid())

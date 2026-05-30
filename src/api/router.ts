@@ -23,6 +23,7 @@ import { analyticsRouter } from './analytics';
 import { portfolioRouter } from './portfolio';
 import { exportsRouter } from './exports';
 import { syncStateRouter } from './sync-state';
+import { yieldDistributionRouter } from './yield-distribution';
 
 export const router = Router();
 
@@ -49,3 +50,4 @@ router.use('/analytics', analyticsRouter);
 router.use('/portfolio', portfolioRouter);
 router.use('/exports', exportsRouter);
 router.use('/sync-state', syncStateRouter);
+router.use('/yield-distributions', yieldDistributionRouter);

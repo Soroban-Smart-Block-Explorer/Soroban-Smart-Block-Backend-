@@ -7,6 +7,7 @@ import { broadcastEvent } from '../ws/eventBroadcaster';
 import { broadcastSSEEvent } from '../api/sse';
 import { barrierUpsertContract, barrierUpsertEvent } from './writeBarrier';
 import { getWhaleWatcher } from './whaleWatcher';
+import { processYieldEvent } from './yield-distribution';
 import { dispatchWebhooks } from '../webhooks/dispatcher';
 import { maybeActivateFromTransferEvent } from './sac-account-activator';
 
@@ -168,6 +169,16 @@ async function storeEvent(event: LedgerEvent): Promise<number> {
       event.ledgerCloseTime,
     ).catch((err) => console.error('[sac-activator] evaluation error:', err));
   }
+
+  // Track RWA yield/distribution events
+  await processYieldEvent(
+    event.transactionHash,
+    event.contractId,
+    topicSymbol,
+    decoded as Record<string, unknown> | null,
+    event.ledgerSequence,
+    event.ledgerCloseTime,
+  );
 
   const broadcastPayload = {
     id,
