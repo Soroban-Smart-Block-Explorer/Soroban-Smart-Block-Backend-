@@ -81,6 +81,8 @@ model Transaction {
   sorobanResources Json?   // #48: CPU, memory, ledger footprint metrics
   failureReason   String?  // #49: human-readable failure explanation
   flashLoanAlert  Boolean  @default(false) // #137: flash loan attack detected
+  reentrantAlert  Boolean  @default(false) // re-entrancy / drain attack detected
+  freezeViolation Boolean  @default(false) // CAP-0077: touches a consensus-frozen ledger key
   createdAt       DateTime @default(now())
 
   ledger   Ledger    @relation(fields: [ledgerSequence], references: [sequence])
@@ -110,6 +112,7 @@ model Event {
   decoded         Json?    // human-readable decoded event
   ledgerSequence  Int                      // FK → Ledger.sequence
   ledgerCloseTime DateTime
+  compacted       Boolean  @default(false) // #220: true once rolled into a SettlementBatchSummary
   createdAt       DateTime @default(now())
 
   ledger      Ledger      @relation(fields: [ledgerSequence], references: [sequence])
@@ -127,6 +130,8 @@ model Event {
   @@index([contractAddress, ledgerSequence, id])
   // Filter by contract + event type + ledger for time-range queries
   @@index([contractAddress, eventType, ledgerSequence])
+  // #220: compactor scan index
+  @@index([eventType, compacted, ledgerSequence])
 }
 
 // Custom event symbol → template bindings submitted by verified project creators
@@ -180,6 +185,352 @@ model ZkpVerificationEvent {
   @@index([contractAddress, ledgerSequence])
 }
 
+enum PrivacyProtocol {
+  SHIELDED_TRANSFER
+  ZK_SNARK
+  ZK_STARK
+  BULLETPROOF
+  STEALTH_ADDRESS
+  MIXER
+  PRIVATE_VOTING
+  OFF_CHAIN_DATA
+  ENCRYPTED_STATE
+  DIFFERENTIAL_PRIVACY
+}
+
+enum PrivacyGuarantee {
+  SENDER_PRIVACY
+  RECIPIENT_PRIVACY
+  AMOUNT_PRIVACY
+  ASSET_TYPE_PRIVACY
+  VOTE_PRIVACY
+  FULL_PRIVACY
+}
+
+model PrivacyTransaction {
+  id                       String            @id @default(cuid())
+  txHash                   String            @unique @map("tx_hash")
+  protocols                PrivacyProtocol[]
+  guarantees               PrivacyGuarantee[]
+  cryptographicPrimitives  Json?             @map("cryptographic_primitives")
+  anonymitySetSize         Int?              @map("anonymity_set_size")
+  effectiveAnonymitySet    Int?              @map("effective_anonymity_set")
+  privacyScore             Float?            @map("privacy_score")
+  riskScore                Float?            @map("risk_score")
+  totalValue               String?           @map("total_value")
+  usdValue                 Float?            @map("usd_value")
+  assetType                String?           @map("asset_type")
+  contractAddresses        String[]          @map("contract_addresses")
+  participants             String[]
+  participantCount         Int               @default(0) @map("participant_count")
+  ledgerSequence           Int               @map("ledger_sequence")
+  timestamp                DateTime
+
+  @@index([protocols])
+  @@index([timestamp])
+  @@index([privacyScore])
+  @@index([riskScore])
+  @@index([anonymitySetSize])
+  @@map("privacy_transactions")
+}
+
+model PrivacyAnalytics {
+  id                 String   @id @default(cuid())
+  timestamp          DateTime
+  period             String
+  totalPrivateTx     Int      @map("total_private_tx")
+  totalTx            Int      @map("total_tx")
+  totalVolume        String   @map("total_volume")
+  privacyShare       Float    @map("privacy_share")
+  volumeShare        Float?   @map("volume_share")
+  byProtocol         Json     @map("by_protocol")
+  avgAnonymitySet    Float?   @map("avg_anonymity_set")
+  maxAnonymitySet    Int?     @map("max_anonymity_set")
+  medianAnonymitySet Float?   @map("median_anonymity_set")
+  avgPrivacyScore    Float?   @map("avg_privacy_score")
+  avgRiskScore       Float?   @map("avg_risk_score")
+  deAnonymizedCount  Int?     @map("de_anonymized_count")
+  uniqueUsers        Int?     @map("unique_users")
+  uniqueContracts    Int?     @map("unique_contracts")
+
+  @@index([timestamp(sort: Desc)])
+  @@index([period, timestamp])
+  @@map("privacy_analytics")
+}
+
+model PrivacyProtocolDetail {
+  id                          String           @id @default(cuid())
+  protocol                    PrivacyProtocol
+  timestamp                   DateTime
+  period                      String
+  txCount                     Int              @map("tx_count")
+  volume                      String?
+  uniqueUsers                 Int?             @map("unique_users")
+  uniqueContracts             Int?             @map("unique_contracts")
+  avgAnonymitySet             Float?           @map("avg_anonymity_set")
+  cryptographicPrimitivesUsed Json?            @map("cryptographic_primitives_used")
+
+  @@index([protocol, timestamp])
+  @@map("privacy_protocol_details")
+}
+
+model DeAnonymizationFinding {
+  id              String   @id @default(cuid())
+  sourceTx        String   @map("source_tx")
+  targetAddress   String   @map("target_address")
+  technique       String
+  confidence      Float
+  evidence        Json
+  linkedAddresses String[] @map("linked_addresses")
+  probability     Float?
+  detectedAt      DateTime @map("detected_at")
+
+  @@index([targetAddress])
+  @@index([sourceTx])
+  @@index([technique])
+  @@map("de_anonymization_findings")
+}
+
+model PrivacyComplianceReport {
+  id                String   @id @default(cuid())
+  address           String   @unique
+  totalPrivateTx    Int      @map("total_private_tx")
+  protocolsUsed     Json     @map("protocols_used")
+  riskScore         Float?   @map("risk_score")
+  flagged           Boolean  @default(false)
+  flagReason        String?  @map("flag_reason")
+  complianceLabel   String?  @map("compliance_label")
+  linkedAddresses   String[] @map("linked_addresses")
+  lastActivity      DateTime @map("last_activity")
+  reportGeneratedAt DateTime @map("report_generated_at")
+
+  @@index([address])
+  @@index([riskScore])
+  @@map("privacy_compliance_reports")
+}
+
+model AnonymitySetSnapshot {
+  id               String           @id @default(cuid())
+  protocol         PrivacyProtocol
+  contractAddress  String?          @map("contract_address")
+  setSize          Int              @map("set_size")
+  effectiveSetSize Int?             @map("effective_set_size")
+  timestamp        DateTime
+
+  @@index([protocol, timestamp(sort: Desc)])
+  @@map("anonymity_set_snapshots")
+}
+
+model SessionAuthorization {
+  id                String   @id @default(cuid())
+  eventId           String   @unique
+  contractAddress   String
+  hotSigner         String?
+  authorizationType String
+  startLedger       Int
+  expiryLedger      Int
+  allocatedBlocks   Int
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  @@index([contractAddress])
+  @@index([expiryLedger])
+}
+
+model OracleCallback {
+  id                        String   @id @default(cuid())
+  requestTransactionHash    String   @unique
+  fulfillmentTransactionHash String?
+  requestLedgerSequence     Int
+  fulfillmentLedgerSequence  Int?
+  requestTimestamp          DateTime
+  fulfillmentTimestamp      DateTime?
+  oracleContractAddress     String
+  dataRequestorAddress      String
+  roundTripLatencyBlocks    Int?
+  roundTripLatencyMs        Int?
+  status                    String
+  createdAt                 DateTime @default(now())
+  updatedAt                 DateTime @updatedAt
+
+  @@index([oracleContractAddress])
+  @@index([requestLedgerSequence])
+}
+
+model RwaComplianceEvent {
+  id                   String   @id @default(cuid())
+  transactionHash      String   @unique
+  ledgerSequence       Int
+  ledgerCloseTime      DateTime
+  assetContractAddress String
+  issuerAddress        String
+  targetAddress        String
+  amount               String?
+  complianceReason     String
+  humanStatement       String
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+
+  @@index([assetContractAddress])
+  @@index([issuerAddress])
+  @@index([targetAddress])
+}
+
+model StateContention {
+  id              String   @id
+  ledgerSequence  Int
+  contractAddress String
+  stateKey        String
+  txHashes        String[]
+  conflictCount   Int
+  delayMs         Float
+  delayLabel      String
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([ledgerSequence])
+  @@index([contractAddress])
+}
+
+model ContractFactory {
+  id                      String   @id @default(cuid())
+  parentContractAddress   String
+  childContractAddress    String
+  creationTransactionHash String
+  creationLedgerSequence  Int
+  creationTimestamp       DateTime
+  createdAt               DateTime @default(now())
+  updatedAt               DateTime @updatedAt
+
+  @@unique([parentContractAddress, childContractAddress])
+  @@index([parentContractAddress])
+  @@index([childContractAddress])
+  @@index([creationLedgerSequence])
+}
+
+model GovernanceContract {
+  id              String   @id @default(cuid())
+  contractAddress String   @unique
+  governanceType  String   @default("token_based")
+  votingToken     String?
+  detectedAt      DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  proposals GovernanceProposal[] @relation("ContractProposals")
+  votes     GovernanceVote[]     @relation("ContractVotes")
+  delegates GovernanceDelegate[] @relation("ContractDelegates")
+
+  @@index([contractAddress])
+  @@index([governanceType])
+}
+
+model GovernanceProposal {
+  id               String   @id @default(cuid())
+  contractAddress  String
+  proposalId       String
+  proposer         String
+  title            String?
+  description      String?
+  targets          Json?
+  startBlock       Int
+  endBlock         Int
+  votesFor         String   @default("0")
+  votesAgainst     String   @default("0")
+  votesAbstain     String   @default("0")
+  quorum           String?
+  status           String
+  executedAt       DateTime?
+  executionTxHash  String?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  contract GovernanceContract @relation("ContractProposals", fields: [contractAddress], references: [contractAddress])
+  votes    GovernanceVote[]   @relation("ProposalVotes")
+
+  @@unique([contractAddress, proposalId])
+  @@index([status])
+  @@index([contractAddress, status])
+  @@index([contractAddress])
+}
+
+model GovernanceVote {
+  id              String   @id @default(cuid())
+  contractAddress String
+  proposalId      String
+  voter           String
+  weight          String   @default("0")
+  support         String
+  reason          String?
+  transactionHash String?
+  ledgerSequence  Int
+  createdAt       DateTime @default(now())
+
+  contract GovernanceContract @relation("ContractVotes", fields: [contractAddress], references: [contractAddress])
+  proposal GovernanceProposal  @relation("ProposalVotes", fields: [contractAddress, proposalId], references: [contractAddress, proposalId], onDelete: Cascade)
+
+  @@unique([contractAddress, proposalId, voter])
+  @@index([contractAddress, proposalId])
+  @@index([voter])
+}
+
+model GovernanceDelegate {
+  id              String   @id @default(cuid())
+  contractAddress String
+  delegatee       String
+  delegatedVotes  String   @default("0")
+  delegators      Int      @default(0)
+  proposalsVoted  Int      @default(0)
+  updatedAt       DateTime @updatedAt
+  createdAt       DateTime @default(now())
+
+  contract GovernanceContract @relation("ContractDelegates", fields: [contractAddress], references: [contractAddress])
+
+  @@unique([contractAddress, delegatee])
+  @@index([contractAddress])
+  @@index([delegatee])
+}
+
+model ApiKey {
+  id         String   @id @default(cuid())
+  key        String   @unique
+  active     Boolean  @default(true)
+  createdAt  DateTime @default(now())
+  lastUsedAt DateTime?
+}
+
+model ContractResourceMetric {
+  id               String   @id @default(cuid())
+  contractAddress  String
+  transactionHash  String
+  ledgerSequence   Int
+  ledgerCloseTime  DateTime
+  memoryUsageBytes Int
+  cpuInstructions  Int
+  storageFootprint Int
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  @@unique([contractAddress, transactionHash])
+  @@index([contractAddress])
+  @@index([ledgerSequence])
+}
+
+model SignatureInspection {
+  id               String   @id @default(cuid())
+  transactionHash  String   @unique
+  ledgerSequence   Int
+  curveType        String
+  isPasskey        Boolean
+  pubKeyX          String?
+  pubKeyY          String?
+  label            String?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  @@index([transactionHash])
+  @@index([ledgerSequence])
+}
+
 model IndexerState {
   id         String   @id @default("singleton")
   lastLedger Int      @default(0)
@@ -205,6 +556,49 @@ model SacMapping {
   @@unique([assetCode, assetIssuer])
   @@index([sacAddress])
   @@index([assetCode])
+}
+
+// SAC G-Account Unlimited Trustline Mapper (CAP-0073)
+// Tracks trustlines on classic Stellar G-accounts that were initiated
+// by Soroban smart contracts (SAC) with unlimited or high-limit allowances.
+// Links each trustline to its originating transaction and the corresponding
+// classic ChangeTrustOp so the unified ledger stays coherent.
+model SacTrustlineMapping {
+  id                  String   @id @default(cuid())
+  // The classic G-account that holds the trustline
+  gAccount            String
+  // The SAC contract address that initiated the trustline (C-address)
+  sacAddress          String
+  // Classic asset identifiers (resolved via SacMapping)
+  assetCode           String
+  assetIssuer         String?
+  assetType           String   @default("credit_alphanum4")
+  // Trustline limit (string for BigInt precision)
+  trustlineLimit      String   @default("0")
+  // Flag: true if the trustline has no practical limit
+  isUnlimited         Boolean  @default(false)
+  // Trustline status
+  status              String   @default("active") // active | deactivated | frozen
+  // The Soroban transaction that created/modified the trustline
+  transactionHash     String
+  // The ledger where the trustline was created
+  ledgerSequence      Int
+  ledgerCloseTime     DateTime
+  // Link to the corresponding classic ChangeTrustOp ledger sequence
+  changeTrustOpLedger Int?     // null until a classic ChangeTrustOp is found
+  changeTrustOpTxHash String?  // hash of the classic ChangeTrustOp transaction
+  // Whether the trustline was discovered via CAP-0073 (Soroban-initiated) or classic
+  origin              String   @default("soroban") // "soroban" | "classic"
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  @@unique([gAccount, sacAddress])
+  @@index([gAccount])
+  @@index([sacAddress])
+  @@index([assetCode])
+  @@index([status])
+  @@index([ledgerSequence])
+  @@index([changeTrustOpLedger])
 }
 
 // AMM pool that uses one or more SAC-wrapped assets
@@ -465,6 +859,24 @@ model FailedItem {
   @@index([ledger])
 }
 
+// Re-entrancy / drain attack alert — one row per suspicious transaction
+model ReentrancyAlert {
+  id              String   @id @default(cuid())
+  transactionHash String   @unique
+  contractAddress String
+  ledgerSequence  Int
+  repeatedWithdrawCalls Int  @default(0)  // # of repeated withdraw/transfer calls to same contract
+  maxCallDepth    Int      @default(0)   // deepest cross-contract call chain seen
+  cyclicCallPairs Json     @default("[]") // [[caller, callee], ...] pairs that form cycles
+  severity        String   // "low" | "medium" | "high"
+  signals         Json     // human-readable list of triggered signal descriptions
+  createdAt       DateTime @default(now())
+
+  @@index([contractAddress])
+  @@index([ledgerSequence])
+  @@index([severity])
+}
+
 // Storage efficiency: tracks allocated footprint bytes vs actual data bytes per tx
 model StorageEfficiencyLog {
   id              String   @id @default(cuid())
@@ -651,6 +1063,355 @@ model TaxExportJob {
   @@index([status])
 }
 
+// ─── Threat Intelligence Platform ────────────────────────────────────────────
+
+// External vulnerability / feed source registration
+model VulnerabilitySource {
+  id          String   @id @default(cuid())
+  name        String   @unique  // "NVD_CVE" | "GHSA" | "ON_CHAIN" | "COMMUNITY"
+  sourceType  String            // "cve" | "ghsa" | "onchain" | "manual"
+  feedUrl     String?
+  enabled     Boolean  @default(true)
+  lastFetchAt DateTime?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  advisories  ThreatAdvisory[]
+}
+
+// Core security advisory record
+model ThreatAdvisory {
+  id                String   @id @default(cuid())
+  title             String
+  description       String
+  severity          String   // "critical" | "high" | "medium" | "low" | "info"
+  cvssScore         Float?
+  cveId             String?  @unique
+  ghsaId            String?  @unique
+  affectedContracts String[] // Soroban contract addresses
+  affectedChains    String[] // "stellar" | "ethereum" | etc.
+  mitigations       String[] // free-text recommendations
+  status            String   @default("open") // "open" | "under_review" | "resolved" | "disputed"
+  publishedAt       DateTime?
+  resolvedAt        DateTime?
+  sourceId          String?
+  submittedBy       String?  // user/api-key for manual submissions
+  externalUrl       String?
+  tags              String[]
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  source       VulnerabilitySource? @relation(fields: [sourceId], references: [id])
+  correlations ThreatCorrelation[]
+  reviews      ThreatReview[]
+  comments     ThreatComment[]
+
+  @@index([severity])
+  @@index([status])
+  @@index([cveId])
+  @@index([ghsaId])
+  @@index([createdAt])
+}
+
+// Cross-chain / cross-source deduplication link
+model ThreatCorrelation {
+  id           String   @id @default(cuid())
+  advisoryId   String
+  relatedId    String   // another ThreatAdvisory id
+  relationship String   // "duplicate" | "related" | "supercedes"
+  confidence   Float    @default(1.0) // 0-1
+  createdAt    DateTime @default(now())
+
+  advisory     ThreatAdvisory @relation(fields: [advisoryId], references: [id])
+
+  @@unique([advisoryId, relatedId])
+  @@index([advisoryId])
+  @@index([relatedId])
+}
+
+// Role-based review workflow entry
+model ThreatReview {
+  id         String   @id @default(cuid())
+  advisoryId String
+  reviewerKey String  // API key / user id
+  role        String  // "analyst" | "admin"
+  decision    String  // "approve" | "reject" | "escalate"
+  notes       String?
+  createdAt   DateTime @default(now())
+
+  advisory    ThreatAdvisory @relation(fields: [advisoryId], references: [id])
+
+  @@index([advisoryId])
+  @@index([reviewerKey])
+}
+
+// Community comment thread on an advisory
+model ThreatComment {
+  id         String   @id @default(cuid())
+  advisoryId String
+  authorKey  String
+  body       String
+  createdAt  DateTime @default(now())
+
+  advisory   ThreatAdvisory @relation(fields: [advisoryId], references: [id])
+
+  @@index([advisoryId])
+}
+
+// Push subscription (email / Slack / Discord / Telegram)
+model TipSubscription {
+  id        String   @id @default(cuid())
+  channel   String   // "email" | "slack" | "discord" | "telegram"
+  target    String   // email address / webhook url / chat id
+  filters   Json?    // { severity: ["critical","high"], tags: [] }
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([channel, target])
+  @@index([channel])
+  @@index([active])
+}
+
+// Outbound webhook endpoint registration
+model TipWebhook {
+  id        String   @id @default(cuid())
+  url       String   @unique
+  secret    String   // HMAC signing secret
+  events    String[] // ["advisory.created","advisory.updated","advisory.resolved"]
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([active])
+}
+
+// ─── End Threat Intelligence Platform ────────────────────────────────────────
+
+// Webhook subscriptions — developer-registered URLs that receive event payloads
+model WebhookSubscription {
+  id              String   @id @default(cuid())
+  url             String                        // target HTTPS endpoint
+  secret          String?                       // optional HMAC-SHA256 signing secret
+  contractAddress String?                       // null = all contracts
+  eventType       String?                       // null = all event types
+  topicSymbol     String?                       // null = all topic symbols
+  active          Boolean  @default(true)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  deliveries      WebhookDelivery[]
+
+  @@index([contractAddress])
+  @@index([active])
+}
+
+// Delivery log — one row per dispatch attempt
+model WebhookDelivery {
+  id             String   @id @default(cuid())
+  subscriptionId String
+  eventId        String                        // Event.id that triggered this delivery
+  attempt        Int      @default(1)          // 1-based attempt counter
+  status         String   @default("pending")  // pending | success | failed
+  httpStatus     Int?                          // HTTP response code from target
+  responseBody   String?                       // first 500 chars of response
+  errorMsg       String?
+  nextRetryAt    DateTime?                     // null once terminal
+  deliveredAt    DateTime?
+  createdAt      DateTime @default(now())
+
+  subscription   WebhookSubscription @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
+
+  @@index([subscriptionId])
+  @@index([status, nextRetryAt])
+  @@index([eventId])
+}
+
+// BN254 ZK-Host function gas exemption tracker (CAP-0080)
+// Tracks transactions using native BN254 curve host functions and
+// calculates the gas savings vs equivalent Wasm-side computation.
+model Bn254GasExemption {
+  id              String   @id @default(cuid())
+  transactionHash String   @unique
+  contractAddress String?
+  // Detected BN254 operation types involved, e.g. ["bn254_add", "bn254_mul", "bn254_pairing_check", "bn254_multiscalar_mul"]
+  bn254Ops        Json     @default("[]")
+  // Number of detected BN254 host function calls
+  opCount         Int      @default(0)
+  // Actual fee charged for the transaction (stroops)
+  feeCharged      String?
+  // Estimated equivalent fee if done in Wasm (stroops)
+  estimatedWasmFee String?
+  // Net stroops saved
+  stroopSavings   String?
+  // Savings percentage (e.g. 74.0)
+  savingsPct      Float?
+  // CPU instructions from soroban resources
+  cpuInstructions Int      @default(0)
+  // Multi-scalar multiplication complexity factor
+  msmComplexity   Int      @default(0)
+  ledgerSequence  Int
+  ledgerCloseTime DateTime
+  createdAt       DateTime @default(now())
+
+  @@index([contractAddress])
+  @@index([ledgerSequence])
+  @@index([savingsPct])
+}
+
+// Gas cost analytics snapshot — pre-aggregated fee stats per time bucket
+model GasAnalyticsSnapshot {
+  id          String   @id @default(cuid())
+  bucket      String   // "hour" | "day" | "week"
+  bucketStart DateTime // start of the time bucket
+  bucketEnd   DateTime // end of the time bucket
+  avgFee      Float    // average fee charged (in stroops)
+  medianFee   Float    // median fee charged
+  peakFee     Float    // maximum fee charged
+  minFee      Float    // minimum fee charged
+  txCount     Int      // number of transactions in bucket
+  createdAt   DateTime @default(now())
+
+  @@unique([bucket, bucketStart])
+  @@index([bucket, bucketStart])
+}
+
+// Portfolio snapshot — token holdings with fiat valuation per wallet/contract
+model PortfolioSnapshot {
+  id              String   @id @default(cuid())
+  contractAddress String   // SAC contract address
+  assetCode       String?
+  assetIssuer     String?
+  estimatedVolume Float    // raw token quantity
+  priceXlm        Float?   // price in XLM
+  priceUsd        Float?   // price in USD
+  valueXlm        Float?   // estimatedVolume * priceXlm
+  valueUsd        Float?   // estimatedVolume * priceUsd
+  snapshotAt      DateTime @default(now())
+
+  @@index([contractAddress])
+  @@index([snapshotAt])
+}
+
+// Persisted volume spike alert — one row per detected spike
+model VolumeAlert {
+  id              String   @id @default(cuid())
+  contractAddress String
+  currentCount    Int      // tx count in the observation window
+  baseline        Float    // historical mean
+  stdDev          Float    // historical standard deviation
+  zScore          Float    // (currentCount - baseline) / stdDev
+  windowMinutes   Int      // observation window size
+  detectedAt      DateTime @default(now())
+  acknowledged    Boolean  @default(false)
+
+  @@index([contractAddress])
+  @@index([detectedAt])
+  @@index([zScore])
+}
+
+// #168: Account activation records for XLM SAC transfers to unfunded addresses
+model AccountActivation {
+  id              String   @id @default(cuid())
+  destination     String                        // G-address of the recipient
+  sacAddress      String                        // C-address of the XLM SAC contract
+  transactionHash String                        // originating transaction
+  ledgerSequence  Int
+  ledgerCloseTime DateTime
+  amountStroops   String                        // transfer amount in stroops (i128 as string)
+  previousStatus  String   @default("Unfunded Key")
+  newStatus       String   @default("Active Base Wallet Natively Initialized")
+  createdAt       DateTime @default(now())
+
+  @@unique([transactionHash, destination])
+  @@index([destination])
+  @@index([sacAddress])
+  @@index([ledgerSequence])
+}
+
+// Yield/distribution event from RWA treasury contracts — individual recipient rows
+// grouped by windowLabel for the "Corporate Yield Distribution Sync" dashboard.
+model YieldDistribution {
+  id              String   @id @default(cuid())
+  transactionHash String
+  contractAddress String
+  distributionId  String?
+  recipient       String
+  amount          String
+  tokenSymbol     String?
+  windowLabel     String   @default("Corporate Yield Distribution Sync")
+  ledgerSequence  Int
+  ledgerCloseTime DateTime
+  createdAt       DateTime @default(now())
+
+  @@index([contractAddress])
+  @@index([contractAddress, windowLabel])
+  @@index([contractAddress, ledgerCloseTime])
+  @@index([windowLabel])
+  @@index([distributionId])
+}
+
+// #218: DTCC Tokenized Securities Settlement ID Bridge
+model DtccSettlementBridge {
+  id                  String   @id @default(cuid())
+  transactionHash     String   @unique
+  dtccSettlementId    String
+  securityId          String
+  securityType        String
+  sellerAddress       String
+  buyerAddress        String
+  quantity            String
+  settlementAmount    String
+  currency            String   @default("USD")
+  settlementStatus    String   @default("pending")
+  settlementDate      DateTime?
+  contractAddress     String?
+  ledgerSequence      Int
+  ledgerCloseTime     DateTime
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  @@index([dtccSettlementId])
+  @@index([securityId])
+  @@index([sellerAddress])
+  @@index([buyerAddress])
+  @@index([settlementStatus])
+  @@index([ledgerSequence])
+}
+
+// #219: Commodity Compliance Dual-Signer Verification Log
+model CommodityDualSignerLog {
+  id                  String   @id @default(cuid())
+  transactionHash     String   @unique
+  commodityType       String
+  commodityCode       String
+  contractAddress     String
+  traderAddress       String
+  primarySignerAddress  String
+  secondarySignerAddress String
+  primarySigned       Boolean  @default(false)
+  secondarySigned     Boolean  @default(false)
+  bothSigned          Boolean  @default(false)
+  quantity            String
+  unit                String
+  notionalValueUsd    String?
+  regulatoryJurisdiction String @default("CFTC")
+  complianceStatus    String   @default("pending")
+  expiresAt           DateTime?
+  ledgerSequence      Int
+  ledgerCloseTime     DateTime
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  @@index([commodityCode])
+  @@index([contractAddress])
+  @@index([traderAddress])
+  @@index([primarySignerAddress])
+  @@index([secondarySignerAddress])
+  @@index([complianceStatus])
+  @@index([ledgerSequence])
+}
+
 // i18n translation dictionary
 model TranslationKey {
   id              String   @id @default(cuid())
@@ -685,3 +1446,782 @@ model Translation {
 
 
 
+
+// #320: Yield Farming & Staking Optimizer — risk-scored yield opportunities
+model YieldOpportunity {
+  id              String   @id
+  contractAddress String
+  name            String
+  type            String   // lp_farming | staking | lending | liquid_staking | vault
+  tokens          Json     @default("[]")  // [String] token symbols involved
+  baseApy         Float    @default(0)     // organic APY from fees/interest
+  incentiveApy    Float    @default(0)     // APY from token incentives
+  totalApy        Float    @default(0)     // baseApy + incentiveApy
+  tvl             String   @default("0")   // total value locked (decimal string)
+  lockupDays      Int      @default(0)
+  minDeposit      String   @default("0")   // decimal string
+  depositFee      Float    @default(0)     // percentage (e.g. 0.1 = 0.1%)
+  withdrawFee     Float    @default(0)     // percentage
+  // Composite risk score 0-100 (higher = riskier)
+  riskScore       Int      @default(0)
+  riskLabel       String   @default("unknown") // low | medium | high | unknown
+  lastObservedAt  DateTime @default(now())
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@unique([contractAddress, type])
+  @@index([type])
+  @@index([totalApy])
+  @@index([riskScore])
+  @@index([lastObservedAt])
+}
+
+// #320: Daily APY/TVL history snapshots for a yield opportunity
+model YieldHistorySnapshot {
+  id              String   @id @default(cuid())
+  opportunityId   String
+  snapshotDate    DateTime // truncated to start-of-day UTC
+  apy             Float
+  baseApy         Float    @default(0)
+  incentiveApy    Float    @default(0)
+  tvl             String   @default("0")
+  ledgerSequence  Int?
+  createdAt       DateTime @default(now())
+
+  @@unique([opportunityId, snapshotDate])
+  @@index([opportunityId])
+  @@index([snapshotDate])
+}
+
+// #220: High-Throughput Batch-Settlement Event Compact Engine
+// One row per (contractAddress, windowKey) — a window covers WINDOW_SIZE ledgers.
+// Replaces thousands of raw settlement Event rows with a single scannable summary.
+model SettlementBatchSummary {
+  id              String   @id @default(cuid())
+  contractAddress String                        // enterprise banking contract
+  windowKey       Int                           // floor(ledgerSequence / WINDOW_SIZE)
+  ledgerMin       Int                           // first ledger in window
+  ledgerMax       Int                           // last ledger in window
+  windowStart     DateTime                      // ledgerCloseTime of first event
+  windowEnd       DateTime                      // ledgerCloseTime of last event
+  eventCount      Int                           // number of settlement events compacted
+  totalAmount     String                        // sum of settlement amounts (string for precision)
+  uniqueParties   Int                           // distinct addresses involved
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@unique([contractAddress, windowKey])
+  @@index([contractAddress])
+  @@index([ledgerMin])
+  @@index([windowKey])
+}
+
+// CAP-0077: Consensus-frozen ledger key registry
+model FrozenLedgerKey {
+  ledgerKey       String   @id
+  contractAddress String?
+  frozenAtLedger  Int
+  frozenAtTime    DateTime
+  active          Boolean  @default(true)
+  reason          String?
+  createdAt       DateTime @default(now())
+
+  @@index([active])
+}
+
+// ── Performance Benchmarking Suite Models ─────────────────────────────────────
+
+// Pre-computed operation microbenchmarks aggregated across all transactions
+model OperationBenchmark {
+  id           String   @id @default(cuid())
+  name         String   @unique  // e.g. "token_transfer", "token_balance_of", "swap"
+  avgCpu       Int      @default(0)
+  avgMemory    Int      @default(0)
+  avgFeeStroops BigInt  @default(0)
+  samples      Int      @default(0)
+  lastUpdated  DateTime @default(now())
+  createdAt    DateTime @default(now())
+
+  @@index([name])
+}
+
+// Per-contract per-function benchmark snapshot (for trend/regression analysis)
+model ContractBenchmarkSnapshot {
+  id              String   @id @default(cuid())
+  contractAddress String
+  functionName    String
+  avgCpu          Int      @default(0)
+  avgMemory       Int      @default(0)
+  avgFeeStroops   BigInt   @default(0)
+  minFeeStroops   BigInt   @default(0)
+  maxFeeStroops   BigInt   @default(0)
+  minCpu          Int      @default(0)
+  maxCpu          Int      @default(0)
+  samples         Int      @default(0)
+  ledgerSequence  Int      // snapshot ledger
+  createdAt       DateTime @default(now())
+
+  @@index([contractAddress, functionName, ledgerSequence])
+  @@index([contractAddress, createdAt])
+}
+
+// Standards compliance thresholds per contract type (SEP-41, DEX, NFT, etc.)
+model StandardCompliance {
+  id              String   @id @default(cuid())
+  contractType    String   // "sep-41", "dex", "nft", "lending", "staking"
+  functionName    String
+  maxCpu          Int      @default(0)
+  maxMemory       Int      @default(0)
+  maxFeeStroops   BigInt   @default(0)
+  description     String?  // e.g. "SEP-41 token transfer expected range"
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@unique([contractType, functionName])
+  @@index([contractType])
+}
+
+// Gas golfing tips for common function patterns
+model GasGolfingTip {
+  id           String   @id @default(cuid())
+  functionName String   @unique
+  tips         Json     @default("[]")  // ["Reduce event data", "Batch storage operations"]
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@index([functionName])
+}
+
+// CAP-0077: Freeze violation records
+model FreezeViolation {
+  id              String   @id @default(cuid())
+  transactionHash String   @unique
+  contractAddress String?
+  ledgerSequence  Int
+  ledgerCloseTime DateTime
+  frozenKeys      Json
+  createdAt       DateTime @default(now())
+
+  @@index([transactionHash])
+}
+
+// ── Soroban Network Observatory ──────────────────────────────────────────────
+
+enum NodeType {
+  validator
+  full_node
+  watcher
+  archival
+  unknown
+}
+
+enum AlertSeverity {
+  critical
+  warning
+  info
+}
+
+model NetworkNode {
+  id              String   @id @default(cuid())
+  publicKey       String   @unique
+  name            String?
+  organization    String?
+  homeDomain      String?
+  version         String?
+  ledgerVersion   Int?
+  overlayVersion  Int?
+  maxLedgerAge    Int?
+  quorumSet       Json?
+  isValidator     Boolean  @default(false)
+  activeInNetwork Boolean  @default(true)
+  firstSeen       DateTime
+  lastSeen        DateTime
+  uptime24h       Float?
+  uptime7d        Float?
+  uptime30d       Float?
+  avgLatency      Int?
+  p95Latency      Int?
+  agreementRate24h Float?
+  agreementRate7d  Float?
+  agreementRate30d Float?
+  missedSlots24h   Int?
+  missedSlots7d    Int?
+  country         String?
+  city            String?
+  latitude        Float?
+  longitude       Float?
+  organizationUrl String?
+  softwareVersion String?
+  stellarCoreVersion String?
+  historyArchiveUrl String?
+  peerCount       Int?
+  transitiveQuorum Json?
+  nodeType        NodeType @default(unknown)
+  lastHeartbeat   DateTime?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  nodeEvents      NetworkNodeEvent[]
+  nodeMetrics     NetworkNodeMetric[]
+
+  @@index([publicKey])
+  @@index([isValidator])
+  @@index([activeInNetwork])
+  @@index([lastSeen])
+}
+
+model NetworkNodeEvent {
+  id        String   @id @default(cuid())
+  nodeId    String
+  node      NetworkNode @relation(fields: [nodeId], references: [id], onDelete: Cascade)
+  eventType String
+  details   Json?
+  timestamp DateTime @default(now())
+  createdAt DateTime @default(now())
+
+  @@index([nodeId])
+  @@index([eventType])
+  @@index([timestamp])
+}
+
+model NetworkNodeMetric {
+  id            String   @id @default(cuid())
+  nodeId        String
+  node          NetworkNode @relation(fields: [nodeId], references: [id], onDelete: Cascade)
+  timestamp     DateTime @default(now())
+  ledgerNum     Int?
+  latency       Int?
+  agreementRate Float?
+  peerCount     Int?
+  createdAt     DateTime @default(now())
+
+  @@index([nodeId, timestamp])
+  @@index([timestamp])
+}
+
+model NetworkConsensusRound {
+  id             String   @id @default(cuid())
+  ledgerSeq      Int      @unique
+  startTime      DateTime
+  endTime        DateTime
+  durationMs     Int
+  externalizeTimeMs Int?
+  txCount        Int
+  successful     Boolean  @default(true)
+  agreementRate  Float?
+  nodesParticipated Int
+  quorumSetSize  Int
+  missedNodes    Json?
+  topologyHash   String?
+  createdAt      DateTime @default(now())
+
+  @@index([ledgerSeq])
+  @@index([startTime])
+  @@index([successful])
+}
+
+model NetworkAlert {
+  id             String   @id @default(cuid())
+  alertType      String
+  severity       AlertSeverity
+  title          String
+  description    String
+  affectedNodes  Json?
+  metricData     Json?
+  acknowledged   Boolean  @default(false)
+  acknowledgedBy String?
+  acknowledgedAt DateTime?
+  resolvedAt     DateTime?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@index([alertType])
+  @@index([severity])
+  @@index([acknowledged])
+  @@index([createdAt])
+}
+
+// ─── Emergency Response Platform ─────────────────────────────────────────────
+
+model EmergencyState {
+  id                       String    @id @default(cuid())
+  contractAddress          String    @unique @map("contract_address")
+  isPaused                 Boolean   @default(false) @map("is_paused")
+  currentPauseId           String?   @map("current_pause_id")
+  totalPauseCount          Int       @default(0) @map("total_pause_count")
+  totalPausedSeconds       BigInt    @default(0) @map("total_paused_seconds")
+  lastPauseDurationSeconds BigInt?   @map("last_pause_duration_seconds")
+  pauserType               String?   @map("pauser_type")
+  decentralizationScore    Decimal?  @map("decentralization_score") @db.Decimal(5, 2)
+  createdAt                DateTime  @default(now()) @map("created_at")
+  updatedAt                DateTime  @updatedAt @map("updated_at")
+
+  @@index([contractAddress])
+  @@map("emergency_states")
+}
+
+model PauseEvent {
+  id              String    @id @default(cuid())
+  contractAddress String    @map("contract_address")
+  eventType       String    @map("event_type")
+  pauserAddress   String?   @map("pauser_address")
+  reason          String?
+  txHash          String    @map("tx_hash")
+  blockNumber     BigInt    @map("block_number")
+  timestamp       DateTime
+  durationSeconds BigInt?   @map("duration_seconds")
+  gasCost         BigInt?   @map("gas_cost")
+  metadata        Json?
+  createdAt       DateTime  @default(now()) @map("created_at")
+
+  incidentReports IncidentReport[]
+
+  @@index([contractAddress])
+  @@index([eventType])
+  @@index([timestamp])
+  @@index([pauserAddress])
+  @@map("pause_events")
+}
+
+model PauserAnalysis {
+  id                    String    @id @default(cuid())
+  contractAddress       String    @unique @map("contract_address")
+  pauserType            String    @map("pauser_type")
+  pauserAddresses       String[]  @map("pauser_addresses")
+  unpauserAddresses     String[]  @map("unpauser_addresses")
+  threshold             Int?
+  totalSigners          Int?      @map("total_signers")
+  timelockDelaySeconds  BigInt?   @map("timelock_delay_seconds")
+  governanceContract    String?   @map("governance_contract")
+  automaticTriggers     Json?     @map("automatic_triggers")
+  analysisMethod        String?   @map("analysis_method")
+  lastAnalyzed          DateTime  @default(now()) @map("last_analyzed")
+
+  @@map("pauser_analyses")
+}
+
+model RecoveryAnalysis {
+  id                      String    @id @default(cuid())
+  contractAddress         String    @unique @map("contract_address")
+  hasFundRecovery         Boolean   @default(false) @map("has_fund_recovery")
+  fundRecoveryFunctions   String[]  @map("fund_recovery_functions")
+  hasUpgradeCapability    Boolean   @default(false) @map("has_upgrade_capability")
+  upgradeFunctions        String[]  @map("upgrade_functions")
+  hasMigrationCapability  Boolean   @default(false) @map("has_migration_capability")
+  migrationFunctions      String[]  @map("migration_functions")
+  hasStateRollback        Boolean   @default(false) @map("has_state_rollback")
+  rollbackFunctions       String[]  @map("rollback_functions")
+  recoveryRobustnessScore Decimal?  @map("recovery_robustness_score") @db.Decimal(5, 2)
+  analysisDetails         Json?     @map("analysis_details")
+  lastAnalyzed            DateTime  @default(now()) @map("last_analyzed")
+
+  @@map("recovery_analyses")
+}
+
+model AlertConfiguration {
+  id              String    @id @default(cuid())
+  userId          String    @map("user_id")
+  contractAddress String?   @map("contract_address")
+  name            String?
+  alertType       String    @map("alert_type")
+  conditions      Json?
+  channels        Json
+  isActive        Boolean   @default(true) @map("is_active")
+  cooldownMinutes Int       @default(60) @map("cooldown_minutes")
+  lastTriggeredAt DateTime? @map("last_triggered_at")
+  createdAt       DateTime  @default(now()) @map("created_at")
+
+  @@index([userId])
+  @@index([contractAddress])
+  @@map("alert_configurations")
+}
+
+model IncidentReport {
+  id                   String    @id @default(cuid())
+  contractAddress      String    @map("contract_address")
+  severity             String
+  status               String    @default("open")
+  pauseEventId         String?   @map("pause_event_id")
+  title                String
+  description          String?
+  timeline             Json?
+  affectedUsersEstimate BigInt?  @map("affected_users_estimate")
+  affectedTvlEstimate  Decimal?  @map("affected_tvl_estimate") @db.Decimal(30, 0)
+  rootCause            String?   @map("root_cause")
+  resolutionNotes      String?   @map("resolution_notes")
+  resolvedAt           DateTime? @map("resolved_at")
+  createdAt            DateTime  @default(now()) @map("created_at")
+  updatedAt            DateTime  @updatedAt @map("updated_at")
+
+  pauseEvent PauseEvent? @relation(fields: [pauseEventId], references: [id])
+  comments   IncidentComment[]
+
+  @@index([contractAddress])
+  @@index([status])
+  @@index([severity])
+  @@index([createdAt])
+  @@map("incident_reports")
+}
+
+model IncidentComment {
+  id         String   @id @default(cuid())
+  incidentId String   @map("incident_id")
+  author     String
+  body       String
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  incident IncidentReport @relation(fields: [incidentId], references: [id], onDelete: Cascade)
+
+  @@index([incidentId])
+  @@map("incident_comments")
+}
+
+model ProtocolHealthScore {
+  id                  String    @id @default(cuid())
+  contractAddress     String    @unique @map("contract_address")
+  protocolName        String?   @map("protocol_name")
+  totalPauses30d      Int       @default(0) @map("total_pauses_30d")
+  totalPauses90d      Int       @default(0) @map("total_pauses_90d")
+  avgPauseDuration30d BigInt?   @map("avg_pause_duration_30d")
+  totalDowntime30d    BigInt?   @map("total_downtime_30d")
+  lastPauseDate       DateTime? @map("last_pause_date")
+  recoveryScore       Decimal?  @map("recovery_score") @db.Decimal(5, 2)
+  decentralizationScore Decimal? @map("decentralization_score") @db.Decimal(5, 2)
+  healthScore         Decimal?  @map("health_score") @db.Decimal(5, 2)
+  riskLevel           String?   @map("risk_level")
+  computedAt          DateTime  @default(now()) @map("computed_at")
+
+  @@index([healthScore])
+  @@map("protocol_health_scores")
+}
+
+// ── Stellar Ecosystem Integration (Classic + Soroban unified view) ─────────
+
+model StellarAccount {
+  id                    String    @id @default(uuid()) @db.Uuid
+  address               String    @unique @db.VarChar(56)
+  xlmBalance            Decimal   @default(0) @map("xlm_balance") @db.Decimal(30, 7)
+  buyingLiabilities     Decimal   @default(0) @map("buying_liabilities") @db.Decimal(30, 7)
+  sellingLiabilities    Decimal   @default(0) @map("selling_liabilities") @db.Decimal(30, 7)
+  sequenceNumber        BigInt?   @map("sequence_number")
+  subentryCount         Int       @default(0) @map("subentry_count")
+  inflationDestination  String?   @map("inflation_destination") @db.VarChar(56)
+  homeDomain            String?   @map("home_domain") @db.VarChar(255)
+  homeDomainVerified    Boolean   @default(false) @map("home_domain_verified")
+  flags                 Json?
+  thresholds            Json?
+  numSigners            Int       @default(0) @map("num_signers")
+  numTrustlines         Int       @default(0) @map("num_trustlines")
+  numDataEntries        Int       @default(0) @map("num_data_entries")
+  numClaimableBalances  Int       @default(0) @map("num_claimable_balances")
+  isActivated           Boolean   @default(false) @map("is_activated")
+  firstSeen             DateTime? @map("first_seen")
+  lastActivity          DateTime? @map("last_activity")
+  createdAt             DateTime  @default(now()) @map("created_at")
+  updatedAt             DateTime  @updatedAt @map("updated_at")
+
+  trustlines AccountTrustline[]
+  signers    AccountSigner[]
+
+  @@map("stellar_accounts")
+}
+
+model AccountTrustline {
+  id                              BigInt   @id @default(autoincrement())
+  accountId                       String   @map("account_id") @db.Uuid
+  assetCode                       String   @map("asset_code") @db.VarChar(12)
+  assetIssuer                     String   @map("asset_issuer") @db.VarChar(56)
+  balance                         Decimal  @default(0) @db.Decimal(30, 7)
+  limitAmount                     Decimal? @map("limit_amount") @db.Decimal(30, 7)
+  authorized                      Boolean  @default(false)
+  authorizedToMaintainLiabilities Boolean  @default(false) @map("authorized_to_maintain_liabilities")
+  clawbackBalanceSet              Boolean  @default(false) @map("clawback_balance_set")
+  isLiquidityPoolShare            Boolean  @default(false) @map("is_liquidity_pool_share")
+  lastModified                    DateTime @default(now()) @map("last_modified")
+
+  account StellarAccount @relation(fields: [accountId], references: [id], onDelete: Cascade)
+
+  @@unique([accountId, assetCode, assetIssuer])
+  @@map("account_trustlines")
+}
+
+model AccountSigner {
+  id           BigInt   @id @default(autoincrement())
+  accountId    String   @map("account_id") @db.Uuid
+  signerKey    String   @map("signer_key") @db.VarChar(56)
+  signerType   String   @map("signer_type") @db.VarChar(30)
+  weight       Int
+  sponsor      String?  @db.VarChar(56)
+  lastModified DateTime @default(now()) @map("last_modified")
+
+  account StellarAccount @relation(fields: [accountId], references: [id], onDelete: Cascade)
+
+  @@unique([accountId, signerKey])
+  @@map("account_signers")
+}
+
+model StellarAsset {
+  id                 String   @id @default(uuid()) @db.Uuid
+  assetCode          String   @map("asset_code") @db.VarChar(12)
+  assetIssuer        String   @map("asset_issuer") @db.VarChar(56)
+  assetType          String   @map("asset_type") @db.VarChar(20)
+  totalSupply        Decimal  @default(0) @map("total_supply") @db.Decimal(30, 7)
+  numHolders         Int      @default(0) @map("num_holders")
+  numTrustlines      Int      @default(0) @map("num_trustlines")
+  volume24h          Decimal  @default(0) @map("volume_24h") @db.Decimal(30, 7)
+  trades24h          Int      @default(0) @map("trades_24h")
+  isAnchored         Boolean  @default(false) @map("is_anchored")
+  anchorName         String?  @map("anchor_name") @db.VarChar(255)
+  homeDomain         String?  @map("home_domain") @db.VarChar(255)
+  isBridgedToSoroban Boolean  @default(false) @map("is_bridged_to_soroban")
+  sorobanContract    String?  @map("soroban_contract") @db.VarChar(56)
+  createdAt          DateTime @default(now()) @map("created_at")
+  updatedAt          DateTime @updatedAt @map("updated_at")
+
+  @@unique([assetCode, assetIssuer])
+  @@map("stellar_assets")
+}
+
+model UnifiedTransaction {
+  id              String   @id @default(uuid()) @db.Uuid
+  sourceAccount   String   @map("source_account") @db.VarChar(56)
+  network         String   @db.VarChar(20)
+  txHash          String   @map("tx_hash") @db.VarChar(64)
+  type            String   @db.VarChar(30)
+  subType         String?  @map("sub_type") @db.VarChar(50)
+  amount          Decimal? @db.Decimal(30, 7)
+  assetCode       String?  @map("asset_code") @db.VarChar(12)
+  assetIssuer     String?  @map("asset_issuer") @db.VarChar(56)
+  destination     String?  @db.VarChar(56)
+  fee             Decimal? @db.Decimal(30, 7)
+  memoType        String?  @map("memo_type") @db.VarChar(20)
+  memoContent     String?  @map("memo_content")
+  successful      Boolean
+  createdAt       DateTime @map("created_at")
+  ledgerSequence  Int?     @map("ledger_sequence")
+  operations      Json?
+
+  @@unique([network, txHash])
+  @@index([sourceAccount, createdAt])
+  @@map("unified_transactions")
+}
+
+model AnchorsRegistry {
+  id             String   @id @default(uuid()) @db.Uuid
+  name           String   @db.VarChar(255)
+  homeDomain     String   @map("home_domain") @db.VarChar(255)
+  address        String?  @db.VarChar(56)
+  assets         Json
+  regions        String[]
+  kycRequired    Boolean  @default(false) @map("kyc_required")
+  kycTypes       String[] @map("kyc_types")
+  fees           Json?
+  limits         Json?
+  supportedSeps  String[] @map("supported_seps")
+  isVerified     Boolean  @default(false) @map("is_verified")
+  rating         Decimal  @default(0) @db.Decimal(3, 2)
+  reviewCount    Int      @default(0) @map("review_count")
+  status         String   @default("active") @db.VarChar(20)
+  metadata       Json?
+  createdAt      DateTime @default(now()) @map("created_at")
+  updatedAt      DateTime @updatedAt @map("updated_at")
+
+  reviews AnchorReview[]
+
+  @@index([homeDomain])
+  @@index([status])
+  @@map("anchors_registry")
+}
+
+model AnchorReview {
+  id        String   @id @default(uuid()) @db.Uuid
+  anchorId  String   @map("anchor_id") @db.Uuid
+  reviewer  String   @db.VarChar(56)
+  rating    Decimal  @db.Decimal(3, 2)
+  comment   String?
+  createdAt DateTime @default(now()) @map("created_at")
+
+  anchor AnchorsRegistry @relation(fields: [anchorId], references: [id], onDelete: Cascade)
+
+  @@index([anchorId])
+  @@map("anchor_reviews")
+}
+
+model BridgedAsset {
+  id                   String   @id @default(uuid()) @db.Uuid
+  classicAssetCode     String   @map("classic_asset_code") @db.VarChar(12)
+  classicAssetIssuer   String   @map("classic_asset_issuer") @db.VarChar(56)
+  sorobanContract      String   @unique @map("soroban_contract") @db.VarChar(56)
+  bridgeProtocol       String   @map("bridge_protocol") @db.VarChar(50)
+  bridgeContract       String?  @map("bridge_contract") @db.VarChar(56)
+  totalSupplyClassic   Decimal? @map("total_supply_classic") @db.Decimal(30, 7)
+  totalSupplySoroban   Decimal? @map("total_supply_soroban") @db.Decimal(30, 7)
+  circulationClassic   Decimal? @map("circulation_classic") @db.Decimal(30, 7)
+  circulationSoroban   Decimal? @map("circulation_soroban") @db.Decimal(30, 7)
+  lockedInBridge       Decimal? @map("locked_in_bridge") @db.Decimal(30, 7)
+  totalBridgedVolume   Decimal? @map("total_bridged_volume") @db.Decimal(30, 0)
+  bridgeFee            Decimal? @map("bridge_fee") @db.Decimal(5, 4)
+  status               String   @default("active") @db.VarChar(20)
+  createdAt            DateTime @default(now()) @map("created_at")
+  updatedAt            DateTime @updatedAt @map("updated_at")
+
+  @@map("bridged_assets")
+}
+
+model StellarNetworkHealth {
+  id                    BigInt   @id @default(autoincrement())
+  nodeCount             Int?     @map("node_count")
+  organizationCount     Int?     @map("organization_count")
+  countriesCount        Int?     @map("countries_count")
+  consensusRoundTimeMs  Int?     @map("consensus_round_time_ms")
+  ledgerCloseTimeMs     Int?     @map("ledger_close_time_ms")
+  latestLedgerSequence  BigInt?  @map("latest_ledger_sequence")
+  protocolVersion       Int?     @map("protocol_version")
+  scpMessagesPerSecond  Decimal? @map("scp_messages_per_second") @db.Decimal(10, 2)
+  networkQuorumSet      Json?    @map("network_quorum_set")
+  topOrganizations      Json?    @map("top_organizations")
+  collectedAt           DateTime @default(now()) @map("collected_at")
+
+  @@map("stellar_network_health")
+}
+
+// ─── MEV Classification Engine (Issue #331) ───────────────────────────────
+
+enum MevType {
+  sandwich
+  flash_loan_attack
+  backrunning
+  displacement
+  jit_liquidity
+  cex_dex_arbitrage
+  cross_dex_arbitrage
+  liquidation
+  nft_mev
+}
+
+enum MevAlertType {
+  sandwich_in_progress
+  sandwich_detected
+  mev_spike
+  protocol_targeted
+  user_victim
+}
+
+enum MevSeverity {
+  critical
+  high
+  medium
+  low
+}
+
+model MevEvent {
+  id              String    @id @default(cuid())
+  txHash          String    @unique
+  ledgerSeq       Int
+  timestamp       DateTime
+  mevType         MevType
+  victimAddress   String?
+  attackerAddress String?
+  protocolAddress String?
+  tokenIn         String?
+  tokenOut        String?
+  amountIn        String?
+  amountOut       String?
+  profitAmount    String?
+  profitUsd       Float?
+  lossAmount      String?
+  lossUsd         Float?
+  txOrder         Json?
+  confidence      Float
+  details         Json?
+  createdAt       DateTime  @default(now())
+
+  victim   MevVictim?   @relation(fields: [victimAddress], references: [address])
+  attacker MevAttacker? @relation(fields: [attackerAddress], references: [address])
+
+  @@index([mevType])
+  @@index([ledgerSeq])
+  @@index([victimAddress])
+  @@index([attackerAddress])
+  @@index([protocolAddress])
+  @@index([createdAt])
+}
+
+model MevVictim {
+  id              String    @id @default(cuid())
+  address         String    @unique
+  totalLossUsd    Float     @default(0)
+  incidentCount   Int       @default(0)
+  lastIncidentAt  DateTime?
+  firstIncidentAt DateTime?
+  protectionScore Float?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  events MevEvent[]
+
+  @@index([address])
+}
+
+model MevAttacker {
+  id             String    @id @default(cuid())
+  address        String    @unique
+  totalProfitUsd Float     @default(0)
+  attackCount    Int       @default(0)
+  favoriteType   MevType?
+  lastAttackAt   DateTime?
+  firstSeen      DateTime?
+  isContract     Boolean   @default(false)
+  tags           Json?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  events MevEvent[]
+
+  @@index([address])
+  @@index([totalProfitUsd])
+}
+
+model ProtocolMevResistance {
+  id              String    @id @default(cuid())
+  contractAddress String    @unique
+  contractName    String?
+  score           Float     @default(50)
+  commitReveal    Boolean   @default(false)
+  batchAuctions   Boolean   @default(false)
+  slippageDefault Float?
+  privateMempool  Boolean   @default(false)
+  encryptedTxs    Boolean   @default(false)
+  mevExtractedUsd Float     @default(0)
+  totalIncidents  Int       @default(0)
+  lastIncidentAt  DateTime?
+  scoreHistory    Json?
+  recommendations Json?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  @@index([contractAddress])
+  @@index([score])
+}
+
+model MevAlert {
+  id                String        @id @default(cuid())
+  alertType         MevAlertType
+  severity          MevSeverity
+  txHash            String?
+  victimAddress     String?
+  protocolAddress   String?
+  title             String
+  description       String
+  estimatedLoss     Float?
+  recommendedAction String?
+  acknowledged      Boolean       @default(false)
+  createdAt         DateTime      @default(now())
+  resolvedAt        DateTime?
+
+  @@index([alertType])
+  @@index([severity])
+  @@index([victimAddress])
+  @@index([acknowledged])
+  @@index([createdAt])
+}

@@ -23,6 +23,7 @@ function extractWriteKeys(rawXdr: string, contractAddress: string | null): strin
     // A full XDR decode would require @stellar/stellar-sdk xdr parsing;
     // we use a heuristic: hash the XDR segments that contain the contract address
     // to produce stable per-key identifiers.
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
     const { xdr } = require('@stellar/stellar-sdk');
     const envelope = xdr.TransactionEnvelope.fromXDR(rawXdr, 'base64');
     const ops = envelope.v1?.tx?.operations() ?? envelope.v0?.tx?.operations() ?? [];

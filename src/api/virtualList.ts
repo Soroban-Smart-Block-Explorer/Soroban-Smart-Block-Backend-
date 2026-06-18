@@ -17,8 +17,19 @@ interface VirtualListItem {
   status: string;
   ledger: number;
   timestamp: number;
-  rowHeight: number;
+  rowHeight: number; // exact calculated row height in pixels
   decoded?: string;
+  displayDims?: {
+    height: number; // pixel height the UI should reserve for this row
+    components: {
+      avatarSize: number;
+      titleHeight: number;
+      bodyHeight: number;
+      metaHeight: number;
+      padding: number;
+    };
+    contentWidth?: number; // optional available content width in pixels
+  };
 }
 
 interface VirtualListPayload {
@@ -28,7 +39,16 @@ interface VirtualListPayload {
   estimatedRowHeight: number;
 }
 
-const ESTIMATED_ROW_HEIGHT = 64; // pixels
+const ESTIMATED_ROW_HEIGHT = 64; // fallback pixels
+
+// Layout tuning constants (tuned to the default UI design)
+const AVATAR_SIZE = 40; // px
+const H_PADDING = 16; // horizontal padding
+const V_PADDING = 12; // vertical padding
+const TITLE_LINE_HEIGHT = 20; // px
+const BODY_LINE_HEIGHT = 18; // px
+const META_LINE_HEIGHT = 16; // px
+const CHARS_PER_LINE = 80; // approximate chars per line at default content width
 
 /**
  * @swagger
@@ -105,7 +125,7 @@ virtualListRouter.get('/transactions', async (req: Request, res: Response) => {
         status: true,
         ledgerSequence: true,
         ledgerCloseTime: true,
-        decodedDescription: true,
+        humanReadable: true,
       },
       orderBy: { ledgerCloseTime: 'desc' },
       skip: offset,
@@ -121,8 +141,44 @@ virtualListRouter.get('/transactions', async (req: Request, res: Response) => {
     status: tx.status,
     ledger: tx.ledgerSequence,
     timestamp: tx.ledgerCloseTime.getTime(),
-    rowHeight: ESTIMATED_ROW_HEIGHT,
-    decoded: tx.decodedDescription || undefined,
+    decoded: tx.humanReadable || undefined,
+    // compute an exact row height based on content size heuristics so the frontend
+    // can reserve the correct space and avoid layout shifts when rendering.
+    rowHeight: (() => {
+      const titleLen = (tx.hash || '').length;
+      const bodyLen = (tx.humanReadable || '').length;
+      const titleLines = Math.max(1, Math.ceil(titleLen / CHARS_PER_LINE));
+      const bodyLines = Math.max(0, Math.ceil(bodyLen / CHARS_PER_LINE));
+      const titleHeight = titleLines * TITLE_LINE_HEIGHT;
+      const bodyHeight = bodyLines * BODY_LINE_HEIGHT;
+      const metaHeight = META_LINE_HEIGHT; // single meta line
+      const contentHeight = titleHeight + bodyHeight + metaHeight;
+      const minContentHeight = Math.max(AVATAR_SIZE, contentHeight);
+      const total = minContentHeight + V_PADDING * 2;
+      return Math.max(ESTIMATED_ROW_HEIGHT, Math.ceil(total));
+    })(),
+    displayDims: (() => {
+      const titleLen = (tx.hash || '').length;
+      const bodyLen = (tx.humanReadable || '').length;
+      const titleLines = Math.max(1, Math.ceil(titleLen / CHARS_PER_LINE));
+      const bodyLines = Math.max(0, Math.ceil(bodyLen / CHARS_PER_LINE));
+      const titleHeight = titleLines * TITLE_LINE_HEIGHT;
+      const bodyHeight = bodyLines * BODY_LINE_HEIGHT;
+      const metaHeight = META_LINE_HEIGHT;
+      const components = {
+        avatarSize: AVATAR_SIZE,
+        titleHeight,
+        bodyHeight,
+        metaHeight,
+        padding: V_PADDING,
+      };
+      const height = Math.max(AVATAR_SIZE, titleHeight + bodyHeight + metaHeight) + V_PADDING * 2;
+      return {
+        height: Math.max(ESTIMATED_ROW_HEIGHT, Math.ceil(height)),
+        components,
+        contentWidth: undefined,
+      };
+    })(),
   }));
 
   const payload: VirtualListPayload = {
@@ -199,8 +255,42 @@ virtualListRouter.get('/events', async (req: Request, res: Response) => {
     status: event.eventType,
     ledger: event.ledgerSequence,
     timestamp: event.ledgerCloseTime.getTime(),
-    rowHeight: ESTIMATED_ROW_HEIGHT,
     decoded: JSON.stringify(event.decoded),
+    rowHeight: (() => {
+      const titleLen = (event.eventType || '').length;
+      const bodyLen = JSON.stringify(event.decoded || '').length;
+      const titleLines = Math.max(1, Math.ceil(titleLen / CHARS_PER_LINE));
+      const bodyLines = Math.max(0, Math.ceil(bodyLen / CHARS_PER_LINE));
+      const titleHeight = titleLines * TITLE_LINE_HEIGHT;
+      const bodyHeight = bodyLines * BODY_LINE_HEIGHT;
+      const metaHeight = META_LINE_HEIGHT;
+      const contentHeight = titleHeight + bodyHeight + metaHeight;
+      const minContentHeight = Math.max(AVATAR_SIZE, contentHeight);
+      const total = minContentHeight + V_PADDING * 2;
+      return Math.max(ESTIMATED_ROW_HEIGHT, Math.ceil(total));
+    })(),
+    displayDims: (() => {
+      const titleLen = (event.eventType || '').length;
+      const bodyLen = JSON.stringify(event.decoded || '').length;
+      const titleLines = Math.max(1, Math.ceil(titleLen / CHARS_PER_LINE));
+      const bodyLines = Math.max(0, Math.ceil(bodyLen / CHARS_PER_LINE));
+      const titleHeight = titleLines * TITLE_LINE_HEIGHT;
+      const bodyHeight = bodyLines * BODY_LINE_HEIGHT;
+      const metaHeight = META_LINE_HEIGHT;
+      const components = {
+        avatarSize: AVATAR_SIZE,
+        titleHeight,
+        bodyHeight,
+        metaHeight,
+        padding: V_PADDING,
+      };
+      const height = Math.max(AVATAR_SIZE, titleHeight + bodyHeight + metaHeight) + V_PADDING * 2;
+      return {
+        height: Math.max(ESTIMATED_ROW_HEIGHT, Math.ceil(height)),
+        components,
+        contentWidth: undefined,
+      };
+    })(),
   }));
 
   const payload: VirtualListPayload = {

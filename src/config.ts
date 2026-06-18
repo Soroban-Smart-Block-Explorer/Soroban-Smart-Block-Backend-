@@ -1,4 +1,4 @@
-import dotenv from 'dotenv';
+import * as dotenv from 'dotenv';
 import { getProfile, type NetworkProfile } from './profiles';
 
 // Load the profile-specific env file first, then fall back to .env
@@ -32,6 +32,10 @@ export const config = {
   indexerPollIntervalMs: parseInt(process.env.INDEXER_POLL_INTERVAL_MS ?? '5000'),
   indexerBatchSize:      parseInt(process.env.INDEXER_BATCH_SIZE       ?? '100'),
   indexerCatchupWorkers: Math.max(1, parseInt(process.env.INDEXER_CATCHUP_WORKERS ?? '4')),
+
+  // ── Micro-block sync (2.5 s block close times) ────────────────────────────
+  microBlockSyncEnabled:    (process.env.MICRO_BLOCK_SYNC_ENABLED ?? 'true') !== 'false',
+  microBlockPollIntervalMs: parseInt(process.env.MICRO_BLOCK_POLL_INTERVAL_MS ?? '2500'),
 
   // ── Rate limiting ─────────────────────────────────────────────────────────
   rateLimitWindowMs: parseInt(process.env.RATE_LIMIT_WINDOW_MS ?? '60000'),

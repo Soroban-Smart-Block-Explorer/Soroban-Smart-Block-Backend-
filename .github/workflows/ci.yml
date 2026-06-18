@@ -26,11 +26,14 @@ jobs:
           --health-retries 5
 
     env:
-      DATABASE_URL: postgresql://postgres:password@localhost:5432/soroban_explorer_test
       STELLAR_NETWORK: testnet
-      STELLAR_RPC_URL: https://soroban-testnet.stellar.org
-      HORIZON_URL: https://horizon-testnet.stellar.org
-      NETWORK_PASSPHRASE: "Test SDF Network ; September 2015"
+      DATABASE_URL: postgresql://postgres:password@localhost:5432/soroban_explorer_test
+      TESTNET_DATABASE_URL: postgresql://postgres:password@localhost:5432/soroban_explorer_test
+      TESTNET_READ_REPLICA_URL: postgresql://postgres:password@localhost:5432/soroban_explorer_test
+      TESTNET_RPC_URL: https://soroban-testnet.stellar.org
+      TESTNET_RPC_WS_URL: wss://soroban-testnet.stellar.org
+      TESTNET_HORIZON_URL: https://horizon-testnet.stellar.org
+      TESTNET_PASSPHRASE: "Test SDF Network ; September 2015"
 
     steps:
       - uses: actions/checkout@v4
@@ -44,7 +47,11 @@ jobs:
 
       - run: npx prisma generate
 
-      - run: npx prisma db push
+      - run: npx prisma db push --accept-data-loss
+
+      - run: npx prisma validate
+
+      - run: npm run lint
 
       - run: npm test
 

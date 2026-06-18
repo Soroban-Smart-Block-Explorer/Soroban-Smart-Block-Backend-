@@ -313,6 +313,12 @@ export function parseSep41Event(
     }
   }
 
+  // Backward compatibility: some mint events only emit a single recipient topic.
+  if (symbol === 'mint' && !fields.to && fields.admin) {
+    fields.to = fields.admin;
+    delete fields.admin;
+  }
+
   // Decode data field
   try {
     const dataVal = xdr.ScVal.fromXDR(data, 'base64');

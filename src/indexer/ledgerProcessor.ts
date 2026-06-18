@@ -6,6 +6,15 @@ import { enqueueFailure } from './errorQueue';
 import { extractSorobanResources } from './resource-tracker';
 import { parseFailureReason, parseFailureReasonFromString } from './failure-parser';
 import { safeXdrParse } from './protocol-guard';
+import { barrierUpsertContract, barrierUpsertLedger } from './writeBarrier';
+import { inspectSignature } from './signatureInspector';
+import { inspectCustomAccount } from './customAccountInspector';
+import { detectContention } from './contention';
+import { analyseCallTrace, storeReentrancyAlert } from './reentrancy-detector';
+import { parseCallTrace } from './call-trace';
+import { scanForFrozenKeys, recordFreezeViolation } from './freeze-scanner';
+import { trackBn254GasExemption } from './bn254-tracker';
+import { xdr } from '@stellar/stellar-sdk';
 
 /**
  * Fetch, decode, and persist all transactions and events for [start, end].
@@ -83,7 +92,63 @@ export async function processLedgerRange(start: number, end: number): Promise<vo
       // Inspect for secp256r1 / passkey signatures (non-blocking)
       if (rawXdr) {
         inspectSignature(event.transactionHash, event.ledgerSequence, rawXdr).catch(() => {});
+        // Inspect for Soroban Custom Account "__check_auth" invocations (non-blocking)
+        inspectCustomAccount(event.transactionHash, event.ledgerSequence, rawXdr).catch(() => {});
       }
+
+      // CAP-0077: Consensus Asset-Freeze — scan footprint for frozen ledger keys (non-blocking)
+      if (rawXdr) {
+        scanForFrozenKeys(rawXdr).then(({ frozen, matchedKeys }) => {
+          if (frozen) {
+            console.warn(
+              `[freeze-scanner] Transaction ${event.transactionHash} touches ${matchedKeys.length} frozen key(s)`,
+            );
+            return recordFreezeViolation(
+              event.transactionHash,
+              decoded.contractAddress ?? null,
+              event.ledgerSequence,
+              event.ledgerCloseTime,
+              matchedKeys,
+            );
+          }
+        }).catch((err) =>
+          console.warn(`[freeze-scanner] scan failed for ${event.transactionHash}:`, err),
+        );
+      }
+
+      // Re-entrancy / drain attack detection (non-blocking)
+      const diagnosticEvents: xdr.DiagnosticEvent[] = (txResult as any)?.diagnosticEventsXdr ?? [];
+      if (diagnosticEvents.length > 0 && decoded.contractAddress) {
+        try {
+          const trace = parseCallTrace(diagnosticEvents);
+          const signal = analyseCallTrace(
+            event.transactionHash,
+            decoded.contractAddress,
+            event.ledgerSequence,
+            trace,
+          );
+          if (signal) {
+            storeReentrancyAlert(signal).catch((err) =>
+              console.warn(`[reentrancy] store failed for ${event.transactionHash}:`, err),
+            );
+          }
+        } catch {
+          // non-critical — never block indexing
+        }
+      }
+
+      // CAP-0080: BN254 ZK host function gas exemption tracking (non-blocking)
+      trackBn254GasExemption(
+        event.transactionHash,
+        decoded.contractAddress,
+        decoded.functionName,
+        String((txResult as any)?.feeCharged ?? ''),
+        sorobanResources as Record<string, unknown> | null,
+        event.ledgerSequence,
+        event.ledgerCloseTime,
+      ).catch((err: unknown) =>
+        console.warn(`[bn254] tracking failed for ${event.transactionHash}:`, err),
+      );
     }
   }
 

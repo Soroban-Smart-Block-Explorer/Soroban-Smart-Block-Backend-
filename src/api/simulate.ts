@@ -14,6 +14,17 @@ import { prismaRead as prisma } from '../db';
 
 export const simulateRouter = Router();
 
+const SIMULATION_TIMEOUT_MS = 10_000;
+
+function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
+  return Promise.race([
+    promise,
+    new Promise<never>((_, reject) =>
+      setTimeout(() => reject(new Error(`Simulation timed out after ${ms}ms`)), ms),
+    ),
+  ]);
+}
+
 // ── Param diagnostics ─────────────────────────────────────────────────────────
 
 interface ParamDiagnostic {
@@ -105,9 +116,13 @@ simulateRouter.post('/', async (req: Request, res: Response) => {
 
   let rpcResult: SorobanRpc.Api.SimulateTransactionResponse;
   try {
-    rpcResult = await rpc.simulateTransaction(txObj);
+    rpcResult = await withTimeout(rpc.simulateTransaction(txObj), SIMULATION_TIMEOUT_MS);
   } catch (err) {
-    return res.status(502).json({ error: 'RPC request failed', detail: String(err) });
+    const isTimeout = String(err).includes('timed out');
+    return res.status(isTimeout ? 504 : 502).json({
+      error: isTimeout ? 'Simulation timed out' : 'RPC request failed',
+      detail: String(err),
+    });
   }
 
   // ── Success ───────────────────────────────────────────────────────────────
@@ -188,5 +203,170 @@ simulateRouter.post('/', async (req: Request, res: Response) => {
       paramIssues,
       humanSummary,
     },
+  });
+});
+
+import { buildTrace, extractDiagnosticEvents, TraceLevel } from '../indexer/trace-engine';
+import { analyzeRevert, analyzeSimulationFailure } from '../indexer/revert-analyzer';
+import { getTransaction } from '../indexer/rpc';
+
+// ── POST /simulate/trace ──────────────────────────────────────────────────────
+
+simulateRouter.post('/trace', async (req: Request, res: Response) => {
+  const { txEnvelope, traceLevel = 'full' } = req.body as {
+    txEnvelope?: string;
+    traceLevel?: TraceLevel;
+  };
+  if (!txEnvelope || typeof txEnvelope !== 'string')
+    return res.status(400).json({ error: 'Body must include a base64 XDR "txEnvelope" field.' });
+  if (!['full', 'calls_only', 'state_changes_only'].includes(traceLevel))
+    return res.status(400).json({ error: 'traceLevel must be "full", "calls_only", or "state_changes_only".' });
+
+  let txObj: Transaction | FeeBumpTransaction;
+  try {
+    try { txObj = new Transaction(txEnvelope, config.networkPassphrase); }
+    catch { txObj = new FeeBumpTransaction(txEnvelope, config.networkPassphrase); }
+  } catch (err) {
+    return res.status(400).json({ error: 'Invalid transaction XDR', detail: String(err) });
+  }
+
+  let rpcResult: SorobanRpc.Api.SimulateTransactionResponse;
+  try {
+    rpcResult = await withTimeout(rpc.simulateTransaction(txObj), SIMULATION_TIMEOUT_MS);
+  } catch (err) {
+    const isTimeout = String(err).includes('timed out');
+    return res.status(isTimeout ? 504 : 502).json({
+      error: isTimeout ? 'Simulation timed out' : 'RPC request failed',
+      detail: String(err),
+    });
+  }
+
+  const diagnosticEvents = extractDiagnosticEvents(rpcResult);
+  const isSuccess = SorobanRpc.Api.isSimulationSuccess(rpcResult) || SorobanRpc.Api.isSimulationRestore(rpcResult);
+  const cost = isSuccess ? (rpcResult as SorobanRpc.Api.SimulateTransactionSuccessResponse).cost : undefined;
+  const simEvents = isSuccess ? (rpcResult as SorobanRpc.Api.SimulateTransactionSuccessResponse).events : undefined;
+  const errorMsg = isSuccess ? undefined : (rpcResult as SorobanRpc.Api.SimulateTransactionErrorResponse).error;
+
+  const trace = buildTrace(diagnosticEvents, cost, simEvents, traceLevel, isSuccess, errorMsg);
+
+  if (!isSuccess) {
+    const revertAnalysis = analyzeSimulationFailure(
+      rpcResult as SorobanRpc.Api.SimulateTransactionErrorResponse,
+      diagnosticEvents,
+    );
+    return res.status(422).json({ status: 'failed', trace, revertAnalysis });
+  }
+
+  return res.json({ status: 'success', trace });
+});
+
+// ── POST /simulate/compare ────────────────────────────────────────────────────
+
+interface SimulateVariant { name: string; txEnvelope: string }
+
+simulateRouter.post('/compare', async (req: Request, res: Response) => {
+  const { base, variants } = req.body as {
+    base?: { txEnvelope: string };
+    variants?: SimulateVariant[];
+  };
+  if (!base?.txEnvelope) return res.status(400).json({ error: 'base.txEnvelope is required.' });
+  if (!Array.isArray(variants) || variants.length === 0)
+    return res.status(400).json({ error: 'variants array is required and must not be empty.' });
+
+  async function runSim(envelope: string, name: string) {
+    let txObj: Transaction | FeeBumpTransaction;
+    try {
+      try { txObj = new Transaction(envelope, config.networkPassphrase); }
+      catch { txObj = new FeeBumpTransaction(envelope, config.networkPassphrase); }
+    } catch (err) {
+      return { name, error: `Invalid XDR: ${String(err)}` };
+    }
+    try {
+      const result = await withTimeout(rpc.simulateTransaction(txObj), SIMULATION_TIMEOUT_MS);
+      const isSuccess = SorobanRpc.Api.isSimulationSuccess(result) || SorobanRpc.Api.isSimulationRestore(result);
+      const cost = isSuccess ? (result as SorobanRpc.Api.SimulateTransactionSuccessResponse).cost : undefined;
+      const diagnosticEvents = extractDiagnosticEvents(result);
+      const simEvents = isSuccess ? (result as SorobanRpc.Api.SimulateTransactionSuccessResponse).events : undefined;
+      const errorMsg = isSuccess ? undefined : (result as SorobanRpc.Api.SimulateTransactionErrorResponse).error;
+      const trace = buildTrace(diagnosticEvents, cost, simEvents, 'full', isSuccess, errorMsg);
+      const revertAnalysis = isSuccess
+        ? null
+        : analyzeSimulationFailure(result as SorobanRpc.Api.SimulateTransactionErrorResponse, diagnosticEvents);
+      return { name, status: isSuccess ? 'success' : 'failed', trace, revertAnalysis };
+    } catch (err) {
+      return { name, error: String(err) };
+    }
+  }
+
+  const [baseResult, ...variantResults] = await Promise.all([
+    runSim(base.txEnvelope, 'base'),
+    ...variants.map((v) => runSim(v.txEnvelope, v.name)),
+  ]);
+
+  return res.json({ base: baseResult, variants: variantResults });
+});
+
+// ── POST /simulate/replay/:txHash ─────────────────────────────────────────────
+
+simulateRouter.post('/replay/:txHash', async (req: Request, res: Response) => {
+  const { txHash } = req.params;
+  if (!/^[0-9a-fA-F]{64}$/.test(txHash))
+    return res.status(400).json({ error: 'txHash must be a 64-character hex string.' });
+
+  // Fetch historical transaction
+  let txRecord: Awaited<ReturnType<typeof getTransaction>>;
+  try {
+    txRecord = await withTimeout(getTransaction(txHash), SIMULATION_TIMEOUT_MS);
+  } catch (err) {
+    return res.status(502).json({ error: 'Failed to fetch transaction from RPC', detail: String(err) });
+  }
+
+  if ((txRecord as any).status === 'NOT_FOUND')
+    return res.status(404).json({ error: 'Transaction not found' });
+
+  // Extract envelope XDR
+  let envelopeXdr: string;
+  try {
+    envelopeXdr = (txRecord as any).envelopeXdr?.toXDR?.('base64')
+      ?? (txRecord as any).envelopeXdr;
+    if (!envelopeXdr) throw new Error('No envelope XDR in transaction record');
+  } catch (err) {
+    return res.status(422).json({ error: 'Could not extract envelope XDR', detail: String(err) });
+  }
+
+  // Replay: re-simulate using the original envelope
+  let txObj: Transaction | FeeBumpTransaction;
+  try {
+    try { txObj = new Transaction(envelopeXdr, config.networkPassphrase); }
+    catch { txObj = new FeeBumpTransaction(envelopeXdr, config.networkPassphrase); }
+  } catch (err) {
+    return res.status(422).json({ error: 'Could not parse envelope XDR', detail: String(err) });
+  }
+
+  let rpcResult: SorobanRpc.Api.SimulateTransactionResponse;
+  try {
+    rpcResult = await withTimeout(rpc.simulateTransaction(txObj), SIMULATION_TIMEOUT_MS);
+  } catch (err) {
+    return res.status(502).json({ error: 'RPC simulation failed', detail: String(err) });
+  }
+
+  const diagnosticEvents = extractDiagnosticEvents(rpcResult);
+  const isSuccess = SorobanRpc.Api.isSimulationSuccess(rpcResult) || SorobanRpc.Api.isSimulationRestore(rpcResult);
+  const cost = isSuccess ? (rpcResult as SorobanRpc.Api.SimulateTransactionSuccessResponse).cost : undefined;
+  const simEvents = isSuccess ? (rpcResult as SorobanRpc.Api.SimulateTransactionSuccessResponse).events : undefined;
+  const errorMsg = isSuccess ? undefined : (rpcResult as SorobanRpc.Api.SimulateTransactionErrorResponse).error;
+
+  const trace = buildTrace(diagnosticEvents, cost, simEvents, 'full', isSuccess, errorMsg);
+  const revertAnalysis = isSuccess
+    ? null
+    : analyzeSimulationFailure(rpcResult as SorobanRpc.Api.SimulateTransactionErrorResponse, diagnosticEvents);
+
+  return res.json({
+    txHash,
+    originalStatus: (txRecord as any).status,
+    replayStatus: isSuccess ? 'success' : 'failed',
+    trace,
+    revertAnalysis,
+    envelopeXdr,
   });
 });

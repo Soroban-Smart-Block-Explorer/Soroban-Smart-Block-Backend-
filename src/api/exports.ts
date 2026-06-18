@@ -17,7 +17,7 @@ export const exportsRouter = Router();
 const EXPORT_DIR = process.env.EXPORT_DIR ?? '/tmp/soroban-exports';
 
 const createSchema = z.object({
-  exportType: z.enum(['transactions', 'events']),
+  exportType: z.enum(['transactions', 'events', 'wallet_history']),
   filters: z.record(z.unknown()).optional().default({}),
 });
 

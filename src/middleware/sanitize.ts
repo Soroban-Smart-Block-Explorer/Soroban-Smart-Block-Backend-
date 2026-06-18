@@ -1,17 +1,25 @@
 import { Request, Response, NextFunction } from 'express';
 import { StrKey } from '@stellar/stellar-sdk';
+import { translateAddress, isValidAnyAddress } from '../indexer/strkey-translator';
 
 // ── Stellar address validation ───────────────────────────────────────────────
 
-/** Returns true if the string is a valid Stellar account (G...) or contract (C...) address. */
+/** Returns true if the string is a valid Stellar account (G...), muxed (M...), or contract (C...) address. */
 export function isValidStellarAddress(addr: string): boolean {
-  try {
-    if (addr.startsWith('G')) return StrKey.isValidEd25519PublicKey(addr);
-    if (addr.startsWith('C')) return StrKey.isValidContract(addr);
-    return false;
-  } catch {
-    return false;
+  return isValidAnyAddress(addr);
+}
+
+/**
+ * Resolve an address to its canonical routing identity.
+ * M-addresses are unwrapped to their underlying G-address.
+ * G and C addresses are returned unchanged.
+ */
+export function resolveAddress(addr: string): string {
+  const translated = translateAddress(addr);
+  if (translated.kind === 'muxed' && translated.masterKey) {
+    return translated.masterKey;
   }
+  return addr;
 }
 
 /** Throws a 400-compatible error if the address is invalid. */

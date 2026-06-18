@@ -186,11 +186,16 @@ export async function markStorageTrapAlert(
     select: { abi: true },
   });
 
+  const existingAbi =
+    typeof contract?.abi === 'object' && contract?.abi !== null
+      ? contract.abi
+      : {};
+
   await prisma.contract.update({
     where: { address: contractAddress },
     data: {
       abi: {
-        ...(contract?.abi || {}),
+        ...existingAbi,
         _storageTrapAlert: alertBadge,
       },
     },

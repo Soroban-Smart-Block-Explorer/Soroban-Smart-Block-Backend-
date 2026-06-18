@@ -1,46 +1,45 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect } from 'vitest';
 import { decodeEvent } from '../src/indexer/decoder';
 import { renderHuman, SEP41_ABI } from '../src/indexer/registry';
-import { xdr, ScInt, Address, nativeToScVal } from '@stellar/stellar-sdk';
+import { xdr, Address, Keypair, nativeToScVal } from '@stellar/stellar-sdk';
 
-// Helper: encode a ScVal to base64
-function toBase64(val: xdr.ScVal): string {
-  return val.toXDR('base64');
-}
+function toBase64(val: xdr.ScVal): string { return val.toXDR('base64'); }
+function addrXdr(addr: string): string { return new Address(addr).toScVal().toXDR('base64'); }
+
+const ADDR_A = Keypair.random().publicKey();
+const ADDR_B = Keypair.random().publicKey();
+const ADDR_C = Keypair.random().publicKey();
 
 describe('decodeEvent', () => {
   it('decodes a SEP-41 transfer event', () => {
-    const from = 'GABC1234567890ABCDEFGHIJKLMNOPQRSTUVWXYZ1234567890ABCDE';
-    const to   = 'GXYZ1234567890ABCDEFGHIJKLMNOPQRSTUVWXYZ1234567890ABCDE';
-
     const topics = [
       toBase64(nativeToScVal('transfer', { type: 'symbol' })),
-      toBase64(nativeToScVal(from, { type: 'string' })),
-      toBase64(nativeToScVal(to,   { type: 'string' })),
+      addrXdr(ADDR_A),
+      addrXdr(ADDR_B),
     ];
     const data = toBase64(nativeToScVal(1000n, { type: 'i128' }));
 
     const result = decodeEvent(topics, data);
 
     expect(result.eventType).toBe('transfer');
-    expect(result.decoded.from).toBe(from);
-    expect(result.decoded.to).toBe(to);
-    expect(result.decoded.amount).toBe('1000');
+    expect(result.decoded.from).toBe(ADDR_A);
+    expect(result.decoded.to).toBe(ADDR_B);
+    expect(result.decoded.amount).toBe('0.0001000');
   });
 
   it('decodes a SEP-41 mint event', () => {
-    const to = 'GABC1234567890ABCDEFGHIJKLMNOPQRSTUVWXYZ1234567890ABCDE';
     const topics = [
       toBase64(nativeToScVal('mint', { type: 'symbol' })),
-      toBase64(nativeToScVal(to, { type: 'string' })),
+      addrXdr(ADDR_C),  // admin
+      addrXdr(ADDR_A),  // to
     ];
     const data = toBase64(nativeToScVal(500n, { type: 'i128' }));
 
     const result = decodeEvent(topics, data);
 
     expect(result.eventType).toBe('mint');
-    expect(result.decoded.to).toBe(to);
-    expect(result.decoded.amount).toBe('500');
+    expect(result.decoded.to).toBe(ADDR_A);
+    expect(result.decoded.amount).toBe('0.0000500');
   });
 
   it('falls back gracefully on unknown event type', () => {

@@ -1,6 +1,7 @@
 import type { AxiosError } from 'axios';
 import { SorobanRpc } from '@stellar/stellar-sdk';
 import { config } from '../config';
+import { cacheGet, cacheSet } from '../cache';
 
 export const rpc = new SorobanRpc.Server(config.stellarRpcUrl, { allowHttp: true });
 
@@ -12,6 +13,8 @@ export interface LedgerEvent {
   topics: string[];
   data: string;
 }
+
+const LEDGER_CACHE_PREFIX = 'ledger:';
 
 const EVENT_PAGE_SIZE = 200;
 const MAX_RETRY_ATTEMPTS = 6;
@@ -28,6 +31,7 @@ function isRateLimitError(error: unknown): boolean {
 
 async function retry<T>(fn: () => Promise<T>): Promise<T> {
   let attempt = 0;
+  // eslint-disable-next-line no-constant-condition
   while (true) {
     try {
       return await fn();
@@ -63,6 +67,7 @@ export async function fetchEvents(startLedger: number, endLedger: number): Promi
   const events: LedgerEvent[] = [];
   let cursor: string | undefined;
 
+  // eslint-disable-next-line no-constant-condition
   while (true) {
     const response = await fetchEventsPage(startLedger, cursor);
     const page = (response.events ?? []) as any[];
@@ -106,10 +111,43 @@ export async function getLatestLedger(): Promise<number> {
 }
 
 /**
+ * Fetch a ledger from RPC and cache immutable historical snapshots.
+ * Ledger 0 is considered permanently immutable and is cached indefinitely.
+ */
+export async function getLedger(ledgerSequence: number): Promise<unknown> {
+  const cacheKey = `${LEDGER_CACHE_PREFIX}${ledgerSequence}`;
+  const cached = await cacheGet<unknown>(cacheKey);
+  if (cached !== null) return cached;
+
+  const rpcClient = rpc as any;
+  const ledger = await retry(() => rpcClient.getLedger(ledgerSequence));
+  const ttl = ledgerSequence === 0 ? null : 60 * 60 * 24;
+  await cacheSet(cacheKey, ledger, ttl);
+  return ledger;
+}
+
+/**
  * Fetch a transaction by hash.
  */
 export async function getTransaction(hash: string) {
   return retry(() => rpc.getTransaction(hash));
+}
+
+/**
+ * Fetch a transaction from Horizon REST API (fallback for RPC NOT_FOUND).
+ * Maps Horizon fields to the same shape used by the RPC result.
+ */
+export async function getTransactionFromHorizon(hash: string) {
+  const axios = (await import('axios')).default;
+  const { data } = await axios.get(`${config.horizonUrl}/transactions/${hash}`);
+  return {
+    status: data.successful ? 'SUCCESS' : 'FAILED',
+    sourceAccount: data.source_account as string,
+    feeCharged: String(data.fee_charged ?? ''),
+    envelopeXdr: {
+      toXDR: (enc: string) => enc === 'base64' ? data.envelope_xdr : data.envelope_xdr,
+    },
+  };
 }
 
 export function getRpcWebsocketUrl(): string {

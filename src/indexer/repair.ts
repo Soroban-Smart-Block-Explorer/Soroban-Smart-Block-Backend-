@@ -175,6 +175,7 @@ export async function startRepairLoop(): Promise<void> {
     `(interval=${SWEEP_INTERVAL_MS}ms, chunk=${REPAIR_CHUNK}, network=${config.stellarNetwork})`
   );
 
+  // eslint-disable-next-line no-constant-condition
   while (true) {
     try {
       await runRepairSweep();

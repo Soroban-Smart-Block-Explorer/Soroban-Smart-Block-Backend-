@@ -1,9 +1,9 @@
-import { PrismaClient } from '@prisma/client';
+import { PrismaClient, Prisma } from '@prisma/client';
 import { config } from './config';
 
-const logLevel = config.nodeEnv === 'development'
-  ? (['error', 'warn'] as const)
-  : (['error'] as const);
+const logLevel: Prisma.LogLevel[] = config.nodeEnv === 'development'
+  ? ['error', 'warn']
+  : ['error'];
 
 /** Primary write client — uses the active profile's database cluster. */
 export const prismaWrite = new PrismaClient({

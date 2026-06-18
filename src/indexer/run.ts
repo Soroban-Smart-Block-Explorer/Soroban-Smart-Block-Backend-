@@ -5,6 +5,8 @@ import { scheduleReconciliation } from './reconciliation';
 import { startProtocolMonitor } from './protocol-guard';
 import { schedulePruner } from './dataPruner';
 import { initWhaleWatcher } from './whaleWatcher';
+import { startMicroBlockPoller } from './microBlockPoller';
+import { scheduleSettlementCompactor } from './settlement-compactor';
 
 async function main() {
   await prisma.$connect();
@@ -20,6 +22,12 @@ async function main() {
 
   // #136: Initialize whale transaction watcher
   initWhaleWatcher();
+
+  // #192: Start micro-block polling for 2.5 s block close time notifications
+  startMicroBlockPoller();
+
+  // #220: Schedule batch-settlement event compactor
+  scheduleSettlementCompactor();
 
   await runIndexer();
 }

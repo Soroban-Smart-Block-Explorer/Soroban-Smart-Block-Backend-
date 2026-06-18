@@ -1,5 +1,6 @@
 import { prismaWrite as prisma } from '../db';
 import { config } from '../config';
+import { archiveRawXdr } from '../archival/archiver';
 
 const PRUNE_INTERVAL_MS = parseInt(process.env.PRUNE_INTERVAL_MS ?? '86400000'); // 24h default
 const FAILED_ITEM_RETENTION_DAYS = parseInt(process.env.FAILED_ITEM_RETENTION_DAYS ?? '7');
@@ -23,6 +24,11 @@ async function pruneExpiredData() {
   console.log('[Pruner] Starting data pruning cycle');
 
   try {
+    // Archive raw XDR to S3 before pruning (only when S3 bucket is configured)
+    if (process.env.ARCHIVE_S3_BUCKET) {
+      await archiveRawXdr();
+    }
+
     // Prune dead failed items older than retention period
     const failedItemCutoff = new Date(Date.now() - FAILED_ITEM_RETENTION_DAYS * 24 * 60 * 60 * 1000);
     const deletedFailedItems = await prisma.failedItem.deleteMany({

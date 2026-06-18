@@ -5,20 +5,36 @@
   "main": "dist/index.js",
   "scripts": {
     "dev": "ts-node-dev --respawn --transpile-only src/index.ts",
+    "dev:testnet": "STELLAR_NETWORK=testnet ts-node-dev --respawn --transpile-only src/index.ts",
+    "dev:mainnet": "STELLAR_NETWORK=mainnet ts-node-dev --respawn --transpile-only src/index.ts",
+    "dev:devnet": "STELLAR_NETWORK=devnet ts-node-dev --respawn --transpile-only src/index.ts",
     "build": "tsc",
     "start": "node dist/index.js",
+    "start:testnet": "STELLAR_NETWORK=testnet node dist/index.js",
+    "start:mainnet": "STELLAR_NETWORK=mainnet node dist/index.js",
+    "start:devnet": "STELLAR_NETWORK=devnet node dist/index.js",
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev",
     "prisma:push": "prisma db push",
     "index": "ts-node src/indexer/run.ts",
+    "index:testnet": "STELLAR_NETWORK=testnet ts-node src/indexer/run.ts",
+    "index:mainnet": "STELLAR_NETWORK=mainnet ts-node src/indexer/run.ts",
+    "index:devnet": "STELLAR_NETWORK=devnet ts-node src/indexer/run.ts",
     "repair": "ts-node src/indexer/repair-run.ts",
+    "archive": "ts-node src/archival/run.ts",
     "seed": "ts-node prisma/seed.ts",
-    "test": "vitest run"
+    "test": "vitest run",
+    "postinstall": "prisma generate",
+    "lint": "eslint 'src/**/*.ts' --max-warnings 200",
+    "lint:fix": "eslint 'src/**/*.ts' --fix",
+    "format": "prettier --check 'src/**/*.ts'",
+    "format:fix": "prettier --write 'src/**/*.ts'"
   },
   "prisma": {
     "seed": "ts-node prisma/seed.ts"
   },
   "dependencies": {
+    "@aws-sdk/client-s3": "3.600.0",
     "@prisma/client": "^5.10.0",
     "@stellar/stellar-sdk": "^12.0.0",
     "axios": "^1.6.7",
@@ -33,7 +49,11 @@
     "swagger-jsdoc": "^6.2.8",
     "swagger-ui-express": "^5.0.1",
     "ws": "^8.13.0",
+    "redis": "^6.0.0",
     "zod": "^3.22.4"
+  },
+  "optionalDependencies": {
+    "rate-limit-redis": "^4.2.0"
   },
   "devDependencies": {
     "@types/cors": "^2.8.17",
@@ -47,6 +67,10 @@
     "prisma": "^5.10.0",
     "ts-node-dev": "^2.0.0",
     "typescript": "^5.3.3",
-    "vitest": "^1.4.0"
+    "vitest": "^1.4.0",
+    "eslint": "^8.57.0",
+    "@typescript-eslint/parser": "^7.0.0",
+    "@typescript-eslint/eslint-plugin": "^7.0.0",
+    "prettier": "^3.2.5"
   }
 }

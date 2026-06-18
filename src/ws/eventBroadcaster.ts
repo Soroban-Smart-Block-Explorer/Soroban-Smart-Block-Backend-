@@ -44,3 +44,11 @@ export function broadcastEvent(event: {
     client.ws.send(payload);
   }
 }
+
+export function broadcastEmergencyEvent(payload: { event: string; data: Record<string, unknown> }) {
+  const msg = JSON.stringify({ type: 'emergency', ...payload });
+  for (const client of clients) {
+    if (client.ws.readyState !== WebSocket.OPEN) continue;
+    client.ws.send(msg);
+  }
+}

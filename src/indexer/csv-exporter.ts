@@ -10,6 +10,7 @@
 import fs from 'fs';
 import path from 'path';
 import { Writable } from 'stream';
+import { Prisma } from '@prisma/client';
 import { prismaRead, prismaWrite } from '../db';
 
 const EXPORT_DIR = process.env.EXPORT_DIR ?? '/tmp/soroban-exports';
@@ -57,6 +58,7 @@ async function streamTransactions(
   let cursor: string | undefined;
   let total = 0;
 
+  // eslint-disable-next-line no-constant-condition
   while (true) {
     const rows = await prismaRead.transaction.findMany({
       where,
@@ -90,6 +92,7 @@ async function streamEvents(
   let cursor: string | undefined;
   let total = 0;
 
+  // eslint-disable-next-line no-constant-condition
   while (true) {
     const rows = await prismaRead.event.findMany({
       where,
@@ -118,45 +121,109 @@ async function streamEvents(
 // ---------------------------------------------------------------------------
 
 function buildTxWhere(f: Record<string, unknown>) {
-  return {
-    ...(f.contract   && { contractAddress: f.contract }),
-    ...(f.account    && { sourceAccount: f.account }),
-    ...(f.status     && { status: f.status }),
-    ...((f.ledgerMin !== undefined || f.ledgerMax !== undefined) && {
-      ledgerSequence: {
-        ...(f.ledgerMin !== undefined && { gte: Number(f.ledgerMin) }),
-        ...(f.ledgerMax !== undefined && { lte: Number(f.ledgerMax) }),
-      },
-    }),
-  };
+  const where: Record<string, unknown> = {};
+  if (f.contract) where.contractAddress = String(f.contract);
+  if (f.account) where.sourceAccount = String(f.account);
+  if (f.status) where.status = String(f.status);
+  if (f.ledgerMin !== undefined || f.ledgerMax !== undefined) {
+    where.ledgerSequence = {
+      ...(f.ledgerMin !== undefined && { gte: Number(f.ledgerMin) }),
+      ...(f.ledgerMax !== undefined && { lte: Number(f.ledgerMax) }),
+    };
+  }
+  return where;
 }
 
 function buildEventWhere(f: Record<string, unknown>) {
-  return {
-    ...(f.contract   && { contractAddress: f.contract }),
-    ...(f.eventType  && { eventType: f.eventType }),
-    ...((f.ledgerMin !== undefined || f.ledgerMax !== undefined) && {
-      ledgerSequence: {
-        ...(f.ledgerMin !== undefined && { gte: Number(f.ledgerMin) }),
-        ...(f.ledgerMax !== undefined && { lte: Number(f.ledgerMax) }),
-      },
-    }),
-  };
+  const where: Record<string, unknown> = {};
+  if (f.contract) where.contractAddress = String(f.contract);
+  if (f.eventType) where.eventType = String(f.eventType);
+  if (f.ledgerMin !== undefined || f.ledgerMax !== undefined) {
+    where.ledgerSequence = {
+      ...(f.ledgerMin !== undefined && { gte: Number(f.ledgerMin) }),
+      ...(f.ledgerMax !== undefined && { lte: Number(f.ledgerMax) }),
+    };
+  }
+  return where;
 }
 
 // ---------------------------------------------------------------------------
 // Job runner
 // ---------------------------------------------------------------------------
 
+const WALLET_HISTORY_HEADERS = [
+  'type', 'hash', 'ledgerSequence', 'ledgerCloseTime',
+  'contractAddress', 'functionName', 'status', 'humanReadable',
+  'feeCharged', 'createdAt',
+];
+
+async function streamWalletHistory(
+  filters: Record<string, unknown>,
+  out: Writable,
+): Promise<number> {
+  const address = String(filters.account ?? '');
+  if (!address) throw new Error('account filter is required for wallet history export');
+
+  out.write(WALLET_HISTORY_HEADERS.join(',') + '\n');
+
+  const where = {
+    sourceAccount: address,
+    ...((filters.ledgerMin !== undefined || filters.ledgerMax !== undefined) && {
+      ledgerSequence: {
+        ...(filters.ledgerMin !== undefined && { gte: Number(filters.ledgerMin) }),
+        ...(filters.ledgerMax !== undefined && { lte: Number(filters.ledgerMax) }),
+      },
+    }),
+  };
+
+  let cursor: string | undefined;
+  let total = 0;
+
+  // eslint-disable-next-line no-constant-condition
+  while (true) {
+    const rows = await prismaRead.transaction.findMany({
+      where,
+      orderBy: [{ ledgerSequence: 'asc' }, { id: 'asc' }],
+      take: BATCH_SIZE,
+      select: {
+        id: true,
+        hash: true,
+        ledgerSequence: true,
+        ledgerCloseTime: true,
+        contractAddress: true,
+        functionName: true,
+        status: true,
+        humanReadable: true,
+        feeCharged: true,
+        createdAt: true,
+      },
+    });
+
+    if (rows.length === 0) break;
+
+    for (const row of rows) {
+      const record = { type: 'soroban', ...row };
+      out.write(rowToCsv(WALLET_HISTORY_HEADERS, record as any) + '\n');
+    }
+
+    total += rows.length;
+    cursor = rows[rows.length - 1].id;
+
+    if (rows.length < BATCH_SIZE) break;
+  }
+
+  return total;
+}
+
 /**
  * Enqueue a new export job and return its id.
  */
 export async function enqueueExport(
-  exportType: 'transactions' | 'events',
+  exportType: 'transactions' | 'events' | 'wallet_history',
   filters: Record<string, unknown> = {},
 ): Promise<string> {
   const job = await prismaWrite.exportJob.create({
-    data: { exportType, filters, status: 'pending' },
+    data: { exportType, filters: filters as Prisma.InputJsonValue, status: 'pending' },
   });
   // Fire-and-forget; caller can poll job status
   runExportJob(job.id).catch((err) =>
@@ -185,6 +252,8 @@ export async function runExportJob(jobId: string): Promise<void> {
 
     if (job.exportType === 'transactions') {
       rowCount = await streamTransactions(filters, fileStream);
+    } else if (job.exportType === 'wallet_history') {
+      rowCount = await streamWalletHistory(filters, fileStream);
     } else {
       rowCount = await streamEvents(filters, fileStream);
     }

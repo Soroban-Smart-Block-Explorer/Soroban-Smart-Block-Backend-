@@ -22,6 +22,7 @@ import {
   SEP41_FUNCTIONS,
   SEP41_EVENTS,
 } from '../src/indexer/sep41-parser';
+import { decodeEvent } from '../src/indexer/decoder';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -446,6 +447,41 @@ describe('getSep41Abi', () => {
       { name: 'to', type: 'address' },
       { name: 'amount', type: 'i128' },
     ]);
+  });
+});
+
+describe('SEP-41 event compatibility fallbacks', () => {
+  it('decodes transfer events from string-typed topics', () => {
+    const from = 'GABC1234567890ABCDEFGHIJKLMNOPQRSTUVWXYZ1234567890ABCDE';
+    const to = 'GXYZ1234567890ABCDEFGHIJKLMNOPQRSTUVWXYZ1234567890ABCDE';
+    const topics = [
+      xdr.ScVal.scvSymbol('transfer').toXDR('base64'),
+      nativeToScVal(from, { type: 'string' }).toXDR('base64'),
+      nativeToScVal(to, { type: 'string' }).toXDR('base64'),
+    ];
+    const data = nativeToScVal(1000n, { type: 'i128' }).toXDR('base64');
+
+    const result = decodeEvent(topics, data);
+
+    expect(result.eventType).toBe('transfer');
+    expect(result.decoded.from).toBe(from);
+    expect(result.decoded.to).toBe(to);
+    expect(result.decoded.amount).toBe('0.0001000');
+  });
+
+  it('decodes mint events with a single recipient topic', () => {
+    const to = 'GABC1234567890ABCDEFGHIJKLMNOPQRSTUVWXYZ1234567890ABCDE';
+    const topics = [
+      xdr.ScVal.scvSymbol('mint').toXDR('base64'),
+      nativeToScVal(to, { type: 'string' }).toXDR('base64'),
+    ];
+    const data = nativeToScVal(500n, { type: 'i128' }).toXDR('base64');
+
+    const result = decodeEvent(topics, data);
+
+    expect(result.eventType).toBe('mint');
+    expect(result.decoded.to).toBe(to);
+    expect(result.decoded.amount).toBe('0.0000500');
   });
 });
 

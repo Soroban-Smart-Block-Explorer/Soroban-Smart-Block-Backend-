@@ -215,11 +215,16 @@ export async function storeOracleMatrix(
   });
 
   if (contracts.length > 0) {
+    const existingAbi =
+      typeof contracts[0].abi === 'object' && contracts[0].abi !== null
+        ? contracts[0].abi
+        : {};
+
     await prisma.contract.update({
       where: { id: contracts[0].id },
       data: {
         abi: {
-          ...(contracts[0].abi || {}),
+          ...existingAbi,
           _oracleMatrix: {
             assetPair: matrix.assetPair,
             source: matrix.source,

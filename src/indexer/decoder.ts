@@ -2,7 +2,9 @@ import { xdr, scValToNative } from '@stellar/stellar-sdk';
 import { getContractAbi, decodeArgs, renderHuman } from './registry';
 import { parseInvokeHostFunction } from './xdr-parser';
 import { parseSep41Event, isSep41Event } from './sep41-parser';
+import { parseRwaEnforcementEvent, isRwaEnforcementEvent } from './rwa-enforcement-normalizer';
 import { prismaRead as prisma } from '../db';
+import { decodeMastercardFlags } from './identity-verifier';
 
 /**
  * Look up a custom EventDefinition for a given contract + topic symbol.
@@ -52,14 +54,40 @@ export interface DecodedTransaction {
 
 /**
  * Decode a raw transaction XDR into human-readable form.
+ *
+ * Handles envelopeTypeTx (v1), envelopeTypeTxV0 (v0), and
+ * envelopeTypeTxFeeBump by extracting the inner transaction and
+ * prefixing the human-readable output with "(fee-bump)".
  */
 export async function decodeTransaction(rawXdr: string): Promise<DecodedTransaction> {
+  // ── fee-bump fast path ────────────────────────────────────────────────────
+  try {
+    const envelope = xdr.TransactionEnvelope.fromXDR(rawXdr, 'base64');
+    if (envelope.switch().name === 'envelopeTypeTxFeeBump') {
+      // The inner transaction is itself a TransactionEnvelope (v1).
+      const innerEnvelope = envelope.feeBump().tx().innerTx();
+      const innerXdr = innerEnvelope.toXDR('base64');
+      const inner = await decodeTransaction(innerXdr);
+      return {
+        contractAddress: inner.contractAddress,
+        functionName: inner.functionName,
+        functionArgs: inner.functionArgs,
+        humanReadable: inner.humanReadable
+          ? `(fee-bump) ${inner.humanReadable}`
+          : '(fee-bump)',
+      };
+    }
+  } catch {
+    // Not a valid fee-bump envelope — fall through to standard decode
+  }
+
+  // ── standard v1 / v0 path ─────────────────────────────────────────────────
   const parsed = parseInvokeHostFunction(rawXdr);
   if (!parsed) {
     return { contractAddress: null, functionName: null, functionArgs: null, humanReadable: null };
   }
 
-  const { contractId: contractAddress, functionName } = parsed;
+  const { contractId: contractAddress, functionName, args } = parsed;
 
   // Re-parse raw args as xdr.ScVal[] for the existing registry helpers
   let rawArgs: xdr.ScVal[];
@@ -74,16 +102,25 @@ export async function decodeTransaction(rawXdr: string): Promise<DecodedTransact
     rawArgs = [];
   }
 
+  // Check for compliance flags if it's a mastercard contract
+  let complianceMessage = '';
+  if (contractAddress.includes('mastercard') || functionName.includes('mastercard')) {
+     const compliance = decodeMastercardFlags(args);
+     if (compliance) {
+         complianceMessage = ` | ${compliance.complianceMessage}`;
+     }
+  }
+
   const abi = await getContractAbi(contractAddress);
   if (!abi) {
-    return { contractAddress, functionName, functionArgs: null, humanReadable: `Called ${functionName} on ${contractAddress}` };
+    return { contractAddress, functionName, functionArgs: null, humanReadable: `Called ${functionName} on ${contractAddress}${complianceMessage}` };
   }
 
   const contract = await prisma.contract.findUnique({ where: { address: contractAddress } });
   const decoded = decodeArgs(functionName, rawArgs, abi, contract?.tokenDecimals ?? undefined);
   const human = decoded
-    ? renderHuman(functionName, decoded, abi, contract?.name, contract?.tokenDecimals ?? undefined)
-    : `Called ${functionName} on ${contract?.name ?? contractAddress}`;
+    ? renderHuman(functionName, decoded, abi, contract?.name, contract?.tokenDecimals ?? undefined) + complianceMessage
+    : `Called ${functionName} on ${contract?.name ?? contractAddress}` + complianceMessage;
 
   return { contractAddress, functionName, functionArgs: decoded, humanReadable: human };
 }
@@ -121,6 +158,25 @@ export function decodeEvent(
       }
     }
 
+    // ── RWA enforcement fast path ───────────────────────────────────────────
+    if (isRwaEnforcementEvent(rawSymbol)) {
+      const parsed = parseRwaEnforcementEvent(topics, data);
+      if (parsed) {
+        return {
+          eventType: rawSymbol,
+          topicSymbol: rawSymbol,
+          decoded: {
+            event: rawSymbol,
+            humanReadable: parsed.humanReadable,
+            issuer: parsed.issuer,
+            from: parsed.from,
+            ...(parsed.amount !== undefined && { amount: parsed.amount }),
+            ...(parsed.reason !== undefined && { reason: parsed.reason }),
+          },
+        };
+      }
+    }
+
     // ── Generic fallback ────────────────────────────────────────────────────
     const dataVal = xdr.ScVal.fromXDR(data, 'base64');
     const decoded: Record<string, unknown> = {
@@ -151,6 +207,9 @@ function normalizeEventType(raw: string): string {
     'hot_signer_authorized',
     'ephemeral_key_auth',
     'authorization_window',
+    'freeze',
+    'seize',
+    'regulatory_action',
   ];
   const normalized = raw.toLowerCase();
   return known.includes(normalized) ? normalized : 'custom';

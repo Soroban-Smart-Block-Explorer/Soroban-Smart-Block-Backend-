@@ -47,8 +47,8 @@ const PROFILES: Record<NetworkName, NetworkProfile> = {
 
   mainnet: {
     name: 'mainnet',
-    rpcUrl:           process.env.MAINNET_RPC_URL      ?? 'https://mainnet.stellar.validationcloud.io/v1/placeholder',
-    rpcWsUrl:         process.env.MAINNET_RPC_WS_URL   ?? 'wss://mainnet.stellar.validationcloud.io/v1/placeholder',
+    rpcUrl:           process.env.MAINNET_RPC_URL      ?? '',
+    rpcWsUrl:         process.env.MAINNET_RPC_WS_URL   ?? '',
     horizonUrl:       process.env.MAINNET_HORIZON_URL  ?? 'https://horizon.stellar.org',
     networkPassphrase: process.env.MAINNET_PASSPHRASE  ?? 'Public Global Stellar Network ; September 2015',
     databaseUrl:      process.env.MAINNET_DATABASE_URL ?? '',

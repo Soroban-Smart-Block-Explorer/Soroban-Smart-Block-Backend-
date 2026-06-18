@@ -152,14 +152,21 @@ export async function storeUpgradeOrchestration(
   transactionHash: string,
   orchestration: UpgradeOrchestration
 ): Promise<void> {
+  const existingTx = await prisma.transaction.findUnique({
+    where: { hash: transactionHash },
+    select: { functionArgs: true },
+  });
+
+  const updateArgs =
+    typeof existingTx?.functionArgs === 'object' && existingTx.functionArgs !== null
+      ? existingTx.functionArgs
+      : {};
+
   await prisma.transaction.update({
     where: { hash: transactionHash },
     data: {
       functionArgs: {
-        ...(await prisma.transaction.findUnique({
-          where: { hash: transactionHash },
-          select: { functionArgs: true },
-        }))?.functionArgs,
+        ...updateArgs,
         _upgradeOrchestration: {
           isMultiCall: orchestration.isMultiCallUpgrade,
           steps: orchestration.steps.map(s => ({

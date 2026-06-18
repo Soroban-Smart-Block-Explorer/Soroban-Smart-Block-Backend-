@@ -5,6 +5,7 @@ interface ContractNode {
   address: string;
   name: string;
   children: string[];
+  parents: string[];
   callCount: number;
   depth: number;
 }
@@ -39,6 +40,7 @@ export async function buildContractDependencyGraph(): Promise<DependencyGraph> {
       address: contract.address,
       name: contract.name || contract.address.slice(0, 8),
       children: [],
+      parents: [],
       callCount: 0,
       depth: 0,
     });
@@ -54,7 +56,9 @@ export async function buildContractDependencyGraph(): Promise<DependencyGraph> {
   for (const tx of transactions) {
     if (!tx.contractAddress || !tx.functionArgs) continue;
 
-    const calledAddresses = extractCalledAddresses(tx.functionArgs as Record<string, unknown>);
+    const calledAddresses = new Set(
+      extractCalledAddresses(tx.functionArgs as Record<string, unknown>)
+    );
 
     for (const called of calledAddresses) {
       if (nodes.has(called) && called !== tx.contractAddress) {
@@ -62,10 +66,16 @@ export async function buildContractDependencyGraph(): Promise<DependencyGraph> {
         edgeWeights.set(edgeKey, (edgeWeights.get(edgeKey) ?? 0) + 1);
 
         const node = nodes.get(tx.contractAddress);
+        const targetNode = nodes.get(called);
         if (node && !node.children.includes(called)) {
           node.children.push(called);
         }
-        node!.callCount++;
+        if (targetNode && !targetNode.parents.includes(tx.contractAddress)) {
+          targetNode.parents.push(tx.contractAddress);
+        }
+        if (node) {
+          node.callCount++;
+        }
       }
     }
   }
@@ -108,7 +118,10 @@ function calculateDepths(nodes: Map<string, ContractNode>): Map<string, number> 
     }
   }
 
-  const roots = Array.from(nodes.keys()).filter((addr) => !incomingEdges.has(addr));
+  let roots = Array.from(nodes.keys()).filter((addr) => !incomingEdges.has(addr));
+  if (roots.length === 0) {
+    roots = Array.from(nodes.keys());
+  }
 
   // BFS from roots
   let queue = roots;

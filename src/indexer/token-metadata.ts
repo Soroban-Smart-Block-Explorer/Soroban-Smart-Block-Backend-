@@ -21,6 +21,7 @@ import { SorobanRpc, xdr, scValToNative, Address, nativeToScVal } from '@stellar
 import { prismaRead } from '../db';
 import { config } from '../config';
 import { formatAmount } from './args-decoder';
+import { cacheGet, cacheSet, cacheDelete, cacheClear } from '../cache';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -41,28 +42,45 @@ export interface TokenMetadata {
 
 const CACHE_MAX = 1024;
 const metaCache = new Map<string, TokenMetadata>();
+const TOKEN_METADATA_PREFIX = 'token-metadata:';
+const CLASSIC_ASSET_PREFIX = 'classic-asset:';
 
 function cacheEvictIfFull(): void {
   if (metaCache.size >= CACHE_MAX) {
-    // Map preserves insertion order — evict the oldest entry
     metaCache.delete(metaCache.keys().next().value!);
   }
 }
 
-function cacheSet(meta: TokenMetadata): void {
-  metaCache.delete(meta.address); // move to end on update
+async function readCachedMetadata(localKey: string, remoteKey: string): Promise<TokenMetadata | null> {
+  const local = metaCache.get(localKey);
+  if (local) return local;
+
+  const remote = await cacheGet<TokenMetadata>(remoteKey);
+  if (!remote) return null;
+
   cacheEvictIfFull();
-  metaCache.set(meta.address, meta);
+  metaCache.set(localKey, remote);
+  return remote;
+}
+
+async function writeCachedMetadata(localKey: string, remoteKey: string, meta: TokenMetadata, ttlSeconds?: number | null): Promise<void> {
+  metaCache.delete(localKey);
+  cacheEvictIfFull();
+  metaCache.set(localKey, meta);
+  await cacheSet(remoteKey, meta, ttlSeconds);
 }
 
 /** Evict a single entry (e.g. after an on-chain upgrade). */
 export function invalidateTokenMetadata(address: string): void {
   metaCache.delete(address);
+  void cacheDelete(`${TOKEN_METADATA_PREFIX}${address}`);
+  void cacheDelete(`${CLASSIC_ASSET_PREFIX}${address}`);
 }
 
 /** Evict all cached entries. */
 export function clearTokenMetadataCache(): void {
   metaCache.clear();
+  cacheClear();
 }
 
 // ─── RPC client ───────────────────────────────────────────────────────────────
@@ -115,6 +133,7 @@ async function simulateViewCall(
  */
 function buildSimulateTx(hostFn: xdr.HostFunction): any {
   // Import lazily to avoid circular deps at module load time
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
   const { TransactionBuilder, Account, Operation, BASE_FEE } = require('@stellar/stellar-sdk');
   const DUMMY_SOURCE = 'GAAZI4TCR3TY5OJHCTJC2A4QSY6CJWJH5IAJTGKIN2ER7LBNVKOCCWN';
   const account = new Account(DUMMY_SOURCE, '0');
@@ -178,11 +197,10 @@ async function fetchClassicAssetMetadata(
  *   5. Returns null if nothing resolves
  */
 export async function getTokenMetadata(address: string): Promise<TokenMetadata | null> {
-  // 1. Cache hit
-  const cached = metaCache.get(address);
+  const cacheKey = `${TOKEN_METADATA_PREFIX}${address}`;
+  const cached = await readCachedMetadata(address, cacheKey);
   if (cached) return cached;
 
-  // 2. DB — Contract table
   const contract = await prismaRead.contract.findUnique({
     where: { address },
     select: {
@@ -201,11 +219,10 @@ export async function getTokenMetadata(address: string): Promise<TokenMetadata |
       decimals: contract.tokenDecimals ?? 7,
       source: 'db',
     };
-    cacheSet(meta);
+    await writeCachedMetadata(address, cacheKey, meta);
     return meta;
   }
 
-  // 3. DB — SacMapping (classic Stellar asset wrapped as SAC)
   const sac = await prismaRead.sacMapping.findUnique({
     where: { sacAddress: address },
     select: { assetCode: true, assetIssuer: true },
@@ -217,22 +234,19 @@ export async function getTokenMetadata(address: string): Promise<TokenMetadata |
       address,
       symbol: sac.assetCode,
       name: horizonMeta?.name ?? sac.assetCode,
-      // Classic Stellar assets use 7 decimal places (stroops)
       decimals: 7,
       source: 'sac',
     };
-    cacheSet(meta);
+    await writeCachedMetadata(address, cacheKey, meta);
     return meta;
   }
 
-  // 4. Soroban RPC simulation — try to call decimals(), symbol(), name()
   const [rawDecimals, rawSymbol, rawName] = await Promise.all([
     simulateViewCall(address, 'decimals'),
     simulateViewCall(address, 'symbol'),
     simulateViewCall(address, 'name'),
   ]);
 
-  // decimals() must return a number for this to be a valid SEP-41 token
   if (rawDecimals === null || typeof rawDecimals !== 'number') return null;
 
   const meta: TokenMetadata = {
@@ -242,7 +256,7 @@ export async function getTokenMetadata(address: string): Promise<TokenMetadata |
     decimals: rawDecimals,
     source: 'rpc',
   };
-  cacheSet(meta);
+  await writeCachedMetadata(address, cacheKey, meta, 60 * 60);
   return meta;
 }
 
@@ -255,7 +269,8 @@ export async function getClassicAssetMetadata(
   assetIssuer: string | null,
 ): Promise<TokenMetadata> {
   const cacheKey = `classic:${assetCode}:${assetIssuer ?? 'native'}`;
-  const cached = metaCache.get(cacheKey);
+  const remoteKey = `${CLASSIC_ASSET_PREFIX}${cacheKey}`;
+  const cached = await readCachedMetadata(cacheKey, remoteKey);
   if (cached) return cached;
 
   const horizonMeta = await fetchClassicAssetMetadata(assetCode, assetIssuer);
@@ -267,7 +282,7 @@ export async function getClassicAssetMetadata(
     decimals: 7,
     source: 'classic',
   };
-  cacheSet(meta);
+  await writeCachedMetadata(cacheKey, remoteKey, meta);
   return meta;
 }
 
@@ -345,20 +360,25 @@ export async function warmTokenMetadataCache(): Promise<void> {
   ]);
 
   for (const t of tokens) {
-    cacheSet({
-      address: t.address,
-      symbol: t.tokenSymbol ?? null,
-      name: t.tokenName ?? null,
-      decimals: t.tokenDecimals ?? 7,
-      source: 'db',
-    });
+    await writeCachedMetadata(
+      t.address,
+      `${TOKEN_METADATA_PREFIX}${t.address}`,
+      {
+        address: t.address,
+        symbol: t.tokenSymbol ?? null,
+        name: t.tokenName ?? null,
+        decimals: t.tokenDecimals ?? 7,
+        source: 'db',
+      },
+    );
   }
 
   for (const s of sacMappings) {
-    // Only populate if not already in cache from the Contract table
-    if (!metaCache.has(s.sacAddress)) {
-      cacheSet({
-        address: s.sacAddress,
+    const localKey = s.sacAddress;
+    const remoteKey = `${TOKEN_METADATA_PREFIX}${localKey}`;
+    if (!metaCache.has(localKey)) {
+      await writeCachedMetadata(localKey, remoteKey, {
+        address: localKey,
         symbol: s.assetCode,
         name: s.assetCode,
         decimals: 7,

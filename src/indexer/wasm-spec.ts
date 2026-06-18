@@ -51,6 +51,7 @@ function readUleb128(buf: Buffer, offset: number): [number, number] {
   let result = 0;
   let shift = 0;
   let bytesRead = 0;
+  // eslint-disable-next-line no-constant-condition
   while (true) {
     const byte = buf[offset + bytesRead++];
     result |= (byte & 0x7f) << shift;

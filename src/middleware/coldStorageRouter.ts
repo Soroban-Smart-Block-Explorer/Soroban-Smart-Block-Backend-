@@ -12,11 +12,11 @@ interface ColdStorageConfig {
 
 const coldStorageConfig: ColdStorageConfig = {
   recentThresholdSeconds: RECENT_LEDGER_THRESHOLD,
-  coldStorageType: (process.env.COLD_STORAGE_TYPE as any) ?? 'parquet',
+  coldStorageType: process.env.COLD_STORAGE_TYPE as 'parquet' | 'glacier' | 'archive' ?? 'parquet',
   coldStoragePath: process.env.COLD_STORAGE_PATH,
 };
 
-export function coldStorageRouter(req: Request, res: Response, next: NextFunction) {
+export function coldStorageRouter(req: Request, res: Response, next: NextFunction): void {
   // Extract ledger sequence from query or path
   const ledgerSeq = extractLedgerSequence(req);
   if (!ledgerSeq) {
@@ -27,10 +27,8 @@ export function coldStorageRouter(req: Request, res: Response, next: NextFunctio
   const isDeepHistory = ledgerSeq < coldStorageConfig.recentThresholdSeconds;
 
   if (isDeepHistory) {
-    console.log(`[ColdStorage] Deep history request for ledger ${ledgerSeq}, routing to ${coldStorageConfig.coldStorageType}`);
-    
     // Mark request for cold storage routing
-    (req as any).coldStorage = {
+    req.coldStorage = {
       enabled: true,
       type: coldStorageConfig.coldStorageType,
       path: coldStorageConfig.coldStoragePath,
@@ -54,11 +52,11 @@ export function getColdStorageConfig(): ColdStorageConfig {
 }
 
 export function isColdStorageRequest(req: Request): boolean {
-  return (req as any).coldStorage?.enabled ?? false;
+  return req.coldStorage?.enabled ?? false;
 }
 
 export function getColdStorageType(req: Request): string {
-  return (req as any).coldStorage?.type ?? 'hot';
+  return req.coldStorage?.type ?? 'hot';
 }
 
 function extractLedgerSequence(req: Request): number | null {

@@ -1,4 +1,5 @@
 import { prismaRead, prismaWrite } from '../db';
+import { cacheGet, cacheSet, cacheDelete } from '../cache';
 
 export interface AbiFunction {
   name: string;
@@ -12,19 +13,30 @@ export interface ContractAbi {
 }
 
 const MAX_SIZE = 512;
-// address -> { abi, insertionOrder }
 const cache = new Map<string, ContractAbi>();
+const CACHE_PREFIX = 'abi:';
 
 function evictIfFull() {
   if (cache.size >= MAX_SIZE) {
-    // evict oldest entry (Map preserves insertion order)
     cache.delete(cache.keys().next().value!);
   }
 }
 
+function localEntry(address: string): ContractAbi | null {
+  return cache.has(address) ? cache.get(address)! : null;
+}
+
 /** Read ABI from cache; on miss, load from DB and populate cache. */
 export async function getCachedAbi(address: string): Promise<ContractAbi | null> {
-  if (cache.has(address)) return cache.get(address)!;
+  const local = localEntry(address);
+  if (local) return local;
+
+  const remote = await cacheGet<ContractAbi>(`${CACHE_PREFIX}${address}`);
+  if (remote) {
+    evictIfFull();
+    cache.set(address, remote);
+    return remote;
+  }
 
   const row = await prismaRead.contract.findUnique({
     where: { address },
@@ -36,6 +48,7 @@ export async function getCachedAbi(address: string): Promise<ContractAbi | null>
   const abi = row.abi as unknown as ContractAbi;
   evictIfFull();
   cache.set(address, abi);
+  await cacheSet(`${CACHE_PREFIX}${address}`, abi);
   return abi;
 }
 
@@ -46,9 +59,10 @@ export async function setCachedAbi(address: string, abi: ContractAbi): Promise<v
     update: { abi: abi as object },
     create: { address, abi: abi as object },
   });
-  cache.delete(address); // remove stale entry
+  cache.delete(address);
   evictIfFull();
   cache.set(address, abi);
+  await cacheSet(`${CACHE_PREFIX}${address}`, abi);
 }
 
 /** Remove ABI from DB and cache. */
@@ -58,9 +72,11 @@ export async function deleteCachedAbi(address: string): Promise<void> {
     data: { abi: undefined },
   });
   cache.delete(address);
+  await cacheDelete(`${CACHE_PREFIX}${address}`);
 }
 
 /** Invalidate a cache entry without touching the DB (e.g. after external update). */
 export function invalidateCache(address: string): void {
   cache.delete(address);
+  void cacheDelete(`${CACHE_PREFIX}${address}`);
 }

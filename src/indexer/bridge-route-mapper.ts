@@ -57,10 +57,10 @@ export async function analyzeBridgeRoute(
 
   if (BRIDGE_PATTERNS.lock.test(functionName)) {
     direction = 'outbound';
-    lockAction = transaction.functionName;
+    lockAction = transaction.functionName ?? undefined;
   } else if (BRIDGE_PATTERNS.unlock.test(functionName)) {
     direction = 'inbound';
-    unlockAction = transaction.functionName;
+    unlockAction = transaction.functionName ?? undefined;
   }
 
   // Extract token and recipient info from events
@@ -168,14 +168,20 @@ export async function storeBridgeRoute(
   transactionHash: string,
   route: BridgeRoute
 ): Promise<void> {
+  const existing = await prisma.transaction.findUnique({
+    where: { hash: transactionHash },
+    select: { functionArgs: true },
+  });
+
+  const existingArgs = existing?.functionArgs;
+  const baseArgs =
+    typeof existingArgs === 'object' && existingArgs !== null ? existingArgs : {};
+
   await prisma.transaction.update({
     where: { hash: transactionHash },
     data: {
       functionArgs: {
-        ...(await prisma.transaction.findUnique({
-          where: { hash: transactionHash },
-          select: { functionArgs: true },
-        }))?.functionArgs,
+        ...baseArgs,
         _bridgeRoute: {
           direction: route.direction,
           sourceChain: route.sourceChain,

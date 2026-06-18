@@ -1,4 +1,5 @@
 import { xdr, scValToNative, Address, StrKey } from '@stellar/stellar-sdk';
+import { translateAddress } from './strkey-translator';
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -48,7 +49,10 @@ export function scValToJson(val: xdr.ScVal): { type: string; value: unknown } {
       const addr = val.address();
       const type = addr.switch().name;
       if (type === 'scAddressTypeAccount') {
-        return { type: 'address', value: StrKey.encodeEd25519PublicKey(addr.accountId().ed25519()) };
+        const gAddress = StrKey.encodeEd25519PublicKey(addr.accountId().ed25519());
+        // Translate in case the address was stored as a muxed key elsewhere;
+        // for ScAddress the SDK always gives us the G-key directly.
+        return { type: 'address', value: gAddress };
       }
       if (type === 'scAddressTypeContract') {
         return { type: 'address', value: StrKey.encodeContract(addr.contractId()) };
@@ -241,3 +245,11 @@ export function parseInvokeResult(resultXdr: string): ParsedResult | null {
   const scVal = xdr.ScVal.fromXDR(invokeHostFnResult.success());
   return scValToJson(scVal);
 }
+
+// ── CAP-0079 address translation re-export ────────────────────────────────────
+
+/**
+ * Re-export the strkey translator so consumers of xdr-parser have a single
+ * import point for all address normalisation utilities.
+ */
+export { translateAddress, resolveRoutingIdentity, normalizeAddresses, isValidAnyAddress } from './strkey-translator';
