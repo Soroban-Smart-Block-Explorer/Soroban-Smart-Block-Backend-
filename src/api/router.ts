@@ -35,8 +35,7 @@ import { networkRouter } from './network';
 import { emergencyBaseRouter } from './emergency-router';
 import { stellarRouter } from './stellar';
 import { privacyRouter } from './privacy';
-import invariantsRouter from './invariants-router';
-import advancedInvariantsRouter from './invariants-advanced-router';
+import { mevRouter } from './mev';
 
 export const router = Router();
 
@@ -75,5 +74,4 @@ router.use('/network', networkRouter);
 router.use('/emergency', emergencyBaseRouter);
 router.use('/stellar', stellarRouter);
 router.use('/privacy', privacyRouter);
-router.use('/invariants', invariantsRouter);
-router.use('/invariants', advancedInvariantsRouter);
+router.use('/mev', mevRouter);
