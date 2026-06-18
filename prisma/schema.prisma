@@ -1924,7 +1924,7 @@ model StellarNetworkHealth {
 
 // Core Invariant Definition
 model InvariantDefinition {
-  id                 String   @id @default(cuid())
+  id                 String   @id @default(uuid()) @db.Uuid
   name               String   @db.VarChar(255)
   description        String?
   category           String   @db.VarChar(50)
