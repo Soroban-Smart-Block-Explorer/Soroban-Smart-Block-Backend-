@@ -1917,3 +1917,385 @@ model StellarNetworkHealth {
 
   @@map("stellar_network_health")
 }
+
+// ============================================================================
+// SMART CONTRACT INVARIANT TESTER: FORMAL VERIFICATION & RUNTIME MONITORING
+// ============================================================================
+
+// Core Invariant Definition
+model InvariantDefinition {
+  id                 String   @id @default(cuid())
+  name               String   @db.VarChar(255)
+  description        String?
+  category           String   @db.VarChar(50)
+  contractAddress    String?  @db.VarChar(56)
+  expression         String
+  expressionLanguage String   @default("expr_lang") @db.VarChar(50)
+  severity           String   @default("critical") @db.VarChar(20)
+  checkFrequency     String   @default("always") @db.VarChar(20)
+  gasLimit           BigInt?
+  timeoutMs          Int      @default(5000)
+  isActive           Boolean  @default(true)
+  createdBy          String?  @db.VarChar(56)
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  checkResults       InvariantCheckResult[]
+  violations         InvariantViolation[]
+  alertRules         InvariantAlertRule[]
+  reverifyJobs       ReverifyJob[]
+
+  @@index([contractAddress])
+  @@index([category])
+  @@index([isActive])
+  @@map("invariant_definitions")
+}
+
+// Standard Invariants Template Library
+model StandardInvariant {
+  id                 String   @id @default(cuid())
+  name               String   @unique @db.VarChar(255)
+  description        String?
+  category           String   @db.VarChar(50)
+  contractType       String   @db.VarChar(50)
+  expressionTemplate String
+  parameters         Json?
+  severity           String   @default("critical") @db.VarChar(20)
+  isEnabledByDefault Boolean  @default(true)
+  createdAt          DateTime @default(now())
+
+  @@index([contractType])
+  @@index([category])
+  @@map("standard_invariants")
+}
+
+// Expression Functions Library
+model ExpressionFunction {
+  id          String   @id @default(cuid())
+  name        String   @unique @db.VarChar(100)
+  description String?
+  category    String?  @db.VarChar(50)
+  signature   String
+  isPure      Boolean  @default(true)
+  isAggregate Boolean  @default(false)
+  createdAt   DateTime @default(now())
+
+  @@index([name])
+  @@index([category])
+  @@map("expression_functions")
+}
+
+// Invariant Check Results
+model InvariantCheckResult {
+  id               BigInt   @id @default(autoincrement())
+  invariantId      String   @db.Uuid
+  txHash           String   @db.VarChar(64)
+  blockNumber      BigInt
+  timestamp        DateTime
+  result           Boolean
+  executionTimeMs  Int?
+  gasUsed          Decimal? @db.Decimal(20, 0)
+  stateSnapshot    Json?
+  violationDetail  Json?
+  errorMessage     String?
+  createdAt        DateTime @default(now())
+
+  invariant        InvariantDefinition @relation(fields: [invariantId], references: [id], onDelete: Cascade)
+  violation        InvariantViolation?
+
+  @@index([invariantId])
+  @@index([txHash])
+  @@index([blockNumber])
+  @@index([result])
+  @@index([timestamp(sort: Desc)])
+  @@index([invariantId, timestamp(sort: Desc)])
+  @@map("invariant_check_results")
+}
+
+// Invariant Violations
+model InvariantViolation {
+  id             BigInt   @id @default(autoincrement())
+  invariantId    String   @db.Uuid
+  checkResultId  BigInt?  @unique
+  txHash         String   @db.VarChar(64)
+  blockNumber    BigInt
+  timestamp      DateTime
+  severity       String   @db.VarChar(20)
+  status         String   @default("open") @db.VarChar(20)
+  assignedTo     String?  @db.VarChar(56)
+  stateBefore    Json?
+  stateAfter     Json?
+  revertSim      Json?
+  notes          String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  invariant      InvariantDefinition     @relation(fields: [invariantId], references: [id], onDelete: Cascade)
+  checkResult    InvariantCheckResult?   @relation(fields: [checkResultId], references: [id], onDelete: SetNull)
+  repairs        InvariantRepair[]
+
+  @@index([invariantId])
+  @@index([txHash])
+  @@index([status])
+  @@index([severity])
+  @@index([timestamp(sort: Desc)])
+  @@index([invariantId, status])
+  @@map("invariant_violations")
+}
+
+// Real-Time Monitoring Configuration
+model MonitoringConfig {
+  id                 String   @id @default(cuid())
+  contractAddress    String   @unique @db.VarChar(56)
+  invariantIds       String[] @db.Uuid @default([])
+  checkMode          String   @default("all") @db.VarChar(20)
+  sampleRate         Int      @default(1)
+  maxGasPerCheck     Decimal? @db.Decimal(20, 0)
+  isActive           Boolean  @default(true)
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  stats              MonitoringStats?
+
+  @@index([contractAddress])
+  @@index([isActive])
+  @@map("monitoring_config")
+}
+
+// Monitoring Statistics
+model MonitoringStats {
+  id               BigInt      @id @default(autoincrement())
+  contractAddress  String      @unique @db.VarChar(56)
+  totalChecks      BigInt      @default(0)
+  passedChecks     BigInt      @default(0)
+  failedChecks     BigInt      @default(0)
+  avgCheckTimeMs   Decimal?    @db.Decimal(10, 2)
+  totalGasUsed     Decimal?    @db.Decimal(30, 0)
+  lastCheckAt      DateTime?
+  lastViolationAt  DateTime?
+  updatedAt        DateTime    @updatedAt
+
+  config           MonitoringConfig @relation(fields: [contractAddress], references: [contractAddress], onDelete: Cascade)
+
+  @@index([contractAddress])
+  @@index([lastViolationAt])
+  @@map("monitoring_stats")
+}
+
+// Invariant Mining Runs
+model InvariantMiningRun {
+  id                 String   @id @default(cuid())
+  contractAddress    String   @db.VarChar(56)
+  miningType         String   @db.VarChar(50)
+  txRangeStart       BigInt?
+  txRangeEnd         BigInt?
+  discoveredInvariants Json?
+  totalCandidates    Int?
+  confirmedCount     Int?
+  falsePositiveCount Int?
+  runtimeSeconds     Int?
+  status             String   @default("running") @db.VarChar(20)
+  startedAt          DateTime @default(now())
+  completedAt        DateTime?
+
+  candidates         InvariantCandidate[]
+
+  @@index([contractAddress])
+  @@index([status])
+  @@index([startedAt(sort: Desc)])
+  @@map("invariant_mining_runs")
+}
+
+// Invariant Candidates
+model InvariantCandidate {
+  id              BigInt   @id @default(autoincrement())
+  miningRunId     String   @db.Uuid
+  expression      String
+  confidence      Decimal? @db.Decimal(5, 4)
+  supportCount    Int?
+  counterexampleCount Int?
+  isConfirmed     Boolean  @default(false)
+  confirmedAt     DateTime?
+
+  miningRun       InvariantMiningRun @relation(fields: [miningRunId], references: [id], onDelete: Cascade)
+
+  @@index([miningRunId])
+  @@index([isConfirmed])
+  @@map("invariant_candidates")
+}
+
+// Fuzz Campaigns
+model FuzzCampaign {
+  id                 String   @id @default(cuid())
+  contractAddress    String   @db.VarChar(56)
+  name               String?  @db.VarChar(255)
+  invariantIds       String[] @db.Uuid @default([])
+  totalIterations    Int?
+  iterationsExecuted Int      @default(0)
+  coveragePercentage Decimal? @db.Decimal(5, 2)
+  violationsFound    Int      @default(0)
+  status             String   @default("pending") @db.VarChar(20)
+  config             Json?
+  startedAt          DateTime?
+  completedAt        DateTime?
+  createdAt          DateTime @default(now())
+
+  transactions       FuzzTransaction[]
+
+  @@index([contractAddress])
+  @@index([status])
+  @@index([createdAt(sort: Desc)])
+  @@map("fuzz_campaigns")
+}
+
+// Fuzz Transactions
+model FuzzTransaction {
+  id               BigInt   @id @default(autoincrement())
+  campaignId       String   @db.Uuid
+  iteration        Int
+  calldata         String
+  gasUsed          Decimal? @db.Decimal(20, 0)
+  reverted         Boolean  @default(false)
+  coverageMetrics  Json?
+  invariantResults Json?
+  createdAt        DateTime @default(now())
+
+  campaign         FuzzCampaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+
+  @@index([campaignId])
+  @@index([campaignId, iteration])
+  @@map("fuzz_transactions")
+}
+
+// Invariant Alert Rules
+model InvariantAlertRule {
+  id                   String   @id @default(cuid())
+  invariantId          String   @db.Uuid
+  minSeverity          String   @default("warning") @db.VarChar(20)
+  cooldownSeconds      Int      @default(300)
+  escalateAfterCount   Int      @default(3)
+  escalateWindowMinutes Int     @default(60)
+  notificationChannels Json?
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+
+  invariant            InvariantDefinition @relation(fields: [invariantId], references: [id], onDelete: Cascade)
+
+  @@index([invariantId])
+  @@map("invariant_alert_rules")
+}
+
+// Symbolic Execution Results
+model SymbolicExecutionResult {
+  id                 String   @id @default(cuid())
+  contractAddress    String   @db.VarChar(56)
+  functionName       String?  @db.VarChar(255)
+  pathsExplored      Int?
+  assertionViolations Json?
+  reentrancyRisks    Json?
+  arithmeticIssues   Json?
+  generatedTestCases Json?
+  status             String   @default("pending") @db.VarChar(20)
+  startedAt          DateTime @default(now())
+  completedAt        DateTime?
+
+  @@index([contractAddress])
+  @@index([status])
+  @@map("symbolic_execution_results")
+}
+
+// Compliance Frameworks
+model ComplianceFramework {
+  id          String   @id @default(cuid())
+  name        String   @unique @db.VarChar(255)
+  description String?
+  version     String?  @db.VarChar(20)
+  rules       Json
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  audits      ComplianceAudit[]
+
+  @@index([name])
+  @@map("compliance_frameworks")
+}
+
+// Compliance Audits
+model ComplianceAudit {
+  id            String   @id @default(cuid())
+  contractAddress String  @db.VarChar(56)
+  frameworkId   String?  @db.Uuid
+  status        String   @default("pending") @db.VarChar(20)
+  passedRules   Int      @default(0)
+  failedRules   Int      @default(0)
+  totalRules    Int
+  report        Json?
+  startedAt     DateTime?
+  completedAt   DateTime?
+  createdAt     DateTime @default(now())
+
+  framework     ComplianceFramework? @relation(fields: [frameworkId], references: [id], onDelete: SetNull)
+
+  @@index([contractAddress])
+  @@index([frameworkId])
+  @@index([status])
+  @@map("compliance_audits")
+}
+
+// Historical Re-Verification Jobs
+model ReverifyJob {
+  id              String   @id @default(cuid())
+  invariantId     String   @db.Uuid
+  blockRangeStart BigInt?
+  blockRangeEnd   BigInt?
+  totalBlocks     BigInt?
+  processedBlocks BigInt   @default(0)
+  violationsFound Int      @default(0)
+  status          String   @default("running") @db.VarChar(20)
+  startedAt       DateTime @default(now())
+  completedAt     DateTime?
+
+  invariant       InvariantDefinition @relation(fields: [invariantId], references: [id], onDelete: Cascade)
+
+  @@index([invariantId])
+  @@index([status])
+  @@index([startedAt(sort: Desc)])
+  @@map("reverify_jobs")
+}
+
+// Invariant Repair Suggestions
+model InvariantRepair {
+  id                 String   @id @default(cuid())
+  violationId        BigInt
+  contractAddress    String   @db.VarChar(56)
+  originalExpression String
+  suggestedPatch     String
+  patchType          String?  @db.VarChar(50)
+  confidenceScore    Decimal? @db.Decimal(5, 4)
+  verificationStatus String?  @db.VarChar(20)
+  createdAt          DateTime @default(now())
+
+  violation          InvariantViolation @relation(fields: [violationId], references: [id], onDelete: Cascade)
+
+  @@index([violationId])
+  @@index([contractAddress])
+  @@map("invariant_repairs")
+}
+
+// Cross-Contract Composability Analysis
+model CrossContractAnalysis {
+  id                      String   @id @default(cuid())
+  sourceContract          String   @db.VarChar(56)
+  targetContract          String   @db.VarChar(56)
+  interactionType         String?  @db.VarChar(50)
+  composabilityIssues     Json?
+  stateInconsistencies    Json?
+  reentrancyRisks         Json?
+  confidenceScore         Decimal? @db.Decimal(5, 4)
+  analyzedAt              DateTime @default(now())
+
+  @@index([sourceContract])
+  @@index([targetContract])
+  @@index([sourceContract, targetContract])
+  @@map("cross_contract_analysis")
+}
