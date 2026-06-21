@@ -37,6 +37,7 @@ import { startPoolPriceMonitor } from './indexer/pool-price-monitor';
 import { errorHandler } from './middleware/errorHandler';
 import { logger } from './logger';
 import { feedOrchestrator } from './feed/orchestrator';
+import { startHealthMonitor } from './lending/backgroundMonitor';
 
 const app = express();
 
@@ -128,6 +129,13 @@ async function main() {
     } catch (err) {
       logger.warn('Arbitrage scanner failed to start', { error: String(err) });
     }
+  }
+
+  // Start Liquidation Command Center Health Monitor
+  try {
+    startHealthMonitor();
+  } catch (err) {
+    logger.warn('Liquidation health monitor failed to start', { error: String(err) });
   }
 
   // Initialize Feed Orchestrator with WebSocket support
