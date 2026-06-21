@@ -86,9 +86,7 @@ import { storageRouter } from './storage';
 import { storageTrapRouter } from './storage-trap';
 import { bn254Router } from './bn254';
 import { compilerRouter } from './compiler-router';
-import { dexAnalyticsRouter } from './dex-analytics';
-import { predictRouter } from './predict';
-import { aggregatorRouter } from './aggregator';
+import { discoverRouter } from './discover';
 
 export const router = Router();
 
@@ -174,6 +172,9 @@ router.use('/storage', storageRouter);
 router.use('/storage-trap', storageTrapRouter);
 router.use('/bn254', bn254Router);
 router.use('/compiler', compilerRouter);
+
+// ── Token Discovery & Launch Detection (Issue #335) ────────────────────────
+router.use('/discover', discoverRouter);
 
 // ── Developer Portal ─────────────────────────────────────────────────────────
 router.use('/developer', developerRouter);

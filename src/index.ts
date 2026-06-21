@@ -1,3 +1,9 @@
+// BigInt serialization polyfill — BigInt values are not serializable by JSON.stringify
+// This converts them to strings in all API responses.
+(BigInt.prototype as any).toJSON = function () {
+  return this.toString();
+};
+
 import express from 'express';
 import { createServer } from 'http';
 import cors from 'cors';
@@ -36,6 +42,7 @@ import { startArbitrageScanner } from './indexer/arbitrage-scanner';
 import { startPoolPriceMonitor } from './indexer/pool-price-monitor';
 import { errorHandler } from './middleware/errorHandler';
 import { logger } from './logger';
+import { startDiscoverIndexer } from './indexer/discover-runner';
 import { feedOrchestrator } from './feed/orchestrator';
 import { refreshPoolRegistry, getAllPools } from './indexer/aggregator/pool-indexer';
 import { processDcaStrategies } from './indexer/aggregator/dca';
@@ -130,6 +137,12 @@ async function main() {
     } catch (err) {
       logger.warn('Arbitrage scanner failed to start', { error: String(err) });
     }
+  }
+  // Start Token Discovery Indexer (Issue #335)
+  if (!process.env.DISABLE_INDEXER) {
+    startDiscoverIndexer().catch((err) =>
+      logger.warn('Discover indexer failed to start', { error: String(err) }),
+    );
   }
 
   // Initialize Feed Orchestrator with WebSocket support
