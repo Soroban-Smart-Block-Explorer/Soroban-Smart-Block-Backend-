@@ -1,10 +1,14 @@
 import { xdr, scValToNative, Address } from '@stellar/stellar-sdk';
 import type { AbiParam } from './registry';
-import { isCheckedArithmeticFunction, analyzeCheckedArithmetic, checkedArithmeticToDecodedArg } from './checked-arithmetic-decoder';
+import {
+  isCheckedArithmeticFunction,
+  analyzeCheckedArithmetic,
+  checkedArithmeticToDecodedArg,
+} from './checked-arithmetic-decoder';
 
 export interface DecodedArg {
-  raw: unknown;       // native JS value (BigInt, string, object, …)
-  formatted: string;  // human-readable display string
+  raw: unknown; // native JS value (BigInt, string, object, …)
+  formatted: string; // human-readable display string
 }
 
 /**
@@ -70,9 +74,8 @@ export function decodeScVal(val: xdr.ScVal, param: AbiParam, decimals?: number):
 
       // ── Symbol ────────────────────────────────────────────────────────────
       case type === 'symbol': {
-        const raw = val.switch().name === 'scvSymbol'
-          ? val.sym().toString()
-          : String(scValToNative(val));
+        const raw =
+          val.switch().name === 'scvSymbol' ? val.sym().toString() : String(scValToNative(val));
         return { raw, formatted: raw };
       }
 
@@ -126,7 +129,7 @@ export function decodeScVal(val: xdr.ScVal, param: AbiParam, decimals?: number):
 export function decodeTypedArgs(
   params: AbiParam[],
   rawArgs: xdr.ScVal[],
-  decimals?: number
+  decimals?: number,
 ): Record<string, DecodedArg> {
   const result: Record<string, DecodedArg> = {};
   for (let i = 0; i < params.length; i++) {
@@ -190,9 +193,10 @@ function decodeEnum(val: xdr.ScVal): { variant: string; value?: unknown } {
     return { variant: String(scValToNative(val)) };
   }
   const items = val.vec()!;
-  const variant = items[0]?.switch().name === 'scvSymbol'
-    ? items[0].sym().toString()
-    : String(scValToNative(items[0]));
+  const variant =
+    items[0]?.switch().name === 'scvSymbol'
+      ? items[0].sym().toString()
+      : String(scValToNative(items[0]));
   if (items.length === 1) return { variant };
   return { variant, value: scValToNative(items[1]) };
 }
@@ -204,9 +208,10 @@ function decodeStruct(val: xdr.ScVal): Record<string, unknown> {
   if (val.switch().name !== 'scvMap') return { raw: scValToNative(val) };
   const result: Record<string, unknown> = {};
   for (const entry of val.map()!) {
-    const key = entry.key().switch().name === 'scvSymbol'
-      ? entry.key().sym().toString()
-      : String(scValToNative(entry.key()));
+    const key =
+      entry.key().switch().name === 'scvSymbol'
+        ? entry.key().sym().toString()
+        : String(scValToNative(entry.key()));
     result[key] = scValToNative(entry.val());
   }
   return result;

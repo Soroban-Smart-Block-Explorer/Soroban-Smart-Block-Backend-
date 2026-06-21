@@ -48,7 +48,8 @@ export const SEP41_FUNCTIONS: Record<string, Sep41FunctionDef> = {
       { name: 'to', type: 'address' },
       { name: 'amount', type: 'i128' },
     ],
-    humanTemplate: '{spender|truncate} transferred {amount} {token} from {from|truncate} to {to|truncate}',
+    humanTemplate:
+      '{spender|truncate} transferred {amount} {token} from {from|truncate} to {to|truncate}',
   },
   approve: {
     name: 'approve',
@@ -58,7 +59,8 @@ export const SEP41_FUNCTIONS: Record<string, Sep41FunctionDef> = {
       { name: 'amount', type: 'i128' },
       { name: 'expiration_ledger', type: 'u32' },
     ],
-    humanTemplate: '{from|truncate} approved {spender|truncate} to spend {amount} {token} (expires ledger {expiration_ledger})',
+    humanTemplate:
+      '{from|truncate} approved {spender|truncate} to spend {amount} {token} (expires ledger {expiration_ledger})',
   },
   balance_of: {
     name: 'balance_of',
@@ -288,9 +290,10 @@ export function parseSep41Event(
   let symbol: string;
   try {
     const symbolVal = xdr.ScVal.fromXDR(topics[0], 'base64');
-    symbol = symbolVal.switch().name === 'scvSymbol'
-      ? symbolVal.sym().toString()
-      : String(scValToNative(symbolVal));
+    symbol =
+      symbolVal.switch().name === 'scvSymbol'
+        ? symbolVal.sym().toString()
+        : String(scValToNative(symbolVal));
   } catch {
     return null;
   }

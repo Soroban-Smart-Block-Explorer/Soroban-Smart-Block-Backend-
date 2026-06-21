@@ -37,9 +37,7 @@ const EXTERNAL_SCANNERS: Record<string, string> = {
  * Analyze transaction for cross-chain bridge actions.
  * Tracks token lock/unlock and extracts recipient addresses.
  */
-export async function analyzeBridgeRoute(
-  transactionHash: string
-): Promise<BridgeRoute | null> {
+export async function analyzeBridgeRoute(transactionHash: string): Promise<BridgeRoute | null> {
   const transaction = await prisma.transaction.findUnique({
     where: { hash: transactionHash },
     include: { events: true, contract: true },
@@ -82,17 +80,10 @@ export async function analyzeBridgeRoute(
   }
 
   // Detect bridge standard
-  const bridgeStandard = detectBridgeStandard(
-    transaction.contractAddress || '',
-    functionName
-  );
+  const bridgeStandard = detectBridgeStandard(transaction.contractAddress || '', functionName);
 
   // Generate external scanner URL
-  const externalScannerUrl = generateScannerUrl(
-    direction,
-    recipientAddress,
-    bridgeStandard
-  );
+  const externalScannerUrl = generateScannerUrl(direction, recipientAddress, bridgeStandard);
 
   return {
     transactionHash,
@@ -113,31 +104,24 @@ export async function analyzeBridgeRoute(
 
 function detectBridgeStandard(
   contractAddress: string,
-  functionName: string
+  functionName: string,
 ): 'near_intents' | 'mastercard_crypto' | 'generic' {
   if (contractAddress.includes('near') || functionName.includes('near')) {
     return 'near_intents';
   }
-  if (
-    contractAddress.includes('mastercard') ||
-    functionName.includes('mastercard')
-  ) {
+  if (contractAddress.includes('mastercard') || functionName.includes('mastercard')) {
     return 'mastercard_crypto';
   }
   return 'generic';
 }
 
-function inferDestinationChain(
-  standard: string,
-  recipientAddress: string
-): string {
+function inferDestinationChain(standard: string, recipientAddress: string): string {
   if (standard === 'near_intents') return 'near';
   if (standard === 'mastercard_crypto') return 'mastercard_network';
 
   // Infer from recipient address format
   if (recipientAddress.startsWith('0x')) return 'ethereum';
-  if (recipientAddress.length === 44 && recipientAddress.endsWith('='))
-    return 'solana';
+  if (recipientAddress.length === 44 && recipientAddress.endsWith('=')) return 'solana';
   if (recipientAddress.includes('.near')) return 'near';
 
   return 'unknown';
@@ -146,7 +130,7 @@ function inferDestinationChain(
 function generateScannerUrl(
   direction: string,
   recipientAddress: string,
-  standard: string
+  standard: string,
 ): string | undefined {
   const chain = inferDestinationChain(standard, recipientAddress);
   const baseUrl = EXTERNAL_SCANNERS[chain];
@@ -164,18 +148,14 @@ function generateScannerUrl(
 /**
  * Store bridge route metadata in transaction.
  */
-export async function storeBridgeRoute(
-  transactionHash: string,
-  route: BridgeRoute
-): Promise<void> {
+export async function storeBridgeRoute(transactionHash: string, route: BridgeRoute): Promise<void> {
   const existing = await prisma.transaction.findUnique({
     where: { hash: transactionHash },
     select: { functionArgs: true },
   });
 
   const existingArgs = existing?.functionArgs;
-  const baseArgs =
-    typeof existingArgs === 'object' && existingArgs !== null ? existingArgs : {};
+  const baseArgs = typeof existingArgs === 'object' && existingArgs !== null ? existingArgs : {};
 
   await prisma.transaction.update({
     where: { hash: transactionHash },
@@ -201,14 +181,15 @@ export async function storeBridgeRoute(
  */
 export async function queryBridgeRoutes(
   direction: 'inbound' | 'outbound',
-  destinationChain?: string
+  destinationChain?: string,
 ): Promise<BridgeRoute[]> {
   const transactions = await prisma.transaction.findMany({
     where: {
       functionName: {
-        in: direction === 'outbound'
-          ? ['lock', 'deposit', 'bridge_in']
-          : ['unlock', 'withdraw', 'bridge_out'],
+        in:
+          direction === 'outbound'
+            ? ['lock', 'deposit', 'bridge_in']
+            : ['unlock', 'withdraw', 'bridge_out'],
       },
     },
     include: { events: true },
@@ -219,10 +200,7 @@ export async function queryBridgeRoutes(
 
   for (const tx of transactions) {
     const route = await analyzeBridgeRoute(tx.hash);
-    if (
-      route &&
-      (!destinationChain || route.destinationChain === destinationChain)
-    ) {
+    if (route && (!destinationChain || route.destinationChain === destinationChain)) {
       routes.push(route);
     }
   }

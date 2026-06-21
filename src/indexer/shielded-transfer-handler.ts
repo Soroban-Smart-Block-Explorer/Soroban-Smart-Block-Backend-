@@ -11,7 +11,7 @@ export async function handleShieldedTransfer(
   toAddress: string | null,
   amount: string | null,
   ledgerSequence: number,
-  ledgerCloseTime: Date
+  ledgerCloseTime: Date,
 ): Promise<void> {
   const isConfidential = amount === null || fromAddress === null || toAddress === null;
 
@@ -53,10 +53,7 @@ export function formatShieldedTransfer(transfer: {
 /**
  * Retrieve shielded transfer history for a contract.
  */
-export async function getShieldedTransferHistory(
-  contractAddress: string,
-  limit: number = 50
-) {
+export async function getShieldedTransferHistory(contractAddress: string, limit: number = 50) {
   const transfers = await prisma.shieldedTransfer.findMany({
     where: { contractAddress },
     orderBy: { ledgerSequence: 'desc' },

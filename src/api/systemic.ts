@@ -8,11 +8,7 @@ import {
   computeConcentrationMetrics,
   buildSystemDependencyGraph,
 } from '../indexer/systemicRisk';
-import {
-  getCurrentRiskIndex,
-  getAlerts,
-  getRiskIndexHistory,
-} from '../indexer/systemicMonitor';
+import { getCurrentRiskIndex, getAlerts, getRiskIndexHistory } from '../indexer/systemicMonitor';
 
 export const systemicRouter = Router();
 

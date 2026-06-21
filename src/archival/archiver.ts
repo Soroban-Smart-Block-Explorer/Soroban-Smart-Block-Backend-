@@ -57,20 +57,23 @@ export async function archiveRawXdr(): Promise<ArchivalResult> {
         const d = tx.ledgerCloseTime;
         const key = `xdr/${d.getUTCFullYear()}/${String(d.getUTCMonth() + 1).padStart(2, '0')}/${tx.ledgerSequence}/${tx.hash}.json`;
         try {
-          await uploadToS3(key, JSON.stringify({
-            hash: tx.hash,
-            ledgerSequence: tx.ledgerSequence,
-            ledgerCloseTime: tx.ledgerCloseTime.toISOString(),
-            contractAddress: tx.contractAddress,
-            rawXdr: tx.rawXdr,
-          }));
+          await uploadToS3(
+            key,
+            JSON.stringify({
+              hash: tx.hash,
+              ledgerSequence: tx.ledgerSequence,
+              ledgerCloseTime: tx.ledgerCloseTime.toISOString(),
+              contractAddress: tx.contractAddress,
+              rawXdr: tx.rawXdr,
+            }),
+          );
           toNullify.push(tx.id);
           result.archived++;
         } catch (err) {
           console.error(`[Archiver] Failed to upload ${tx.hash}:`, err);
           result.errors++;
         }
-      })
+      }),
     );
 
     if (toNullify.length > 0) {
@@ -82,6 +85,8 @@ export async function archiveRawXdr(): Promise<ArchivalResult> {
     }
   }
 
-  console.log(`[Archiver] Done — archived: ${result.archived}, nullified: ${result.nullified}, errors: ${result.errors}`);
+  console.log(
+    `[Archiver] Done — archived: ${result.archived}, nullified: ${result.nullified}, errors: ${result.errors}`,
+  );
   return result;
 }

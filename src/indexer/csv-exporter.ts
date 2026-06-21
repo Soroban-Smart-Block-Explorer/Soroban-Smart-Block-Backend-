@@ -39,13 +39,29 @@ function rowToCsv(headers: string[], obj: Record<string, unknown>): string {
 // ---------------------------------------------------------------------------
 
 const TX_HEADERS = [
-  'hash', 'ledgerSequence', 'ledgerCloseTime', 'sourceAccount',
-  'contractAddress', 'functionName', 'status', 'humanReadable', 'feeCharged', 'createdAt',
+  'hash',
+  'ledgerSequence',
+  'ledgerCloseTime',
+  'sourceAccount',
+  'contractAddress',
+  'functionName',
+  'status',
+  'humanReadable',
+  'feeCharged',
+  'createdAt',
 ];
 
 const EVENT_HEADERS = [
-  'id', 'transactionHash', 'contractAddress', 'eventType',
-  'topics', 'data', 'decoded', 'ledgerSequence', 'ledgerCloseTime', 'createdAt',
+  'id',
+  'transactionHash',
+  'contractAddress',
+  'eventType',
+  'topics',
+  'data',
+  'decoded',
+  'ledgerSequence',
+  'ledgerCloseTime',
+  'createdAt',
 ];
 
 async function streamTransactions(
@@ -82,10 +98,7 @@ async function streamTransactions(
   return total;
 }
 
-async function streamEvents(
-  filters: Record<string, unknown>,
-  out: Writable,
-): Promise<number> {
+async function streamEvents(filters: Record<string, unknown>, out: Writable): Promise<number> {
   out.write(EVENT_HEADERS.join(',') + '\n');
 
   const where = buildEventWhere(filters);
@@ -152,9 +165,16 @@ function buildEventWhere(f: Record<string, unknown>) {
 // ---------------------------------------------------------------------------
 
 const WALLET_HISTORY_HEADERS = [
-  'type', 'hash', 'ledgerSequence', 'ledgerCloseTime',
-  'contractAddress', 'functionName', 'status', 'humanReadable',
-  'feeCharged', 'createdAt',
+  'type',
+  'hash',
+  'ledgerSequence',
+  'ledgerCloseTime',
+  'contractAddress',
+  'functionName',
+  'status',
+  'humanReadable',
+  'feeCharged',
+  'createdAt',
 ];
 
 async function streamWalletHistory(
@@ -226,9 +246,7 @@ export async function enqueueExport(
     data: { exportType, filters: filters as Prisma.InputJsonValue, status: 'pending' },
   });
   // Fire-and-forget; caller can poll job status
-  runExportJob(job.id).catch((err) =>
-    console.error(`[csv-exporter] job ${job.id} failed:`, err),
-  );
+  runExportJob(job.id).catch((err) => console.error(`[csv-exporter] job ${job.id} failed:`, err));
   return job.id;
 }
 

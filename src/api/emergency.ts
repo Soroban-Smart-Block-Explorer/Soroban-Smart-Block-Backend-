@@ -31,7 +31,9 @@ emergencyRouter.get('/overview', async (_req: Request, res: Response) => {
         }),
         prismaRead.pauseEvent.count(),
         prismaRead.incidentReport.count({ where: { status: { in: ['open', 'investigating'] } } }),
-        prismaRead.incidentReport.count({ where: { severity: 'critical', status: { in: ['open', 'investigating'] } } }),
+        prismaRead.incidentReport.count({
+          where: { severity: 'critical', status: { in: ['open', 'investigating'] } },
+        }),
       ]);
 
     const contractAddresses = pausedStates.map((s) => s.contractAddress);
@@ -54,9 +56,7 @@ emergencyRouter.get('/overview', async (_req: Request, res: Response) => {
 
     const pausedContracts = pausedStates.map((state) => {
       const pe = pauseMap[state.contractAddress];
-      const durationSec = pe
-        ? Math.round((Date.now() - pe.timestamp.getTime()) / 1000)
-        : 0;
+      const durationSec = pe ? Math.round((Date.now() - pe.timestamp.getTime()) / 1000) : 0;
       return {
         contract: state.contractAddress,
         name: contractMap[state.contractAddress]?.name ?? null,
@@ -84,102 +84,121 @@ emergencyRouter.get('/overview', async (_req: Request, res: Response) => {
 });
 
 // GET /emergency/contracts/:address
-emergencyRouter.get('/contracts/:address', validateAddressParam, async (req: Request, res: Response) => {
-  try {
-    const { address } = req.params;
+emergencyRouter.get(
+  '/contracts/:address',
+  validateAddressParam,
+  async (req: Request, res: Response) => {
+    try {
+      const { address } = req.params;
 
-    const [state, pauserAnalysis, recoveryAnalysis, contract, incidents] = await Promise.all([
-      prismaRead.emergencyState.findUnique({ where: { contractAddress: address } }),
-      prismaRead.pauserAnalysis.findUnique({ where: { contractAddress: address } }),
-      prismaRead.recoveryAnalysis.findUnique({ where: { contractAddress: address } }),
-      prismaRead.contract.findUnique({ where: { address }, select: { name: true } }),
-      prismaRead.incidentReport.findMany({
+      const [state, pauserAnalysis, recoveryAnalysis, contract, incidents] = await Promise.all([
+        prismaRead.emergencyState.findUnique({ where: { contractAddress: address } }),
+        prismaRead.pauserAnalysis.findUnique({ where: { contractAddress: address } }),
+        prismaRead.recoveryAnalysis.findUnique({ where: { contractAddress: address } }),
+        prismaRead.contract.findUnique({ where: { address }, select: { name: true } }),
+        prismaRead.incidentReport.findMany({
+          where: { contractAddress: address },
+          orderBy: { createdAt: 'desc' },
+          take: 10,
+          select: { id: true, createdAt: true, severity: true, status: true, title: true },
+        }),
+      ]);
+
+      const pauseHistory = await prismaRead.pauseEvent.findMany({
         where: { contractAddress: address },
-        orderBy: { createdAt: 'desc' },
-        take: 10,
-        select: { id: true, createdAt: true, severity: true, status: true, title: true },
-      }),
-    ]);
+        orderBy: { timestamp: 'desc' },
+        take: 20,
+      });
 
-    const pauseHistory = await prismaRead.pauseEvent.findMany({
-      where: { contractAddress: address },
-      orderBy: { timestamp: 'desc' },
-      take: 20,
-    });
-
-    let currentPause = null;
-    if (state?.isPaused && state.currentPauseId) {
-      const pe = pauseHistory.find((p) => p.id === state.currentPauseId);
-      if (pe) {
-        currentPause = {
-          id: pe.id,
-          startedAt: pe.timestamp,
-          pauser: pe.pauserAddress,
-          reason: pe.reason,
-          txHash: pe.txHash,
-          blockNumber: pe.blockNumber,
-        };
+      let currentPause = null;
+      if (state?.isPaused && state.currentPauseId) {
+        const pe = pauseHistory.find((p) => p.id === state.currentPauseId);
+        if (pe) {
+          currentPause = {
+            id: pe.id,
+            startedAt: pe.timestamp,
+            pauser: pe.pauserAddress,
+            reason: pe.reason,
+            txHash: pe.txHash,
+            blockNumber: pe.blockNumber,
+          };
+        }
       }
+
+      const history = pauseHistory
+        .filter((p) => p.eventType === 'unpause')
+        .map((p) => ({
+          endedAt: p.timestamp,
+          duration: formatDuration(p.durationSeconds),
+          txHash: p.txHash,
+        }));
+
+      const decScore = Number((state?.decentralizationScore ?? pauserAnalysis) ? 0 : 0);
+      const recovScore = Number(recoveryAnalysis?.recoveryRobustnessScore ?? 0);
+
+      res.json({
+        contract: address,
+        protocolName: contract?.name ?? null,
+        isPaused: state?.isPaused ?? false,
+        currentPause,
+        pauseHistory: history,
+        pauserAnalysis: pauserAnalysis
+          ? {
+              type: pauserAnalysis.pauserType,
+              signers: pauserAnalysis.pauserAddresses,
+              threshold: pauserAnalysis.threshold,
+              decentralizationScore: pauserAnalysis ? computeDecScore(pauserAnalysis) : 0,
+              riskLevel: classifyRisk(pauserAnalysis ? computeDecScore(pauserAnalysis) : 0),
+            }
+          : null,
+        recoveryAnalysis: recoveryAnalysis
+          ? {
+              hasFundRecovery: recoveryAnalysis.hasFundRecovery,
+              fundRecoveryFunctions: recoveryAnalysis.fundRecoveryFunctions,
+              hasUpgradeCapability: recoveryAnalysis.hasUpgradeCapability,
+              upgradeFunctions: recoveryAnalysis.upgradeFunctions,
+              recoveryRobustnessScore: recovScore,
+              riskLevel: classifyRisk(100 - recovScore),
+            }
+          : null,
+        incidentHistory: incidents.map((i) => ({
+          id: i.id,
+          date: i.createdAt,
+          severity: i.severity,
+          status: i.status,
+          title: i.title,
+        })),
+        healthScore: {
+          overall: Math.round(
+            decScore * 0.2 +
+              recovScore * 0.3 +
+              (100 - Math.min(100, (state?.totalPauseCount ?? 0) * 5)) * 0.4 +
+              70 * 0.1,
+          ),
+          reliability: Math.max(0, 100 - (state?.totalPauseCount ?? 0) * 5),
+          decentralization: decScore,
+          recoveryPreparedness: recovScore,
+        },
+      });
+    } catch (err) {
+      res.status(500).json({ error: String(err) });
     }
+  },
+);
 
-    const history = pauseHistory
-      .filter((p) => p.eventType === 'unpause')
-      .map((p) => ({
-        endedAt: p.timestamp,
-        duration: formatDuration(p.durationSeconds),
-        txHash: p.txHash,
-      }));
-
-    const decScore = Number(state?.decentralizationScore ?? pauserAnalysis ? 0 : 0);
-    const recovScore = Number(recoveryAnalysis?.recoveryRobustnessScore ?? 0);
-
-    res.json({
-      contract: address,
-      protocolName: contract?.name ?? null,
-      isPaused: state?.isPaused ?? false,
-      currentPause,
-      pauseHistory: history,
-      pauserAnalysis: pauserAnalysis
-        ? {
-            type: pauserAnalysis.pauserType,
-            signers: pauserAnalysis.pauserAddresses,
-            threshold: pauserAnalysis.threshold,
-            decentralizationScore: pauserAnalysis ? computeDecScore(pauserAnalysis) : 0,
-            riskLevel: classifyRisk(pauserAnalysis ? computeDecScore(pauserAnalysis) : 0),
-          }
-        : null,
-      recoveryAnalysis: recoveryAnalysis
-        ? {
-            hasFundRecovery: recoveryAnalysis.hasFundRecovery,
-            fundRecoveryFunctions: recoveryAnalysis.fundRecoveryFunctions,
-            hasUpgradeCapability: recoveryAnalysis.hasUpgradeCapability,
-            upgradeFunctions: recoveryAnalysis.upgradeFunctions,
-            recoveryRobustnessScore: recovScore,
-            riskLevel: classifyRisk(100 - recovScore),
-          }
-        : null,
-      incidentHistory: incidents.map((i) => ({
-        id: i.id,
-        date: i.createdAt,
-        severity: i.severity,
-        status: i.status,
-        title: i.title,
-      })),
-      healthScore: {
-        overall: Math.round((decScore * 0.2 + recovScore * 0.3 + (100 - Math.min(100, (state?.totalPauseCount ?? 0) * 5)) * 0.4 + 70 * 0.1)),
-        reliability: Math.max(0, 100 - (state?.totalPauseCount ?? 0) * 5),
-        decentralization: decScore,
-        recoveryPreparedness: recovScore,
-      },
-    });
-  } catch (err) {
-    res.status(500).json({ error: String(err) });
-  }
-});
-
-function computeDecScore(pa: { pauserType: string; threshold?: number | null; totalSigners?: number | null; timelockDelaySeconds?: bigint | null }): number {
+function computeDecScore(pa: {
+  pauserType: string;
+  threshold?: number | null;
+  totalSigners?: number | null;
+  timelockDelaySeconds?: bigint | null;
+}): number {
   const days = pa.timelockDelaySeconds ? Number(pa.timelockDelaySeconds) / 86400 : undefined;
-  return computeDecentralizationScore(pa.pauserType, pa.threshold ?? undefined, pa.totalSigners ?? undefined, days);
+  return computeDecentralizationScore(
+    pa.pauserType,
+    pa.threshold ?? undefined,
+    pa.totalSigners ?? undefined,
+    days,
+  );
 }
 
 const eventsQuerySchema = z.object({
@@ -227,18 +246,22 @@ emergencyRouter.get('/events/:id', async (req: Request, res: Response) => {
 });
 
 // GET /emergency/contracts/:address/events
-emergencyRouter.get('/contracts/:address/events', validateAddressParam, async (req: Request, res: Response) => {
-  try {
-    const events = await prismaRead.pauseEvent.findMany({
-      where: { contractAddress: req.params.address },
-      orderBy: { timestamp: 'desc' },
-      take: 50,
-    });
-    res.json({ data: events, total: events.length });
-  } catch (err) {
-    res.status(500).json({ error: String(err) });
-  }
-});
+emergencyRouter.get(
+  '/contracts/:address/events',
+  validateAddressParam,
+  async (req: Request, res: Response) => {
+    try {
+      const events = await prismaRead.pauseEvent.findMany({
+        where: { contractAddress: req.params.address },
+        orderBy: { timestamp: 'desc' },
+        take: 50,
+      });
+      res.json({ data: events, total: events.length });
+    } catch (err) {
+      res.status(500).json({ error: String(err) });
+    }
+  },
+);
 
 // GET /emergency/stats
 emergencyRouter.get('/stats', async (_req: Request, res: Response) => {
@@ -316,73 +339,84 @@ emergencyRouter.get('/stats', async (_req: Request, res: Response) => {
 });
 
 // GET /emergency/contracts/:address/recovery-simulation
-emergencyRouter.get('/contracts/:address/recovery-simulation', validateAddressParam, async (req: Request, res: Response) => {
-  try {
-    const ra = await prismaRead.recoveryAnalysis.findUnique({
-      where: { contractAddress: req.params.address },
-    });
-    if (!ra) return res.status(404).json({ error: 'No recovery analysis found. Trigger analysis first.' });
-
-    const paths: Array<{
-      type: string;
-      function: string;
-      steps: string[];
-      estimatedTime: string;
-      complexity: string;
-      riskFactors: string[];
-    }> = [];
-
-    for (const fn of ra.fundRecoveryFunctions) {
-      paths.push({
-        type: 'fund_recovery',
-        function: fn,
-        steps: [`Call ${fn}(to, token, amount)`, 'Tokens transferred to admin wallet'],
-        estimatedTime: '5 minutes',
-        complexity: 'low',
-        riskFactors: ['May not cover all token types', 'Requires admin key'],
+emergencyRouter.get(
+  '/contracts/:address/recovery-simulation',
+  validateAddressParam,
+  async (req: Request, res: Response) => {
+    try {
+      const ra = await prismaRead.recoveryAnalysis.findUnique({
+        where: { contractAddress: req.params.address },
       });
-    }
-    for (const fn of ra.upgradeFunctions) {
-      paths.push({
-        type: 'upgrade',
-        function: fn,
-        steps: ['Deploy patched WASM bytecode', `Call ${fn}(new_wasm_hash)`, 'Verify new implementation'],
-        estimatedTime: '30 minutes',
-        complexity: 'medium',
-        riskFactors: ['State compatibility required', 'New contract must be audited'],
-      });
-    }
-    for (const fn of ra.migrationFunctions) {
-      paths.push({
-        type: 'migration',
-        function: fn,
-        steps: [`Call ${fn}()`, 'Export state to new contract', 'Redirect users'],
-        estimatedTime: '1-2 hours',
-        complexity: 'high',
-        riskFactors: ['State migration complexity', 'Downtime during migration'],
-      });
-    }
-    for (const fn of ra.rollbackFunctions) {
-      paths.push({
-        type: 'state_rollback',
-        function: fn,
-        steps: [`Call ${fn}(checkpoint_id)`, 'State reverted to checkpoint'],
-        estimatedTime: '10 minutes',
-        complexity: 'medium',
-        riskFactors: ['Data loss since checkpoint', 'Requires valid checkpoint'],
-      });
-    }
+      if (!ra)
+        return res
+          .status(404)
+          .json({ error: 'No recovery analysis found. Trigger analysis first.' });
 
-    const recommended = paths[0]?.type ?? null;
+      const paths: Array<{
+        type: string;
+        function: string;
+        steps: string[];
+        estimatedTime: string;
+        complexity: string;
+        riskFactors: string[];
+      }> = [];
 
-    res.json({
-      contract: req.params.address,
-      recoveryPaths: paths,
-      recommendedPath: recommended,
-      canRecoverWithoutUpgrade: ra.hasFundRecovery || ra.hasStateRollback,
-      estimatedRecoveryTime: paths[0]?.estimatedTime ?? 'unknown',
-    });
-  } catch (err) {
-    res.status(500).json({ error: String(err) });
-  }
-});
+      for (const fn of ra.fundRecoveryFunctions) {
+        paths.push({
+          type: 'fund_recovery',
+          function: fn,
+          steps: [`Call ${fn}(to, token, amount)`, 'Tokens transferred to admin wallet'],
+          estimatedTime: '5 minutes',
+          complexity: 'low',
+          riskFactors: ['May not cover all token types', 'Requires admin key'],
+        });
+      }
+      for (const fn of ra.upgradeFunctions) {
+        paths.push({
+          type: 'upgrade',
+          function: fn,
+          steps: [
+            'Deploy patched WASM bytecode',
+            `Call ${fn}(new_wasm_hash)`,
+            'Verify new implementation',
+          ],
+          estimatedTime: '30 minutes',
+          complexity: 'medium',
+          riskFactors: ['State compatibility required', 'New contract must be audited'],
+        });
+      }
+      for (const fn of ra.migrationFunctions) {
+        paths.push({
+          type: 'migration',
+          function: fn,
+          steps: [`Call ${fn}()`, 'Export state to new contract', 'Redirect users'],
+          estimatedTime: '1-2 hours',
+          complexity: 'high',
+          riskFactors: ['State migration complexity', 'Downtime during migration'],
+        });
+      }
+      for (const fn of ra.rollbackFunctions) {
+        paths.push({
+          type: 'state_rollback',
+          function: fn,
+          steps: [`Call ${fn}(checkpoint_id)`, 'State reverted to checkpoint'],
+          estimatedTime: '10 minutes',
+          complexity: 'medium',
+          riskFactors: ['Data loss since checkpoint', 'Requires valid checkpoint'],
+        });
+      }
+
+      const recommended = paths[0]?.type ?? null;
+
+      res.json({
+        contract: req.params.address,
+        recoveryPaths: paths,
+        recommendedPath: recommended,
+        canRecoverWithoutUpgrade: ra.hasFundRecovery || ra.hasStateRollback,
+        estimatedRecoveryTime: paths[0]?.estimatedTime ?? 'unknown',
+      });
+    } catch (err) {
+      res.status(500).json({ error: String(err) });
+    }
+  },
+);

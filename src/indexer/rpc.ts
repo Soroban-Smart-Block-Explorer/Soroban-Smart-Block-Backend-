@@ -77,7 +77,9 @@ export async function fetchEvents(startLedger: number, endLedger: number): Promi
     }
 
     const mapped = page
-      .filter((e) => typeof e.ledger === 'number' && e.ledger >= startLedger && e.ledger <= endLedger)
+      .filter(
+        (e) => typeof e.ledger === 'number' && e.ledger >= startLedger && e.ledger <= endLedger,
+      )
       .map((e) => ({
         contractId: String(e.contractId ?? ''),
         transactionHash: String(e.txHash ?? ''),
@@ -145,7 +147,7 @@ export async function getTransactionFromHorizon(hash: string) {
     sourceAccount: data.source_account as string,
     feeCharged: String(data.fee_charged ?? ''),
     envelopeXdr: {
-      toXDR: (enc: string) => enc === 'base64' ? data.envelope_xdr : data.envelope_xdr,
+      toXDR: (enc: string) => (enc === 'base64' ? data.envelope_xdr : data.envelope_xdr),
     },
   };
 }

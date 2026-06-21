@@ -29,7 +29,7 @@ export interface StorageTrapAlert {
 export async function analyzeStorageTrap(
   contractAddress: string,
   oldAbi: any,
-  newAbi: any
+  newAbi: any,
 ): Promise<StorageTrapAlert[]> {
   const alerts: StorageTrapAlert[] = [];
 
@@ -47,9 +47,9 @@ export async function analyzeStorageTrap(
 
     // Detect unversioned expansion
     if (newLayoutTyped.totalSize > oldLayoutTyped.totalSize) {
-      const newFieldNames = new Set(newLayoutTyped.fields.map(f => f.name));
-      const oldFieldNames = new Set(oldLayoutTyped.fields.map(f => f.name));
-      const addedFields = Array.from(newFieldNames).filter(f => !oldFieldNames.has(f));
+      const newFieldNames = new Set(newLayoutTyped.fields.map((f) => f.name));
+      const oldFieldNames = new Set(oldLayoutTyped.fields.map((f) => f.name));
+      const addedFields = Array.from(newFieldNames).filter((f) => !oldFieldNames.has(f));
 
       if (addedFields.length > 0 && !isVersionedEnum(newAbi, structName)) {
         alerts.push({
@@ -119,19 +119,13 @@ function calculateStructSize(fields: StructField[]): number {
 function isVersionedEnum(abi: any, structName: string): boolean {
   if (!abi.types) return false;
   return abi.types.some(
-    (t: any) =>
-      t.kind === 'enum' &&
-      t.name === `${structName}Version` &&
-      t.variants?.length > 0
+    (t: any) => t.kind === 'enum' && t.name === `${structName}Version` && t.variants?.length > 0,
   );
 }
 
-function detectFieldReordering(
-  oldLayout: StructLayout,
-  newLayout: StructLayout
-): string[] {
-  const oldOrder = oldLayout.fields.map(f => f.name);
-  const newOrder = newLayout.fields.map(f => f.name);
+function detectFieldReordering(oldLayout: StructLayout, newLayout: StructLayout): string[] {
+  const oldOrder = oldLayout.fields.map((f) => f.name);
+  const newOrder = newLayout.fields.map((f) => f.name);
 
   const reordered: string[] = [];
   for (let i = 0; i < Math.min(oldOrder.length, newOrder.length); i++) {
@@ -143,12 +137,9 @@ function detectFieldReordering(
   return reordered;
 }
 
-function detectTypeChanges(
-  oldLayout: StructLayout,
-  newLayout: StructLayout
-): string[] {
+function detectTypeChanges(oldLayout: StructLayout, newLayout: StructLayout): string[] {
   const changes: string[] = [];
-  const newFieldMap = new Map(newLayout.fields.map(f => [f.name, f]));
+  const newFieldMap = new Map(newLayout.fields.map((f) => [f.name, f]));
 
   for (const oldField of oldLayout.fields) {
     const newField = newFieldMap.get(oldField.name);
@@ -165,16 +156,16 @@ function detectTypeChanges(
  */
 export async function markStorageTrapAlert(
   contractAddress: string,
-  alerts: StorageTrapAlert[]
+  alerts: StorageTrapAlert[],
 ): Promise<void> {
   if (alerts.length === 0) return;
 
-  const criticalAlerts = alerts.filter(a => a.severity === 'critical');
+  const criticalAlerts = alerts.filter((a) => a.severity === 'critical');
   const alertBadge = {
     hasStorageTrap: true,
     trapCount: alerts.length,
     criticalCount: criticalAlerts.length,
-    alerts: alerts.map(a => ({
+    alerts: alerts.map((a) => ({
       type: a.trapType,
       fields: a.affectedFields,
       message: a.message,
@@ -187,9 +178,7 @@ export async function markStorageTrapAlert(
   });
 
   const existingAbi =
-    typeof contract?.abi === 'object' && contract?.abi !== null
-      ? contract.abi
-      : {};
+    typeof contract?.abi === 'object' && contract?.abi !== null ? contract.abi : {};
 
   await prisma.contract.update({
     where: { address: contractAddress },

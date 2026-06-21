@@ -35,7 +35,7 @@ function stats(values: number[]): { mean: number; stdDev: number } {
 export async function detectSpikes(
   windowMinutes = 5,
   historyWindows = 12,
-  zThreshold = 3.0
+  zThreshold = 3.0,
 ): Promise<SpikeAlert[]> {
   const now = new Date();
   const windowMs = windowMinutes * 60 * 1000;

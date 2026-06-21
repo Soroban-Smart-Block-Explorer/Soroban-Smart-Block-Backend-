@@ -24,7 +24,11 @@ vizRouter.get('/pause-timeline', async (_req: Request, res: Response) => {
       (byContract[ev.contractAddress] ??= []).push(ev);
     }
 
-    const gantt: Array<{ contract: string; name: string | null; segments: Array<{ start: Date; end: Date | null; durationSeconds: number | null }> }> = [];
+    const gantt: Array<{
+      contract: string;
+      name: string | null;
+      segments: Array<{ start: Date; end: Date | null; durationSeconds: number | null }>;
+    }> = [];
 
     for (const [addr, evs] of Object.entries(byContract)) {
       const segments: Array<{ start: Date; end: Date | null; durationSeconds: number | null }> = [];
@@ -91,7 +95,7 @@ vizRouter.get('/risk-matrix', async (_req: Request, res: Response) => {
       name: s.protocolName ?? s.contractAddress,
       address: s.contractAddress,
       x: Number(s.decentralizationScore ?? 0), // decentralization axis
-      y: Number(s.recoveryScore ?? 0),          // recovery axis
+      y: Number(s.recoveryScore ?? 0), // recovery axis
       riskLevel: s.riskLevel,
       healthScore: Number(s.healthScore ?? 0),
     }));
@@ -142,9 +146,20 @@ vizRouter.get('/export/csv', async (_req: Request, res: Response) => {
       take: 10000,
     });
 
-    const header = 'id,contractAddress,eventType,pauserAddress,reason,txHash,blockNumber,timestamp,durationSeconds\n';
+    const header =
+      'id,contractAddress,eventType,pauserAddress,reason,txHash,blockNumber,timestamp,durationSeconds\n';
     const rows = events.map((e) =>
-      [e.id, e.contractAddress, e.eventType, e.pauserAddress ?? '', (e.reason ?? '').replace(/,/g, ';'), e.txHash, e.blockNumber, e.timestamp.toISOString(), e.durationSeconds ?? ''].join(','),
+      [
+        e.id,
+        e.contractAddress,
+        e.eventType,
+        e.pauserAddress ?? '',
+        (e.reason ?? '').replace(/,/g, ';'),
+        e.txHash,
+        e.blockNumber,
+        e.timestamp.toISOString(),
+        e.durationSeconds ?? '',
+      ].join(','),
     );
 
     res.setHeader('Content-Type', 'text/csv');

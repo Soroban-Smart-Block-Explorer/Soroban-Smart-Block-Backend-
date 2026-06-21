@@ -28,7 +28,7 @@ export async function detectNetworkPartitions(): Promise<string[][]> {
     select: { publicKey: true },
   });
 
-  return nodes.length > 0 ? [[...nodes.map(n => n.publicKey)]] : [];
+  return nodes.length > 0 ? [[...nodes.map((n) => n.publicKey)]] : [];
 }
 
 export async function calculateCentralityScores(): Promise<Map<string, number>> {
@@ -38,7 +38,7 @@ export async function calculateCentralityScores(): Promise<Map<string, number>> 
   });
 
   const scores = new Map<string, number>();
-  nodes.forEach(n => scores.set(n.publicKey, Math.random() * 100));
+  nodes.forEach((n) => scores.set(n.publicKey, Math.random() * 100));
   return scores;
 }
 
@@ -58,7 +58,7 @@ export async function detectVersionDrift(): Promise<{
   }
 
   const versionMap = new Map<string, string[]>();
-  nodes.forEach(node => {
+  nodes.forEach((node) => {
     const version = node.stellarCoreVersion || 'unknown';
     if (!versionMap.has(version)) {
       versionMap.set(version, []);
@@ -66,8 +66,7 @@ export async function detectVersionDrift(): Promise<{
     versionMap.get(version)!.push(node.publicKey);
   });
 
-  const sorted = Array.from(versionMap.entries())
-    .sort((a, b) => b[1].length - a[1].length);
+  const sorted = Array.from(versionMap.entries()).sort((a, b) => b[1].length - a[1].length);
 
   const majorityVersion = sorted[0]?.[0];
   const majorityCount = sorted[0]?.[1].length || 0;
@@ -82,9 +81,10 @@ export async function detectVersionDrift(): Promise<{
     driftDetected: majorityPct < 90,
     majorityVersion,
     minorityVersions,
-    outdatedNodes: majorityPct < 50 
-      ? nodes.filter(n => n.stellarCoreVersion !== majorityVersion).map(n => n.publicKey)
-      : [],
+    outdatedNodes:
+      majorityPct < 50
+        ? nodes.filter((n) => n.stellarCoreVersion !== majorityVersion).map((n) => n.publicKey)
+        : [],
   };
 }
 
@@ -100,7 +100,7 @@ export async function generateTopologyVisualization(): Promise<any> {
     },
   });
 
-  const d3Nodes = nodes.map(node => ({
+  const d3Nodes = nodes.map((node) => ({
     id: node.publicKey,
     label: node.name || node.publicKey.slice(0, 10),
     group: node.isValidator ? 'validator' : 'full_node',

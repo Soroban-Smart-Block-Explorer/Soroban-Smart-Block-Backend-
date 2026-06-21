@@ -68,8 +68,11 @@ export function isCheckedArithmeticFunction(functionName: string): boolean {
  * e.g. "checked_add_i256" → { type: 'checked_add', operandType: 'i256' }
  */
 function parseCheckedFunctionName(
-  functionName: string
-): { type: 'checked_add' | 'checked_sub' | 'checked_mul' | 'checked_pow'; operandType: 'i256' | 'u256' } | null {
+  functionName: string,
+): {
+  type: 'checked_add' | 'checked_sub' | 'checked_mul' | 'checked_pow';
+  operandType: 'i256' | 'u256';
+} | null {
   const match = functionName.match(/^checked_(add|sub|mul|pow)_(i256|u256)$/);
   if (!match) return null;
 
@@ -224,7 +227,7 @@ function formatCheckedResult(result: CheckedArithmeticResult): string {
 export function analyzeCheckedArithmetic(
   functionName: string,
   rawArgs: xdr.ScVal[],
-  resultVal: xdr.ScVal | null
+  resultVal: xdr.ScVal | null,
 ): CheckedArithmeticAnalysis {
   // Check if this is a checked arithmetic function
   if (!isCheckedArithmeticFunction(functionName)) {
@@ -282,7 +285,7 @@ export function analyzeCheckedArithmetic(
  * This allows seamless integration with the existing decoding layer.
  */
 export function checkedArithmeticToDecodedArg(
-  analysis: CheckedArithmeticAnalysis
+  analysis: CheckedArithmeticAnalysis,
 ): DecodedArg | null {
   if (!analysis.isCheckedOperation || !analysis.operation) {
     return null;
@@ -308,10 +311,10 @@ export function analyzeCheckedArithmeticBatch(
     functionName: string;
     args: xdr.ScVal[];
     result?: xdr.ScVal;
-  }>
+  }>,
 ): CheckedArithmeticAnalysis[] {
   return functionCalls.map((call) =>
-    analyzeCheckedArithmetic(call.functionName, call.args, call.result ?? null)
+    analyzeCheckedArithmetic(call.functionName, call.args, call.result ?? null),
   );
 }
 
@@ -328,7 +331,7 @@ export function didOverflow(analysis: CheckedArithmeticAnalysis): boolean {
  * Get all overflowed operations from a batch.
  */
 export function getOverflowedOperations(
-  analyses: CheckedArithmeticAnalysis[]
+  analyses: CheckedArithmeticAnalysis[],
 ): CheckedArithmeticOperation[] {
   return analyses
     .filter((a) => a.isCheckedOperation && a.operation?.result.status === 'overflow')
@@ -339,9 +342,10 @@ export function getOverflowedOperations(
 /**
  * Count successful vs overflowed operations.
  */
-export function countOperationResults(
-  analyses: CheckedArithmeticAnalysis[]
-): { successful: number; overflowed: number } {
+export function countOperationResults(analyses: CheckedArithmeticAnalysis[]): {
+  successful: number;
+  overflowed: number;
+} {
   let successful = 0;
   let overflowed = 0;
 
@@ -383,10 +387,7 @@ export function isValidU256(value: bigint): boolean {
  * Validate operands before arithmetic operation.
  * Returns true if operands are valid for the operation type.
  */
-export function validateOperands(
-  operands: bigint[],
-  operationType: 'i256' | 'u256'
-): boolean {
+export function validateOperands(operands: bigint[], operationType: 'i256' | 'u256'): boolean {
   if (operands.length < 2) return false;
 
   const validator = operationType === 'i256' ? isValidI256 : isValidU256;
@@ -400,7 +401,7 @@ export function validateOperands(
  * Useful for debugging and analysis.
  */
 export function generateDiagnosticReport(
-  analysis: CheckedArithmeticAnalysis
+  analysis: CheckedArithmeticAnalysis,
 ): Record<string, unknown> {
   if (!analysis.isCheckedOperation || !analysis.operation) {
     return { isCheckedOperation: false };
@@ -422,12 +423,11 @@ export function generateDiagnosticReport(
     bounds: {
       operandType,
       isValid: validateOperands(operands, operandType),
-      min: operandType === 'i256'
-        ? (-(BigInt(2) ** BigInt(255))).toString()
-        : '0',
-      max: operandType === 'i256'
-        ? (BigInt(2) ** BigInt(255) - BigInt(1)).toString()
-        : (BigInt(2) ** BigInt(256) - BigInt(1)).toString(),
+      min: operandType === 'i256' ? (-(BigInt(2) ** BigInt(255))).toString() : '0',
+      max:
+        operandType === 'i256'
+          ? (BigInt(2) ** BigInt(255) - BigInt(1)).toString()
+          : (BigInt(2) ** BigInt(256) - BigInt(1)).toString(),
     },
   };
 }

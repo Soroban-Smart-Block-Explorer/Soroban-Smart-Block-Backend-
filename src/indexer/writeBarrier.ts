@@ -32,7 +32,9 @@ const locks = new Map<string, Promise<void>>();
 async function withLock<T>(key: string, fn: () => Promise<T>): Promise<T> {
   const prev = locks.get(key) ?? Promise.resolve();
   let releaseLock!: () => void;
-  const next = new Promise<void>((resolve) => { releaseLock = resolve; });
+  const next = new Promise<void>((resolve) => {
+    releaseLock = resolve;
+  });
   locks.set(key, next);
 
   await prev; // wait for any in-flight write on this key
@@ -61,7 +63,7 @@ class MicroBatch<T> {
 
   constructor(
     private readonly flush: (items: T[]) => Promise<void>,
-    private readonly delayMs = 0
+    private readonly delayMs = 0,
   ) {}
 
   enqueue(data: T): Promise<void> {
@@ -95,11 +97,13 @@ class MicroBatch<T> {
  */
 export async function barrierUpsertContract(address: string): Promise<void> {
   await withLock(`contract:${address}`, () =>
-    prisma.contract.upsert({
-      where: { address },
-      update: {},
-      create: { address },
-    }).then(() => undefined)
+    prisma.contract
+      .upsert({
+        where: { address },
+        update: {},
+        create: { address },
+      })
+      .then(() => undefined),
   );
 }
 
@@ -109,14 +113,16 @@ export async function barrierUpsertContract(address: string): Promise<void> {
 export async function barrierUpsertLedger(
   sequence: number,
   closeTime: Date,
-  hash = ''
+  hash = '',
 ): Promise<void> {
   await withLock(`ledger:${sequence}`, () =>
-    prisma.ledger.upsert({
-      where: { sequence },
-      update: {},
-      create: { sequence, hash, closeTime },
-    }).then(() => undefined)
+    prisma.ledger
+      .upsert({
+        where: { sequence },
+        update: {},
+        create: { sequence, hash, closeTime },
+      })
+      .then(() => undefined),
   );
 }
 
@@ -126,14 +132,16 @@ export async function barrierUpsertLedger(
  */
 export async function barrierUpsertTransaction(
   hash: string,
-  createData: Parameters<typeof prisma.transaction.upsert>[0]['create']
+  createData: Parameters<typeof prisma.transaction.upsert>[0]['create'],
 ): Promise<void> {
   await withLock(`tx:${hash}`, () =>
-    prisma.transaction.upsert({
-      where: { hash },
-      update: {},
-      create: createData,
-    }).then(() => undefined)
+    prisma.transaction
+      .upsert({
+        where: { hash },
+        update: {},
+        create: createData,
+      })
+      .then(() => undefined),
   );
 }
 
@@ -148,10 +156,10 @@ const eventBatch = new MicroBatch<Parameters<typeof prisma.event.upsert>[0]['cre
           where: { id: item.id as string },
           update: {},
           create: item,
-        })
-      )
+        }),
+      ),
     );
-  }
+  },
 );
 
 /**
@@ -159,7 +167,7 @@ const eventBatch = new MicroBatch<Parameters<typeof prisma.event.upsert>[0]['cre
  * Calls within the same event-loop tick are coalesced into one DB transaction.
  */
 export async function barrierUpsertEvent(
-  createData: Parameters<typeof prisma.event.upsert>[0]['create']
+  createData: Parameters<typeof prisma.event.upsert>[0]['create'],
 ): Promise<void> {
   await eventBatch.enqueue(createData);
 }

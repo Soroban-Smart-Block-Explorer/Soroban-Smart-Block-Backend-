@@ -114,9 +114,22 @@ export type FuzzStrategy = {
 };
 
 export type CiStep =
-  | { action: 'deploy'; wasm: string; name?: string; templateId?: string; initArgs?: Record<string, unknown> }
+  | {
+      action: 'deploy';
+      wasm: string;
+      name?: string;
+      templateId?: string;
+      initArgs?: Record<string, unknown>;
+    }
   | { action: 'call'; contract: string; function: string; args?: unknown; source?: string }
-  | { action: 'assert'; contract: string; function: string; expected: unknown; args?: unknown; source?: string };
+  | {
+      action: 'assert';
+      contract: string;
+      function: string;
+      expected: unknown;
+      args?: unknown;
+      source?: string;
+    };
 
 export const defaultTemplates: SandboxTemplate[] = [
   {
@@ -128,14 +141,41 @@ export const defaultTemplates: SandboxTemplate[] = [
     abi: {
       functions: [
         { name: 'initialize', inputs: [{ name: 'admin', type: 'address' }], outputs: [] },
-        { name: 'mint', inputs: [{ name: 'to', type: 'address' }, { name: 'amount', type: 'i128' }], outputs: [] },
-        { name: 'burn', inputs: [{ name: 'from', type: 'address' }, { name: 'amount', type: 'i128' }], outputs: [] },
-        { name: 'transfer', inputs: [{ name: 'from', type: 'address' }, { name: 'to', type: 'address' }, { name: 'amount', type: 'i128' }], outputs: [] },
-        { name: 'balance_of', inputs: [{ name: 'owner', type: 'address' }], outputs: [{ type: 'i128' }] },
+        {
+          name: 'mint',
+          inputs: [
+            { name: 'to', type: 'address' },
+            { name: 'amount', type: 'i128' },
+          ],
+          outputs: [],
+        },
+        {
+          name: 'burn',
+          inputs: [
+            { name: 'from', type: 'address' },
+            { name: 'amount', type: 'i128' },
+          ],
+          outputs: [],
+        },
+        {
+          name: 'transfer',
+          inputs: [
+            { name: 'from', type: 'address' },
+            { name: 'to', type: 'address' },
+            { name: 'amount', type: 'i128' },
+          ],
+          outputs: [],
+        },
+        {
+          name: 'balance_of',
+          inputs: [{ name: 'owner', type: 'address' }],
+          outputs: [{ type: 'i128' }],
+        },
       ],
     },
     defaultArgs: { decimals: 7, name: 'Sandbox Token', symbol: 'SBX' },
-    deploymentGuide: 'Deploy and call initialize, then mint and transfer against pre-funded sandbox accounts.',
+    deploymentGuide:
+      'Deploy and call initialize, then mint and transfer against pre-funded sandbox accounts.',
     version: '1.0.0',
     author: 'Copilot',
   },
@@ -147,8 +187,22 @@ export const defaultTemplates: SandboxTemplate[] = [
     wasmBase64: 'AGFzbQEAAAA=',
     abi: {
       functions: [
-        { name: 'add_liquidity', inputs: [{ name: 'amount_a', type: 'i128' }, { name: 'amount_b', type: 'i128' }], outputs: [] },
-        { name: 'swap', inputs: [{ name: 'from_token', type: 'symbol' }, { name: 'amount_in', type: 'i128' }], outputs: [{ type: 'i128' }] },
+        {
+          name: 'add_liquidity',
+          inputs: [
+            { name: 'amount_a', type: 'i128' },
+            { name: 'amount_b', type: 'i128' },
+          ],
+          outputs: [],
+        },
+        {
+          name: 'swap',
+          inputs: [
+            { name: 'from_token', type: 'symbol' },
+            { name: 'amount_in', type: 'i128' },
+          ],
+          outputs: [{ type: 'i128' }],
+        },
         { name: 'get_reserves', inputs: [], outputs: [{ type: 'i128' }, { type: 'i128' }] },
       ],
     },
@@ -163,9 +217,18 @@ export const defaultTemplates: SandboxTemplate[] = [
     description: 'Curve-style stable swap pool with amplified invariant.',
     category: 'dex',
     wasmBase64: 'AGFzbQEAAAA=',
-    abi: { functions: [{ name: 'swap', inputs: [{ name: 'amount_in', type: 'i128' }], outputs: [{ type: 'i128' }] }] },
+    abi: {
+      functions: [
+        {
+          name: 'swap',
+          inputs: [{ name: 'amount_in', type: 'i128' }],
+          outputs: [{ type: 'i128' }],
+        },
+      ],
+    },
     defaultArgs: { amplification: 100 },
-    deploymentGuide: 'Use closely pegged assets and observe lower slippage than the constant product pool.',
+    deploymentGuide:
+      'Use closely pegged assets and observe lower slippage than the constant product pool.',
     version: '1.0.0',
     author: 'Copilot',
   },
@@ -175,7 +238,18 @@ export const defaultTemplates: SandboxTemplate[] = [
     description: 'ERC-721 equivalent with metadata and safe transfer semantics.',
     category: 'nft',
     wasmBase64: 'AGFzbQEAAAA=',
-    abi: { functions: [{ name: 'mint', inputs: [{ name: 'to', type: 'address' }, { name: 'token_id', type: 'u64' }], outputs: [] }] },
+    abi: {
+      functions: [
+        {
+          name: 'mint',
+          inputs: [
+            { name: 'to', type: 'address' },
+            { name: 'token_id', type: 'u64' },
+          ],
+          outputs: [],
+        },
+      ],
+    },
     defaultArgs: { baseUri: 'ipfs://...' },
     deploymentGuide: 'Mint unique token ids, then move them between sandbox accounts.',
     version: '1.0.0',
@@ -187,7 +261,18 @@ export const defaultTemplates: SandboxTemplate[] = [
     description: 'Configurable threshold wallet with proposal and execution flow.',
     category: 'wallet',
     wasmBase64: 'AGFzbQEAAAA=',
-    abi: { functions: [{ name: 'submit', inputs: [{ name: 'dest', type: 'address' }, { name: 'amount', type: 'i128' }], outputs: [{ type: 'u64' }] }] },
+    abi: {
+      functions: [
+        {
+          name: 'submit',
+          inputs: [
+            { name: 'dest', type: 'address' },
+            { name: 'amount', type: 'i128' },
+          ],
+          outputs: [{ type: 'u64' }],
+        },
+      ],
+    },
     defaultArgs: { threshold: '2/3' },
     deploymentGuide: 'Configure signers, submit a transfer, and execute after enough approvals.',
     version: '1.0.0',
@@ -211,7 +296,9 @@ export const defaultTemplates: SandboxTemplate[] = [
     description: 'Delegation and voting token with proposal tracking.',
     category: 'governance',
     wasmBase64: 'AGFzbQEAAAA=',
-    abi: { functions: [{ name: 'delegate', inputs: [{ name: 'to', type: 'address' }], outputs: [] }] },
+    abi: {
+      functions: [{ name: 'delegate', inputs: [{ name: 'to', type: 'address' }], outputs: [] }],
+    },
     defaultArgs: { quorum: '4%' },
     deploymentGuide: 'Mint voting power, delegate it, and then create a vote snapshot.',
     version: '1.0.0',
@@ -223,7 +310,11 @@ export const defaultTemplates: SandboxTemplate[] = [
     description: 'Proposer and executor role-based timelock controller.',
     category: 'governance',
     wasmBase64: 'AGFzbQEAAAA=',
-    abi: { functions: [{ name: 'schedule', inputs: [{ name: 'operation', type: 'bytes' }], outputs: [] }] },
+    abi: {
+      functions: [
+        { name: 'schedule', inputs: [{ name: 'operation', type: 'bytes' }], outputs: [] },
+      ],
+    },
     defaultArgs: { minDelay: 3600 },
     deploymentGuide: 'Schedule an operation, advance the ledger timestamp, and then execute.',
     version: '1.0.0',
@@ -247,7 +338,15 @@ export const defaultTemplates: SandboxTemplate[] = [
     description: 'Routes swaps across known pools using deterministic scoring.',
     category: 'dex',
     wasmBase64: 'AGFzbQEAAAA=',
-    abi: { functions: [{ name: 'route', inputs: [{ name: 'amount_in', type: 'i128' }], outputs: [{ type: 'i128' }] }] },
+    abi: {
+      functions: [
+        {
+          name: 'route',
+          inputs: [{ name: 'amount_in', type: 'i128' }],
+          outputs: [{ type: 'i128' }],
+        },
+      ],
+    },
     defaultArgs: { maxHops: 3 },
     deploymentGuide: 'Deploy multiple pools, then route a swap through the best path.',
     version: '1.0.0',
@@ -321,7 +420,10 @@ function makeContractId(seed: string, index: number, salt?: string): string {
   return StrKey.encodeContract(deriveBytes(seed, `contract:${suffix}`, index));
 }
 
-function toDecimalString(value: string | number | Prisma.Decimal | undefined, fallback = '0'): string {
+function toDecimalString(
+  value: string | number | Prisma.Decimal | undefined,
+  fallback = '0',
+): string {
   if (value === undefined) return fallback;
   return new Prisma.Decimal(value).toFixed();
 }
@@ -339,7 +441,11 @@ function defaultAbiForTemplate(templateId: string | null | undefined): unknown {
   return templateById.get(templateId)?.abi ?? { functions: [] };
 }
 
-function emptyRuntimeBlock(seed: string, ledgerSequence: number, ledgerTimestamp: string): RuntimeBlock {
+function emptyRuntimeBlock(
+  seed: string,
+  ledgerSequence: number,
+  ledgerTimestamp: string,
+): RuntimeBlock {
   return {
     ledgerSequence,
     ledgerTimestamp,
@@ -349,7 +455,14 @@ function emptyRuntimeBlock(seed: string, ledgerSequence: number, ledgerTimestamp
   };
 }
 
-function buildGenesisBlock(sessionId: string, seed: string, accountCount: number, prefundedBalance: string, ledgerSequence: number, ledgerTimestamp: string): RuntimeBlock {
+function buildGenesisBlock(
+  sessionId: string,
+  seed: string,
+  accountCount: number,
+  prefundedBalance: string,
+  ledgerSequence: number,
+  ledgerTimestamp: string,
+): RuntimeBlock {
   const block = emptyRuntimeBlock(seed, ledgerSequence, ledgerTimestamp);
   for (let index = 0; index < accountCount; index += 1) {
     const publicKey = makePublicKey(seed, index);
@@ -386,7 +499,12 @@ function hydrateDocument(session: any): RuntimeDocument {
   };
 }
 
-function summarizeSession(session: any, document: RuntimeDocument, snapshotCount = 0, callCount = 0): SessionSummary {
+function summarizeSession(
+  session: any,
+  document: RuntimeDocument,
+  snapshotCount = 0,
+  callCount = 0,
+): SessionSummary {
   return {
     id: session.id,
     status: session.status,
@@ -419,7 +537,12 @@ function contractStateSnapshot(contract: ContractState): Record<string, unknown>
   };
 }
 
-function traceTemplateStep(contractId: string, functionName: string, before: Record<string, unknown>, after: Record<string, unknown>): unknown[] {
+function traceTemplateStep(
+  contractId: string,
+  functionName: string,
+  before: Record<string, unknown>,
+  after: Record<string, unknown>,
+): unknown[] {
   return [
     { step: 1, hostFunction: 'load_contract', contractId },
     { step: 2, hostFunction: 'read_state', keys: Object.keys(before) },
@@ -473,7 +596,9 @@ function normalizeArgs(args: unknown): Record<string, unknown> {
 function loadSessionBundle(sessionId: string): RuntimeBundle {
   const cached = activeSessions.get(sessionId);
   if (cached) return cached;
-  throw new Error(`Session ${sessionId} is not active in memory. Create a new session or reload from the API.`);
+  throw new Error(
+    `Session ${sessionId} is not active in memory. Create a new session or reload from the API.`,
+  );
 }
 
 async function persistBundle(bundle: RuntimeBundle): Promise<void> {
@@ -502,19 +627,27 @@ async function refreshBundle(sessionId: string): Promise<RuntimeBundle> {
 function getBundleOrThrow(sessionId: string): RuntimeBundle {
   const bundle = activeSessions.get(sessionId);
   if (!bundle) {
-    throw new Error(`Session ${sessionId} is not active. This sandbox backend only keeps live VM state in memory.`);
+    throw new Error(
+      `Session ${sessionId} is not active. This sandbox backend only keeps live VM state in memory.`,
+    );
   }
   return bundle;
 }
 
-function rebuildLiveRows(bundle: RuntimeBundle): { accounts: AccountState[]; contracts: ContractState[] } {
+function rebuildLiveRows(bundle: RuntimeBundle): {
+  accounts: AccountState[];
+  contracts: ContractState[];
+} {
   return {
     accounts: Object.values(bundle.document.runtime.accounts),
     contracts: Object.values(bundle.document.runtime.contracts),
   };
 }
 
-function templateStateForDeploy(templateId: string | null | undefined, initArgs: Record<string, unknown> | undefined): Record<string, unknown> {
+function templateStateForDeploy(
+  templateId: string | null | undefined,
+  initArgs: Record<string, unknown> | undefined,
+): Record<string, unknown> {
   const template = templateId ? templateById.get(templateId) : undefined;
   const baseState: Record<string, unknown> = {
     templateId: templateId ?? null,
@@ -589,7 +722,12 @@ function templateStateForDeploy(templateId: string | null | undefined, initArgs:
   }
 }
 
-function executeTemplateFunction(contract: ContractState, functionName: string, args: Record<string, unknown>, sourceAccount: string): CallOutcome {
+function executeTemplateFunction(
+  contract: ContractState,
+  functionName: string,
+  args: Record<string, unknown>,
+  sourceAccount: string,
+): CallOutcome {
   const before = readContractState(contract);
   const next = clone(before);
   const state = next as Record<string, any>;
@@ -680,7 +818,13 @@ function executeTemplateFunction(contract: ContractState, functionName: string, 
       error = `Unsupported NFT function ${functionName}`;
     }
     state.owners = owners;
-  } else if (type === 'multisig-wallet' || type === 'governance-token' || type === 'timelock-controller' || type === 'vesting-contract' || type === 'dex-aggregator') {
+  } else if (
+    type === 'multisig-wallet' ||
+    type === 'governance-token' ||
+    type === 'timelock-controller' ||
+    type === 'vesting-contract' ||
+    type === 'dex-aggregator'
+  ) {
     state.lastFunction = functionName;
     state.lastArgs = clone(args);
     result = { ok: true, template: type };
@@ -718,7 +862,11 @@ function compareJson(left: unknown, right: unknown): Record<string, unknown> {
   return { equal: false, left, right };
 }
 
-async function rewriteLiveRows(sessionId: string, accounts: AccountState[], contracts: ContractState[]): Promise<void> {
+async function rewriteLiveRows(
+  sessionId: string,
+  accounts: AccountState[],
+  contracts: ContractState[],
+): Promise<void> {
   await prismaWrite.$transaction([
     prismaWrite.sandboxAccount.deleteMany({ where: { sessionId } }),
     prismaWrite.sandboxContract.deleteMany({ where: { sessionId } }),
@@ -752,12 +900,16 @@ async function rewriteLiveRows(sessionId: string, accounts: AccountState[], cont
 }
 
 export class SandboxEngine {
-  async listTemplates(query: { search?: string; category?: string } = {}): Promise<SandboxTemplate[]> {
+  async listTemplates(
+    query: { search?: string; category?: string } = {},
+  ): Promise<SandboxTemplate[]> {
     const search = query.search?.toLowerCase().trim();
     return defaultTemplates.filter((template) => {
       if (query.category && template.category !== query.category) return false;
       if (!search) return true;
-      return [template.id, template.name, template.description, template.category].some((value) => value.toLowerCase().includes(search));
+      return [template.id, template.name, template.description, template.category].some((value) =>
+        value.toLowerCase().includes(search),
+      );
     });
   }
 
@@ -777,7 +929,9 @@ export class SandboxEngine {
     };
   }
 
-  async submitTemplate(input: Omit<SandboxTemplate, 'id' | 'createdAt'> & { id?: string }): Promise<any> {
+  async submitTemplate(
+    input: Omit<SandboxTemplate, 'id' | 'createdAt'> & { id?: string },
+  ): Promise<any> {
     const template = {
       id: input.id ?? crypto.randomUUID(),
       name: input.name,
@@ -850,7 +1004,14 @@ export class SandboxEngine {
       },
     });
 
-    const genesis = buildGenesisBlock(session.id, seed, accountCount, prefundedBalance, ledgerSequence, ledgerTimestamp);
+    const genesis = buildGenesisBlock(
+      session.id,
+      seed,
+      accountCount,
+      prefundedBalance,
+      ledgerSequence,
+      ledgerTimestamp,
+    );
     const document: RuntimeDocument = { genesis: clone(genesis), runtime: clone(genesis) };
     const bundle: RuntimeBundle = { session, document };
     activeSessions.set(session.id, bundle);
@@ -880,7 +1041,10 @@ export class SandboxEngine {
   }
 
   async destroySession(sessionId: string): Promise<{ destroyed: true }> {
-    await prismaWrite.sandboxSession.update({ where: { id: sessionId }, data: { status: 'destroyed' } });
+    await prismaWrite.sandboxSession.update({
+      where: { id: sessionId },
+      data: { status: 'destroyed' },
+    });
     activeSessions.delete(sessionId);
     return { destroyed: true };
   }
@@ -888,7 +1052,10 @@ export class SandboxEngine {
   async pauseSession(sessionId: string): Promise<SessionSummary> {
     const bundle = getBundleOrThrow(sessionId);
     bundle.session.status = 'paused';
-    await prismaWrite.sandboxSession.update({ where: { id: sessionId }, data: { status: 'paused' } });
+    await prismaWrite.sandboxSession.update({
+      where: { id: sessionId },
+      data: { status: 'paused' },
+    });
     await persistBundle(bundle);
     return this.getSession(sessionId);
   }
@@ -914,7 +1081,10 @@ export class SandboxEngine {
   }
 
   async listSnapshots(sessionId: string): Promise<any[]> {
-    return prismaRead.sandboxSnapshot.findMany({ where: { sessionId }, orderBy: { createdAt: 'desc' } });
+    return prismaRead.sandboxSnapshot.findMany({
+      where: { sessionId },
+      orderBy: { createdAt: 'desc' },
+    });
   }
 
   async restoreSnapshot(sessionId: string, snapshotId: string): Promise<SessionSummary> {
@@ -922,7 +1092,11 @@ export class SandboxEngine {
     const snapshot = await prismaRead.sandboxSnapshot.findUnique({ where: { id: snapshotId } });
     if (!snapshot || snapshot.sessionId !== sessionId) throw new Error('Snapshot not found');
     bundle.document.runtime = clone(snapshot.state as RuntimeBlock);
-    await rewriteLiveRows(sessionId, Object.values(bundle.document.runtime.accounts), Object.values(bundle.document.runtime.contracts));
+    await rewriteLiveRows(
+      sessionId,
+      Object.values(bundle.document.runtime.accounts),
+      Object.values(bundle.document.runtime.contracts),
+    );
     await persistBundle(bundle);
     return this.getSession(sessionId);
   }
@@ -930,7 +1104,9 @@ export class SandboxEngine {
   async advanceSession(sessionId: string, ledgers = 1, seconds = 0): Promise<SessionSummary> {
     const bundle = getBundleOrThrow(sessionId);
     bundle.document.runtime.ledgerSequence += ledgers;
-    bundle.document.runtime.ledgerTimestamp = new Date(new Date(bundle.document.runtime.ledgerTimestamp).getTime() + seconds * 1000).toISOString();
+    bundle.document.runtime.ledgerTimestamp = new Date(
+      new Date(bundle.document.runtime.ledgerTimestamp).getTime() + seconds * 1000,
+    ).toISOString();
     await persistBundle(bundle);
     return this.getSession(sessionId);
   }
@@ -980,17 +1156,38 @@ export class SandboxEngine {
     return Object.values(bundle.document.runtime.accounts);
   }
 
-  async registerToken(sessionId: string, input: { publicKey?: string; name?: string; symbol?: string; decimals?: number; supply?: string | number }): Promise<any> {
-    const account = input.publicKey ? input.publicKey : Object.keys((await this.listAccounts(sessionId)).reduce<Record<string, AccountState>>((acc, entry) => {
-      acc[entry.publicKey] = entry;
-      return acc;
-    }, {}))[0];
+  async registerToken(
+    sessionId: string,
+    input: {
+      publicKey?: string;
+      name?: string;
+      symbol?: string;
+      decimals?: number;
+      supply?: string | number;
+    },
+  ): Promise<any> {
+    const account = input.publicKey
+      ? input.publicKey
+      : Object.keys(
+          (await this.listAccounts(sessionId)).reduce<Record<string, AccountState>>(
+            (acc, entry) => {
+              acc[entry.publicKey] = entry;
+              return acc;
+            },
+            {},
+          ),
+        )[0];
     return this.deployFromTemplate({
       sessionId,
       templateId: 'sep41-token',
       name: input.name ?? 'Registered Token',
       deployer: account,
-      initArgs: { name: input.name ?? 'Registered Token', symbol: input.symbol ?? 'TOK', decimals: input.decimals ?? 7, supply: toDecimalString(input.supply ?? '0') },
+      initArgs: {
+        name: input.name ?? 'Registered Token',
+        symbol: input.symbol ?? 'TOK',
+        decimals: input.decimals ?? 7,
+        supply: toDecimalString(input.supply ?? '0'),
+      },
     });
   }
 
@@ -998,8 +1195,15 @@ export class SandboxEngine {
     const bundle = getBundleOrThrow(input.sessionId);
     const seed = resolveSeed(bundle.session.seed, bundle.session.id);
     const index = Object.keys(bundle.document.runtime.contracts).length + 1;
-    const contractId = makeContractId(seed, index, input.salt ?? input.name ?? input.templateId ?? 'contract');
-    const wasmHash = crypto.createHash('sha256').update(Buffer.from(input.wasm ?? '', 'base64')).digest('hex');
+    const contractId = makeContractId(
+      seed,
+      index,
+      input.salt ?? input.name ?? input.templateId ?? 'contract',
+    );
+    const wasmHash = crypto
+      .createHash('sha256')
+      .update(Buffer.from(input.wasm ?? '', 'base64'))
+      .digest('hex');
     const deployer = input.deployer ?? Object.keys(bundle.document.runtime.accounts)[0];
     const contract: ContractState = {
       contractId,
@@ -1048,8 +1252,16 @@ export class SandboxEngine {
     });
   }
 
-  async deployFromMainnet(input: { sessionId: string; contractAddress: string; name?: string; deployer?: string }): Promise<any> {
-    const abi = await prismaRead.contract.findUnique({ where: { address: input.contractAddress }, select: { abi: true, name: true, wasmHash: true } });
+  async deployFromMainnet(input: {
+    sessionId: string;
+    contractAddress: string;
+    name?: string;
+    deployer?: string;
+  }): Promise<any> {
+    const abi = await prismaRead.contract.findUnique({
+      where: { address: input.contractAddress },
+      select: { abi: true, name: true, wasmHash: true },
+    });
     return this.deploy({
       sessionId: input.sessionId,
       name: input.name ?? abi?.name ?? 'Forked Contract',
@@ -1109,7 +1321,13 @@ export class SandboxEngine {
           createdAt: new Date(),
         },
       });
-      return { callId: call.id, ...serializeCallResult(outcome), trace: outcome.trace, stateBefore: before, stateAfter: before };
+      return {
+        callId: call.id,
+        ...serializeCallResult(outcome),
+        trace: outcome.trace,
+        stateBefore: before,
+        stateAfter: before,
+      };
     }
 
     contract.state = clone(outcome.stateAfter);
@@ -1119,7 +1337,9 @@ export class SandboxEngine {
 
     await prismaWrite.$transaction([
       prismaWrite.sandboxContract.update({
-        where: { sessionId_contractId: { sessionId: input.sessionId, contractId: input.contractId } },
+        where: {
+          sessionId_contractId: { sessionId: input.sessionId, contractId: input.contractId },
+        },
         data: {
           state: contract.state as Prisma.InputJsonValue,
           lastCalledAt: new Date(contract.lastCalledAt),
@@ -1189,7 +1409,10 @@ export class SandboxEngine {
   }
 
   async listCalls(sessionId: string): Promise<any[]> {
-    return prismaRead.sandboxCall.findMany({ where: { sessionId }, orderBy: { createdAt: 'desc' } });
+    return prismaRead.sandboxCall.findMany({
+      where: { sessionId },
+      orderBy: { createdAt: 'desc' },
+    });
   }
 
   async getCall(sessionId: string, callId: string): Promise<any> {
@@ -1207,25 +1430,39 @@ export class SandboxEngine {
       diff: {
         abi: compareJson(left.abi, right.abi),
         state: compareJson(left.state, right.state),
-        metadata: compareJson({ name: left.name, templateId: left.templateId }, { name: right.name, templateId: right.templateId }),
+        metadata: compareJson(
+          { name: left.name, templateId: left.templateId },
+          { name: right.name, templateId: right.templateId },
+        ),
       },
     };
   }
 
   async stateDiff(sessionId: string, sinceSnapshotId: string): Promise<any> {
     const bundle = getBundleOrThrow(sessionId);
-    const snapshot = await prismaRead.sandboxSnapshot.findUnique({ where: { id: sinceSnapshotId } });
+    const snapshot = await prismaRead.sandboxSnapshot.findUnique({
+      where: { id: sinceSnapshotId },
+    });
     if (!snapshot || snapshot.sessionId !== sessionId) throw new Error('Snapshot not found');
     const before = snapshot.state as Record<string, unknown>;
     const after = bundle.document.runtime as unknown as Record<string, unknown>;
     return { sinceSnapshotId, diffKeys: diffKeys(before, after), before, after };
   }
 
-  async startFuzz(input: { sessionId: string; contractId: string; strategies: FuzzStrategy[]; timeoutSeconds?: number; stopOnFirst?: string }): Promise<any> {
+  async startFuzz(input: {
+    sessionId: string;
+    contractId: string;
+    strategies: FuzzStrategy[];
+    timeoutSeconds?: number;
+    stopOnFirst?: string;
+  }): Promise<any> {
     const bundle = getBundleOrThrow(input.sessionId);
     const contract = bundle.document.runtime.contracts[input.contractId];
     if (!contract) throw new Error('Contract not found');
-    const totalIterations = input.strategies.reduce((sum, strategy) => sum + (strategy.iterations ?? 100), 0);
+    const totalIterations = input.strategies.reduce(
+      (sum, strategy) => sum + (strategy.iterations ?? 100),
+      0,
+    );
     const findings = this.generateFuzzFindings(contract, input.strategies);
     const run = await prismaWrite.fuzzRun.create({
       data: {
@@ -1255,7 +1492,10 @@ export class SandboxEngine {
   }
 
   async stopFuzz(runId: string): Promise<any> {
-    return prismaWrite.fuzzRun.update({ where: { id: runId }, data: { status: 'cancelled', completedAt: new Date() } });
+    return prismaWrite.fuzzRun.update({
+      where: { id: runId },
+      data: { status: 'cancelled', completedAt: new Date() },
+    });
   }
 
   async getFuzzRun(runId: string): Promise<any> {
@@ -1263,11 +1503,17 @@ export class SandboxEngine {
   }
 
   async listFuzzRuns(sessionId?: string): Promise<any[]> {
-    return prismaRead.fuzzRun.findMany({ where: sessionId ? { sessionId } : undefined, orderBy: { startedAt: 'desc' } });
+    return prismaRead.fuzzRun.findMany({
+      where: sessionId ? { sessionId } : undefined,
+      orderBy: { startedAt: 'desc' },
+    });
   }
 
   async listFuzzFindings(runId: string): Promise<any[]> {
-    return prismaRead.fuzzFinding.findMany({ where: { fuzzRunId: runId }, orderBy: { createdAt: 'desc' } });
+    return prismaRead.fuzzFinding.findMany({
+      where: { fuzzRunId: runId },
+      orderBy: { createdAt: 'desc' },
+    });
   }
 
   async replayFinding(runId: string, findingId: string): Promise<any> {
@@ -1276,8 +1522,15 @@ export class SandboxEngine {
     return { replayed: true, finding };
   }
 
-  async executeCi(input: { steps: CiStep[]; timeout?: number; onFailure?: string; sessionId?: string }): Promise<any> {
-    const session = input.sessionId ? getBundleOrThrow(input.sessionId) : await this.createSession({});
+  async executeCi(input: {
+    steps: CiStep[];
+    timeout?: number;
+    onFailure?: string;
+    sessionId?: string;
+  }): Promise<any> {
+    const session = input.sessionId
+      ? getBundleOrThrow(input.sessionId)
+      : await this.createSession({});
     const run = await prismaWrite.sandboxCiRun.create({
       data: {
         sessionId: typeof session === 'object' && 'session' in session ? session.session.id : null,
@@ -1291,7 +1544,10 @@ export class SandboxEngine {
     const results: unknown[] = [];
     let passed = true;
     let failure: string | null = null;
-    let runtimeSessionId = typeof session === 'object' && 'session' in session ? session.session.id : (session as SessionSummary).id;
+    let runtimeSessionId =
+      typeof session === 'object' && 'session' in session
+        ? session.session.id
+        : (session as SessionSummary).id;
     for (const step of input.steps) {
       if (step.action === 'deploy') {
         const deployed = await this.deploy({
@@ -1312,7 +1568,12 @@ export class SandboxEngine {
           sourceAccount: step.source,
         });
         results.push(called);
-        logs.push({ action: 'call', contract: step.contract, function: step.function, success: called.success });
+        logs.push({
+          action: 'call',
+          contract: step.contract,
+          function: step.function,
+          success: called.success,
+        });
       } else if (step.action === 'assert') {
         const call = await this.call({
           sessionId: runtimeSessionId,
@@ -1377,50 +1638,90 @@ export class SandboxEngine {
     return {
       format,
       sessionId,
-      script: format === 'json'
-        ? JSON.stringify(bundle.document, null, 2)
-        : `# sandbox export (${format})\n# session ${sessionId}`,
+      script:
+        format === 'json'
+          ? JSON.stringify(bundle.document, null, 2)
+          : `# sandbox export (${format})\n# session ${sessionId}`,
     };
   }
 
   async importSession(sessionId: string, payload: unknown): Promise<any> {
     const bundle = getBundleOrThrow(sessionId);
-    bundle.document.runtime = clone((payload as RuntimeDocument).runtime ?? bundle.document.runtime);
-    await rewriteLiveRows(sessionId, Object.values(bundle.document.runtime.accounts), Object.values(bundle.document.runtime.contracts));
+    bundle.document.runtime = clone(
+      (payload as RuntimeDocument).runtime ?? bundle.document.runtime,
+    );
+    await rewriteLiveRows(
+      sessionId,
+      Object.values(bundle.document.runtime.accounts),
+      Object.values(bundle.document.runtime.contracts),
+    );
     await persistBundle(bundle);
     return this.getSession(sessionId);
   }
 
   async optimizeContract(sessionId: string, contractId?: string): Promise<any> {
     const bundle = getBundleOrThrow(sessionId);
-    const contracts = contractId ? [bundle.document.runtime.contracts[contractId]] : Object.values(bundle.document.runtime.contracts);
+    const contracts = contractId
+      ? [bundle.document.runtime.contracts[contractId]]
+      : Object.values(bundle.document.runtime.contracts);
     const recommendations = contracts.flatMap((contract) => {
       if (!contract) return [];
       const template = contract.templateId ?? 'generic';
       const base = [
-        { type: 'storage', severity: 'medium', message: 'Cache frequently-read values locally before repeated reads.', estimatedSavings: '500 CPU' },
-        { type: 'loop', severity: 'medium', message: `Review hot path in ${contract.name ?? contract.contractId}.`, estimatedSavings: '1000 CPU' },
+        {
+          type: 'storage',
+          severity: 'medium',
+          message: 'Cache frequently-read values locally before repeated reads.',
+          estimatedSavings: '500 CPU',
+        },
+        {
+          type: 'loop',
+          severity: 'medium',
+          message: `Review hot path in ${contract.name ?? contract.contractId}.`,
+          estimatedSavings: '1000 CPU',
+        },
       ];
       if (template === 'sep41-token') {
-        base.push({ type: 'storage', severity: 'high', message: 'Batch balance writes during transfers to reduce host storage churn.', estimatedSavings: '1500 CPU' });
+        base.push({
+          type: 'storage',
+          severity: 'high',
+          message: 'Batch balance writes during transfers to reduce host storage churn.',
+          estimatedSavings: '1500 CPU',
+        });
       }
       return base;
     });
     return {
       recommendations,
       totalEstimatedSavings: `${recommendations.length * 500} CPU / 64KB memory`,
-      hotPaths: contracts.filter(Boolean).map((contract) => `${contract.name ?? contract.contractId}: 40% of total gas`),
+      hotPaths: contracts
+        .filter(Boolean)
+        .map((contract) => `${contract.name ?? contract.contractId}: 40% of total gas`),
     };
   }
 
-  async verifyInvariant(sessionId: string, input: { contract: string; invariant: string; checker?: string; bound?: Record<string, unknown> }): Promise<any> {
+  async verifyInvariant(
+    sessionId: string,
+    input: {
+      contract: string;
+      invariant: string;
+      checker?: string;
+      bound?: Record<string, unknown>;
+    },
+  ): Promise<any> {
     const bundle = getBundleOrThrow(sessionId);
     const contract = bundle.document.runtime.contracts[input.contract];
     if (!contract) throw new Error('Contract not found');
     const balances = contract.state.balances as Record<string, string> | undefined;
     const totalSupply = String(contract.state.totalSupply ?? '0');
-    const summedBalances = Object.values(balances ?? {}).reduce((sum, value) => decimalPlus(sum, value), '0');
-    const passed = input.invariant.includes('balance') || input.invariant.includes('totalSupply') ? totalSupply === summedBalances : true;
+    const summedBalances = Object.values(balances ?? {}).reduce(
+      (sum, value) => decimalPlus(sum, value),
+      '0',
+    );
+    const passed =
+      input.invariant.includes('balance') || input.invariant.includes('totalSupply')
+        ? totalSupply === summedBalances
+        : true;
     return {
       passed,
       checker: input.checker ?? 'smt',
@@ -1430,8 +1731,15 @@ export class SandboxEngine {
     };
   }
 
-  async verifyAssertion(sessionId: string, input: { contract: string; assertion: string; checker?: string }): Promise<any> {
-    const invariant = await this.verifyInvariant(sessionId, { contract: input.contract, invariant: input.assertion, checker: input.checker });
+  async verifyAssertion(
+    sessionId: string,
+    input: { contract: string; assertion: string; checker?: string },
+  ): Promise<any> {
+    const invariant = await this.verifyInvariant(sessionId, {
+      contract: input.contract,
+      invariant: input.assertion,
+      checker: input.checker,
+    });
     return invariant;
   }
 
@@ -1440,7 +1748,7 @@ export class SandboxEngine {
     return {
       language: 'typescript',
       contractId,
-      code: `export class ${contract.name ?? 'SandboxContract'}Client {\n  constructor(private readonly contractId: string) {}\n}`, 
+      code: `export class ${contract.name ?? 'SandboxContract'}Client {\n  constructor(private readonly contractId: string) {}\n}`,
     };
   }
 
@@ -1462,10 +1770,16 @@ export class SandboxEngine {
 
   async benchmark(sessionId: string, contractId: string): Promise<any> {
     const contract = await this.getContract(sessionId, contractId);
-    const functionCount = Array.isArray((contract.abi as any)?.functions) ? (contract.abi as any).functions.length : 0;
+    const functionCount = Array.isArray((contract.abi as any)?.functions)
+      ? (contract.abi as any).functions.length
+      : 0;
     return {
       metrics: {
-        throughput: { function: 'transfer', iterations: 1000, opsPerSecond: 1000 + functionCount * 50 },
+        throughput: {
+          function: 'transfer',
+          iterations: 1000,
+          opsPerSecond: 1000 + functionCount * 50,
+        },
         latency: { function: 'swap', iterations: 100, p95Ms: 12 + functionCount },
         storageGrowth: { function: 'mint', iterations: 100, bytes: 2048 + functionCount * 128 },
         memoryProfile: { function: 'processAll', peakKb: 512 + functionCount * 16 },
@@ -1476,13 +1790,24 @@ export class SandboxEngine {
   async replayMainnet(txHash: string): Promise<any> {
     return {
       txHash,
-      steps: [{ action: 'load_transaction' }, { action: 'simulate_execution' }, { action: 'compare_state' }],
-      comparison: { equal: false, note: 'mainnet replay is scaffolded against live RPC integration' },
+      steps: [
+        { action: 'load_transaction' },
+        { action: 'simulate_execution' },
+        { action: 'compare_state' },
+      ],
+      comparison: {
+        equal: false,
+        note: 'mainnet replay is scaffolded against live RPC integration',
+      },
     };
   }
 
   async forkContract(sessionId: string, contractAddress: string): Promise<any> {
-    return this.deployFromMainnet({ sessionId, contractAddress, name: `Fork ${contractAddress.slice(0, 8)}` });
+    return this.deployFromMainnet({
+      sessionId,
+      contractAddress,
+      name: `Fork ${contractAddress.slice(0, 8)}`,
+    });
   }
 
   async deployToTestnet(sessionId: string, contractId: string): Promise<any> {
@@ -1492,13 +1817,21 @@ export class SandboxEngine {
 
   async deployToMainnet(sessionId: string, contractId: string): Promise<any> {
     const contract = await this.getContract(sessionId, contractId);
-    return { sessionId, contractId, target: 'mainnet', ready: false, reason: 'manual confirmation required', wasmHash: contract.wasmHash };
+    return {
+      sessionId,
+      contractId,
+      target: 'mainnet',
+      ready: false,
+      reason: 'manual confirmation required',
+      wasmHash: contract.wasmHash,
+    };
   }
 
   private async resolveComparable(sessionId: string | undefined, identifier: string): Promise<any> {
     if (sessionId) {
       const bundle = getBundleOrThrow(sessionId);
-      if (bundle.document.runtime.contracts[identifier]) return bundle.document.runtime.contracts[identifier];
+      if (bundle.document.runtime.contracts[identifier])
+        return bundle.document.runtime.contracts[identifier];
     }
 
     const template = templateById.get(identifier);
@@ -1526,8 +1859,25 @@ export class SandboxEngine {
     throw new Error(`Unable to resolve comparable contract or template: ${identifier}`);
   }
 
-  private generateFuzzFindings(contract: ContractState, strategies: FuzzStrategy[]): Array<{ severity: string; title: string; description: string; callSequence: unknown[]; stateDump: unknown; reproducible: boolean }> {
-    const findings: Array<{ severity: string; title: string; description: string; callSequence: unknown[]; stateDump: unknown; reproducible: boolean }> = [];
+  private generateFuzzFindings(
+    contract: ContractState,
+    strategies: FuzzStrategy[],
+  ): Array<{
+    severity: string;
+    title: string;
+    description: string;
+    callSequence: unknown[];
+    stateDump: unknown;
+    reproducible: boolean;
+  }> {
+    const findings: Array<{
+      severity: string;
+      title: string;
+      description: string;
+      callSequence: unknown[];
+      stateDump: unknown;
+      reproducible: boolean;
+    }> = [];
     const strategyTypes = new Set(strategies.map((strategy) => strategy.type));
 
     if (strategyTypes.has('known_attack')) {
@@ -1542,15 +1892,19 @@ export class SandboxEngine {
       findings.push({
         severity: 'error',
         title: 'Potential overflow path',
-        description: 'Boundary fuzzing reached an arithmetic edge that should be reviewed manually.',
-        callSequence: [{ function: 'swap', args: { amount_in: '340282366920938463463374607431768211455' } }],
+        description:
+          'Boundary fuzzing reached an arithmetic edge that should be reviewed manually.',
+        callSequence: [
+          { function: 'swap', args: { amount_in: '340282366920938463463374607431768211455' } },
+        ],
         stateDump: contract.state,
         reproducible: true,
       });
       findings.push({
         severity: 'warning',
         title: 'Reentrancy-sensitive state transition',
-        description: 'Multi-call sequences can revisit the same mutable state without a lock in the demo engine.',
+        description:
+          'Multi-call sequences can revisit the same mutable state without a lock in the demo engine.',
         callSequence: [{ function: 'call_1' }, { function: 'call_2' }],
         stateDump: contract.state,
         reproducible: true,

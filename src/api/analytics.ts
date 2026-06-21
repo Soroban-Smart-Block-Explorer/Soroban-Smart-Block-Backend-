@@ -12,7 +12,7 @@ export const analyticsRouter = Router();
 
 const querySchema = z.object({
   bucket: z.enum(['hour', 'day', 'week']).default('day'),
-  limit:  z.coerce.number().min(1).max(500).default(48),
+  limit: z.coerce.number().min(1).max(500).default(48),
 });
 
 // GET /analytics/gas — return pre-computed snapshots

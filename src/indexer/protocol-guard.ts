@@ -17,7 +17,7 @@ import { config } from '../config';
 const PROTOCOL_FEATURES: Record<number, string[]> = {
   20: ['soroban_v1', 'invoke_host_function'],
   21: ['soroban_v2', 'transaction_meta_v3', 'diagnostic_events'],
-  22: ['soroban_v3', 'parallel_soroban'],  // anticipated
+  22: ['soroban_v3', 'parallel_soroban'], // anticipated
 };
 
 /** Minimum supported protocol version for Soroban features */
@@ -94,7 +94,7 @@ export function safeXdrParse<T>(fn: () => T, fallback: T, context = 'XDR'): T {
     if (isStructuralError) {
       console.warn(
         `[protocol-guard] ${context} parse failed — possible protocol upgrade. ` +
-        `Skipping gracefully. Error: ${msg}`
+          `Skipping gracefully. Error: ${msg}`,
       );
     } else {
       console.error(`[protocol-guard] ${context} parse error: ${msg}`);
@@ -137,7 +137,13 @@ export async function getProtocolStatus(): Promise<ProtocolStatus> {
     warning = `Protocol version ${currentVersion} is below minimum supported (${MIN_SOROBAN_PROTOCOL})`;
   }
 
-  return { currentVersion, minSupported: MIN_SOROBAN_PROTOCOL, isSupported, knownFeatures, warning };
+  return {
+    currentVersion,
+    minSupported: MIN_SOROBAN_PROTOCOL,
+    isSupported,
+    knownFeatures,
+    warning,
+  };
 }
 
 /**
@@ -172,7 +178,7 @@ export function startProtocolMonitor(): NodeJS.Timeout {
 export async function horizonGuard<T>(
   fn: () => Promise<T>,
   fallback: T,
-  endpointName: string
+  endpointName: string,
 ): Promise<T> {
   try {
     return await fn();
@@ -181,7 +187,7 @@ export async function horizonGuard<T>(
     if (status === 410 || status === 404 || status === 501) {
       console.warn(
         `[protocol-guard] Horizon endpoint "${endpointName}" returned ${status} — ` +
-        `it may be deprecated. Using fallback.`
+          `it may be deprecated. Using fallback.`,
       );
       return fallback;
     }

@@ -4,7 +4,9 @@ import { isValidStellarAddress } from '../../middleware/sanitize';
 export function requireWalletAuth(req: Request, res: Response, next: NextFunction) {
   const wallet = req.headers['x-wallet-address'] as string | undefined;
   if (!wallet || !isValidStellarAddress(wallet)) {
-    return res.status(401).json({ error: 'Wallet authentication required. Provide X-Wallet-Address header.' });
+    return res
+      .status(401)
+      .json({ error: 'Wallet authentication required. Provide X-Wallet-Address header.' });
   }
   (req as Request & { walletAddress: string }).walletAddress = wallet;
   next();

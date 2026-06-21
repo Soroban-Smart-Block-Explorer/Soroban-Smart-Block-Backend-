@@ -32,12 +32,13 @@ export async function getEcosystemOverview() {
     prisma.stellarAsset.count(),
   ]);
 
-  const classicDailyTx = networkStats ? parseInt(networkStats.num_transactions as unknown as string, 10) : 0;
+  const classicDailyTx = networkStats
+    ? parseInt(networkStats.num_transactions as unknown as string, 10)
+    : 0;
   const totalBridgedValue = bridgedData.totalBridgedValue;
 
-  const sorobanShare = classicDailyTx + sorobanTx24h > 0
-    ? sorobanTx24h / (classicDailyTx + sorobanTx24h)
-    : 0;
+  const sorobanShare =
+    classicDailyTx + sorobanTx24h > 0 ? sorobanTx24h / (classicDailyTx + sorobanTx24h) : 0;
 
   return {
     classic: {

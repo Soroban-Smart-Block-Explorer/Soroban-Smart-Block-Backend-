@@ -16,13 +16,13 @@ export interface RenderContext {
  * Keyed by function/event name.
  */
 export const BUILT_IN_TEMPLATES: Record<string, string> = {
-  transfer:         'Address {from} transferred {amount} {token} to {to}',
-  transfer_from:    '{spender} transferred {amount} {token} from {from} to {to}',
-  mint:             'Minted {amount} {token} to {to}',
-  burn:             '{from} burned {amount} {token}',
-  approve:          '{from} approved {spender} to spend {amount} {token}',
-  swap:             '{from} swapped {amount_in} {token} → {amount_out}',
-  add_liquidity:    '{from} added liquidity: {amount_a} + {amount_b}',
+  transfer: 'Address {from} transferred {amount} {token} to {to}',
+  transfer_from: '{spender} transferred {amount} {token} from {from} to {to}',
+  mint: 'Minted {amount} {token} to {to}',
+  burn: '{from} burned {amount} {token}',
+  approve: '{from} approved {spender} to spend {amount} {token}',
+  swap: '{from} swapped {amount_in} {token} → {amount_out}',
+  add_liquidity: '{from} added liquidity: {amount_a} + {amount_b}',
   remove_liquidity: '{from} removed liquidity: {amount_a} + {amount_b}',
 };
 
@@ -57,17 +57,20 @@ function resolve(val: unknown, decimals = 7): string {
 export function renderTemplate(template: string, ctx: RenderContext): string {
   const { args, tokenSymbol = '', decimals = 7, contractName } = ctx;
 
-  let text = template.replace(/\{(\w+)(?:\|(\w+))?\}/g, (_match, key: string, modifier?: string) => {
-    if (key === 'token') return tokenSymbol;
+  let text = template.replace(
+    /\{(\w+)(?:\|(\w+))?\}/g,
+    (_match, key: string, modifier?: string) => {
+      if (key === 'token') return tokenSymbol;
 
-    const val = args[key];
-    const display = resolve(val, decimals);
+      const val = args[key];
+      const display = resolve(val, decimals);
 
-    if (modifier === 'truncate' && display.length > 12) {
-      return `${display.slice(0, 6)}…${display.slice(-4)}`;
-    }
-    return display;
-  });
+      if (modifier === 'truncate' && display.length > 12) {
+        return `${display.slice(0, 6)}…${display.slice(-4)}`;
+      }
+      return display;
+    },
+  );
 
   if (contractName) text += ` on ${contractName}`;
   return text;

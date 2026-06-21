@@ -26,7 +26,11 @@ export interface CompileResult {
 export async function extractArchive(archivePath: string, mimeType: string): Promise<string> {
   const workDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'soroban-verify-'));
 
-  if (mimeType === 'application/gzip' || archivePath.endsWith('.tar.gz') || archivePath.endsWith('.tgz')) {
+  if (
+    mimeType === 'application/gzip' ||
+    archivePath.endsWith('.tar.gz') ||
+    archivePath.endsWith('.tgz')
+  ) {
     await execFileAsync('tar', ['-xzf', archivePath, '-C', workDir]);
   } else if (mimeType === 'application/zip' || archivePath.endsWith('.zip')) {
     await execFileAsync('unzip', ['-q', archivePath, '-d', workDir]);
@@ -49,10 +53,15 @@ export async function extractArchive(archivePath: string, mimeType: string): Pro
  * Runs a sandboxed soroban/stellar/cargo-contract build inside the project directory.
  * Uses a pinned toolchain version for deterministic output.
  */
-export async function compileSandboxed(projectDir: string, toolchain: string): Promise<CompileResult> {
+export async function compileSandboxed(
+  projectDir: string,
+  toolchain: string,
+): Promise<CompileResult> {
   const bin = SUPPORTED_TOOLCHAINS[toolchain];
   if (!bin) {
-    throw new Error(`Unsupported toolchain "${toolchain}". Supported: ${Object.keys(SUPPORTED_TOOLCHAINS).join(', ')}`);
+    throw new Error(
+      `Unsupported toolchain "${toolchain}". Supported: ${Object.keys(SUPPORTED_TOOLCHAINS).join(', ')}`,
+    );
   }
 
   // Validate Cargo.toml exists to prevent arbitrary directory traversal
@@ -72,20 +81,20 @@ export async function compileSandboxed(projectDir: string, toolchain: string): P
 
   try {
     if (bin === 'cargo-contract') {
-      const result = await execFileAsync(
-        'cargo',
-        ['contract', 'build', '--release'],
-        { cwd: safeDir, timeout: 300_000, env: buildEnv() }
-      );
+      const result = await execFileAsync('cargo', ['contract', 'build', '--release'], {
+        cwd: safeDir,
+        timeout: 300_000,
+        env: buildEnv(),
+      });
       stdout = result.stdout;
       stderr = result.stderr;
     } else {
       // soroban / stellar CLI
-      const result = await execFileAsync(
-        bin,
-        ['contract', 'build'],
-        { cwd: safeDir, timeout: 300_000, env: buildEnv() }
-      );
+      const result = await execFileAsync(bin, ['contract', 'build'], {
+        cwd: safeDir,
+        timeout: 300_000,
+        env: buildEnv(),
+      });
       stdout = result.stdout;
       stderr = result.stderr;
     }
@@ -185,7 +194,9 @@ function findWasm(dir: string): string | null {
 
   for (const candidate of candidates) {
     if (!fs.existsSync(candidate)) continue;
-    const files = fs.readdirSync(candidate).filter(f => f.endsWith('.wasm') && !f.includes('.d.'));
+    const files = fs
+      .readdirSync(candidate)
+      .filter((f) => f.endsWith('.wasm') && !f.includes('.d.'));
     if (files.length > 0) return path.join(candidate, files[0]);
   }
 

@@ -33,11 +33,13 @@ export interface RevertAnalysis {
 
 // ── Error classification ──────────────────────────────────────────────────────
 
-const AUTH_PATTERNS = [
-  /auth/i, /unauthorized/i, /require_auth/i, /missing signature/i,
-];
+const AUTH_PATTERNS = [/auth/i, /unauthorized/i, /require_auth/i, /missing signature/i];
 const RESOURCE_PATTERNS = [
-  /budget/i, /resource limit/i, /exceeded limit/i, /cpu/i, /memory/i,
+  /budget/i,
+  /resource limit/i,
+  /exceeded limit/i,
+  /cpu/i,
+  /memory/i,
   /ExceededLimit/,
 ];
 const PANIC_PATTERNS = [/panic/i, /trapped/i, /unreachable/i, /wasm trap/i];
@@ -95,9 +97,7 @@ const FIX_MAP: Record<RevertErrorType, string[]> = {
  * Reconstruct the call stack at the point of failure from diagnostic events.
  * Tracks fn_call / fn_return events to maintain depth.
  */
-function extractCallStack(
-  events: xdr.DiagnosticEvent[],
-): CallStackFrame[] {
+function extractCallStack(events: xdr.DiagnosticEvent[]): CallStackFrame[] {
   const stack: CallStackFrame[] = [];
   const open: CallStackFrame[] = [];
 
@@ -116,7 +116,9 @@ function extractCallStack(
       if (first) topic = String((first as any).sym?.() ?? (first as any).str?.() ?? '');
       const second = rawTopics[1];
       if (second) fnName = String((second as any).sym?.() ?? (second as any).str?.() ?? '');
-    } catch { /* ignore */ }
+    } catch {
+      /* ignore */
+    }
 
     const contractRaw = ev.contractId();
     let contractId = 'system';
@@ -124,7 +126,9 @@ function extractCallStack(
       if (contractRaw) {
         contractId = StrKey.encodeContract(contractRaw as unknown as Buffer);
       }
-    } catch { /* ignore */ }
+    } catch {
+      /* ignore */
+    }
 
     if (topic === 'fn_call') {
       const frame: CallStackFrame = { depth: open.length, contractId, function: fnName };

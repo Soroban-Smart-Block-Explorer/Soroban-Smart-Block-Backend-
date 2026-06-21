@@ -67,13 +67,17 @@ export function extractSorobanResources(resultMetaXdr: string): SorobanResources
         minResourceFee = String(txChangesAfter);
       }
     }
-  } catch { /* ignore */ }
+  } catch {
+    /* ignore */
+  }
 
   // Primary path: sorobanMeta.ext().v1() resource fields
   try {
     const extV1 = sorobanMeta.ext().v1();
     cpuInstructions = Number(extV1.totalNonRefundableResourceFeeCharged?.() ?? 0);
-  } catch { /* ignore */ }
+  } catch {
+    /* ignore */
+  }
 
   // Fallback: parse from the operations' changes in the meta
   try {
@@ -81,7 +85,9 @@ export function extractSorobanResources(resultMetaXdr: string): SorobanResources
     if (Array.isArray(ops) && ops.length > 0) {
       // Resource data is in the sorobanMeta directly
     }
-  } catch { /* ignore */ }
+  } catch {
+    /* ignore */
+  }
 
   // Best-effort: read from sorobanMeta resource fields directly
   try {
@@ -93,11 +99,14 @@ export function extractSorobanResources(resultMetaXdr: string): SorobanResources
       ledgerWriteBytes = Number(r.writeBytes?.() ?? 0);
       const footprint = r.footprint?.();
       if (footprint) {
-        ledgerReadEntries = (footprint.readOnly?.() ?? []).length + (footprint.readWrite?.() ?? []).length;
+        ledgerReadEntries =
+          (footprint.readOnly?.() ?? []).length + (footprint.readWrite?.() ?? []).length;
         ledgerWriteEntries = (footprint.readWrite?.() ?? []).length;
       }
     }
-  } catch { /* ignore */ }
+  } catch {
+    /* ignore */
+  }
 
   return {
     cpuInstructions,

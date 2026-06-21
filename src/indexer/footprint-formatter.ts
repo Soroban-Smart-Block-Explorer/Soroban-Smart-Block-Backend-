@@ -35,19 +35,26 @@ function metric(label: string, value: number, limit: number, unit: string): Reso
   const display = unit === 'bytes' ? fmtBytes(value) : value.toLocaleString();
   const limitDisplay = unit === 'bytes' ? fmtBytes(limit) : limit.toLocaleString();
   return {
-    label, value, limit, unit, pct,
+    label,
+    value,
+    limit,
+    unit,
+    pct,
     human: `Uses ${pct}% of maximum ${label.toLowerCase()} (${display} / ${limitDisplay})`,
   };
 }
 
-export function formatFootprint(sim: SorobanRpc.Api.SimulateTransactionSuccessResponse): FormattedFootprint {
+export function formatFootprint(
+  sim: SorobanRpc.Api.SimulateTransactionSuccessResponse,
+): FormattedFootprint {
   const resources = (sim.transactionData as SorobanDataBuilder).build().resources();
   const cpuInsns = Number(resources.instructions());
   const memBytes = Number((sim.cost as SorobanRpc.Api.Cost).memBytes);
   const readBytes = Number(resources.readBytes());
   const writeBytes = Number(resources.writeBytes());
-  const readEntries = (sim.transactionData as SorobanDataBuilder).getReadOnly().length +
-                      (sim.transactionData as SorobanDataBuilder).getReadWrite().length;
+  const readEntries =
+    (sim.transactionData as SorobanDataBuilder).getReadOnly().length +
+    (sim.transactionData as SorobanDataBuilder).getReadWrite().length;
   const writeEntries = (sim.transactionData as SorobanDataBuilder).getReadWrite().length;
 
   const metrics: ResourceMetric[] = [
@@ -60,9 +67,10 @@ export function formatFootprint(sim: SorobanRpc.Api.SimulateTransactionSuccessRe
   ];
 
   const worst = metrics.reduce((a, b) => (a.pct >= b.pct ? a : b));
-  const summary = worst.pct >= 80
-    ? `⚠️  High resource usage: ${worst.label} at ${worst.pct}% of limit`
-    : `Resource usage nominal — highest is ${worst.label} at ${worst.pct}% of limit`;
+  const summary =
+    worst.pct >= 80
+      ? `⚠️  High resource usage: ${worst.label} at ${worst.pct}% of limit`
+      : `Resource usage nominal — highest is ${worst.label} at ${worst.pct}% of limit`;
 
   return { minResourceFee: sim.minResourceFee, metrics, summary };
 }

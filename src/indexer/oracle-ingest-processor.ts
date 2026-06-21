@@ -43,21 +43,17 @@ const TRUSTED_ORACLES = new Set([
  */
 export function isOracleUpdate(
   functionName: string | null,
-  contractAddress: string | null
+  contractAddress: string | null,
 ): boolean {
   if (!functionName || !contractAddress) return false;
 
   const fnLower = functionName.toLowerCase();
   const isOracleFunction =
-    fnLower.includes('update') ||
-    fnLower.includes('price') ||
-    fnLower.includes('feed');
+    fnLower.includes('update') || fnLower.includes('price') || fnLower.includes('feed');
 
   const isTrustedOracle =
     TRUSTED_ORACLES.has(contractAddress) ||
-    Object.values(ORACLE_PATTERNS).some(pattern =>
-      pattern.test(contractAddress)
-    );
+    Object.values(ORACLE_PATTERNS).some((pattern) => pattern.test(contractAddress));
 
   return isOracleFunction && isTrustedOracle;
 }
@@ -66,7 +62,7 @@ export function isOracleUpdate(
  * Extract oracle price update metadata from transaction.
  */
 export async function extractOraclePriceUpdate(
-  transactionHash: string
+  transactionHash: string,
 ): Promise<OraclePriceUpdate | null> {
   const transaction = await prisma.transaction.findUnique({
     where: { hash: transactionHash },
@@ -104,9 +100,7 @@ export async function extractOraclePriceUpdate(
   };
 }
 
-function detectOracleSource(
-  contractAddress: string
-): 'chainlink' | 'pyth' | 'band' | 'generic' {
+function detectOracleSource(contractAddress: string): 'chainlink' | 'pyth' | 'band' | 'generic' {
   if (ORACLE_PATTERNS.chainlink.test(contractAddress)) return 'chainlink';
   if (ORACLE_PATTERNS.pyth.test(contractAddress)) return 'pyth';
   if (ORACLE_PATTERNS.band.test(contractAddress)) return 'band';
@@ -121,7 +115,7 @@ export async function buildOracleAnalyticalMatrix(
   assetPair: string,
   source?: string,
   ledgerRangeStart?: number,
-  ledgerRangeEnd?: number
+  ledgerRangeEnd?: number,
 ): Promise<OracleAnalyticalMatrix | null> {
   const transactions = await prisma.transaction.findMany({
     where: {
@@ -184,14 +178,13 @@ export async function buildOracleAnalyticalMatrix(
 }
 
 function calculateVolatility(
-  priceHistory: Array<{ price: string; timestamp: number; ledger: number }>
+  priceHistory: Array<{ price: string; timestamp: number; ledger: number }>,
 ): number {
   if (priceHistory.length < 2) return 0;
 
-  const prices = priceHistory.map(p => parseFloat(p.price));
+  const prices = priceHistory.map((p) => parseFloat(p.price));
   const mean = prices.reduce((a, b) => a + b, 0) / prices.length;
-  const variance =
-    prices.reduce((sum, p) => sum + Math.pow(p - mean, 2), 0) / prices.length;
+  const variance = prices.reduce((sum, p) => sum + Math.pow(p - mean, 2), 0) / prices.length;
 
   return Math.sqrt(variance);
 }
@@ -199,9 +192,7 @@ function calculateVolatility(
 /**
  * Store oracle analytical matrix for efficient querying.
  */
-export async function storeOracleMatrix(
-  matrix: OracleAnalyticalMatrix
-): Promise<void> {
+export async function storeOracleMatrix(matrix: OracleAnalyticalMatrix): Promise<void> {
   // Store in a dedicated table or cache for fast retrieval
   // For now, we'll store in contract metadata
   const contracts = await prisma.contract.findMany({
@@ -216,9 +207,7 @@ export async function storeOracleMatrix(
 
   if (contracts.length > 0) {
     const existingAbi =
-      typeof contracts[0].abi === 'object' && contracts[0].abi !== null
-        ? contracts[0].abi
-        : {};
+      typeof contracts[0].abi === 'object' && contracts[0].abi !== null ? contracts[0].abi : {};
 
     await prisma.contract.update({
       where: { id: contracts[0].id },
@@ -245,10 +234,6 @@ export async function storeOracleMatrix(
  * Filter oracle updates from transaction list.
  * Returns only user transactions, excluding high-frequency oracle updates.
  */
-export async function filterOutOracleUpdates(
-  transactions: any[]
-): Promise<any[]> {
-  return transactions.filter(
-    tx => !isOracleUpdate(tx.functionName, tx.contractAddress)
-  );
+export async function filterOutOracleUpdates(transactions: any[]): Promise<any[]> {
+  return transactions.filter((tx) => !isOracleUpdate(tx.functionName, tx.contractAddress));
 }

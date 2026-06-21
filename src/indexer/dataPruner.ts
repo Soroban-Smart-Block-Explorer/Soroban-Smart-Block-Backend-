@@ -30,7 +30,9 @@ async function pruneExpiredData() {
     }
 
     // Prune dead failed items older than retention period
-    const failedItemCutoff = new Date(Date.now() - FAILED_ITEM_RETENTION_DAYS * 24 * 60 * 60 * 1000);
+    const failedItemCutoff = new Date(
+      Date.now() - FAILED_ITEM_RETENTION_DAYS * 24 * 60 * 60 * 1000,
+    );
     const deletedFailedItems = await prisma.failedItem.deleteMany({
       where: {
         dead: true,

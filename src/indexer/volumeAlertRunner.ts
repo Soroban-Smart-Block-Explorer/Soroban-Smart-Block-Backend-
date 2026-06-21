@@ -23,12 +23,12 @@ export async function runVolumeAlerts(
   await prismaWrite.volumeAlert.createMany({
     data: alerts.map((a) => ({
       contractAddress: a.contractAddress,
-      currentCount:    a.currentCount,
-      baseline:        a.baseline,
-      stdDev:          a.stdDev,
-      zScore:          a.zScore,
-      windowMinutes:   a.windowMinutes,
-      detectedAt:      a.detectedAt,
+      currentCount: a.currentCount,
+      baseline: a.baseline,
+      stdDev: a.stdDev,
+      zScore: a.zScore,
+      windowMinutes: a.windowMinutes,
+      detectedAt: a.detectedAt,
     })),
   });
 

@@ -30,11 +30,11 @@ type Bn254Op = (typeof BN254_OPERATIONS)[number];
  * 3-5x more CPU instructions than native host function calls.
  */
 const WASM_COST_MULTIPLIERS: Record<Bn254Op, number> = {
-  bn254_add:              5.0,
-  bn254_mul:              4.0,
-  bn254_scalar_mul:       4.0,
-  bn254_pairing_check:    3.2,
-  bn254_multiscalar_mul:  3.6,
+  bn254_add: 5.0,
+  bn254_mul: 4.0,
+  bn254_scalar_mul: 4.0,
+  bn254_pairing_check: 3.2,
+  bn254_multiscalar_mul: 3.6,
 };
 
 /**
@@ -42,11 +42,11 @@ const WASM_COST_MULTIPLIERS: Record<Bn254Op, number> = {
  * These approximate the native cost of each operation in the Soroban host.
  */
 const HOST_BASE_CPU: Record<Bn254Op, number> = {
-  bn254_add:              1_000,
-  bn254_mul:              15_000,
-  bn254_scalar_mul:       15_000,
-  bn254_pairing_check:    500_000,
-  bn254_multiscalar_mul:  20_000,
+  bn254_add: 1_000,
+  bn254_mul: 15_000,
+  bn254_scalar_mul: 15_000,
+  bn254_pairing_check: 500_000,
+  bn254_multiscalar_mul: 20_000,
 };
 
 // Function-name patterns that suggest BN254 / elliptic-curve usage
@@ -114,24 +114,51 @@ export function detectBn254Ops(functionName: string | null): Bn254Op[] {
   for (const pattern of BN254_NAME_PATTERNS) {
     if (lower.includes(pattern)) {
       // Map generic patterns to the canonical BN254 operation types
-      if (lower.includes('bn254_add') || lower.includes('ec_add') || lower.includes('point_add') || lower.includes('bn_add')) {
+      if (
+        lower.includes('bn254_add') ||
+        lower.includes('ec_add') ||
+        lower.includes('point_add') ||
+        lower.includes('bn_add')
+      ) {
         if (!detected.includes('bn254_add')) detected.push('bn254_add');
       }
-      if (lower.includes('bn254_mul') || lower.includes('ec_mul') || lower.includes('point_mul') || lower.includes('bn_mul')) {
+      if (
+        lower.includes('bn254_mul') ||
+        lower.includes('ec_mul') ||
+        lower.includes('point_mul') ||
+        lower.includes('bn_mul')
+      ) {
         if (!detected.includes('bn254_mul')) detected.push('bn254_mul');
       }
-      if (lower.includes('bn254_scalar_mul') || lower.includes('scalar_mul') && !lower.includes('multiscalar')) {
+      if (
+        lower.includes('bn254_scalar_mul') ||
+        (lower.includes('scalar_mul') && !lower.includes('multiscalar'))
+      ) {
         if (!detected.includes('bn254_scalar_mul')) detected.push('bn254_scalar_mul');
       }
-      if (lower.includes('bn254_pairing') || lower.includes('pairing_check') || lower.includes('ec_pairing') || lower.includes('bn_pair')) {
+      if (
+        lower.includes('bn254_pairing') ||
+        lower.includes('pairing_check') ||
+        lower.includes('ec_pairing') ||
+        lower.includes('bn_pair')
+      ) {
         if (!detected.includes('bn254_pairing_check')) detected.push('bn254_pairing_check');
       }
-      if (lower.includes('bn254_multiscalar') || lower.includes('multiscalar') || lower.includes('msm')) {
+      if (
+        lower.includes('bn254_multiscalar') ||
+        lower.includes('multiscalar') ||
+        lower.includes('msm')
+      ) {
         if (!detected.includes('bn254_multiscalar_mul')) detected.push('bn254_multiscalar_mul');
       }
       // Direct matches for canonical names
-      if (lower.includes('bn254_add') && !detected.includes('bn254_add')) detected.push('bn254_add');
-      if ((lower.includes('bn254_mul') || lower.includes('bn254_scalar_mul')) && !detected.includes('bn254_scalar_mul') && !detected.includes('bn254_mul')) {
+      if (lower.includes('bn254_add') && !detected.includes('bn254_add'))
+        detected.push('bn254_add');
+      if (
+        (lower.includes('bn254_mul') || lower.includes('bn254_scalar_mul')) &&
+        !detected.includes('bn254_scalar_mul') &&
+        !detected.includes('bn254_mul')
+      ) {
         if (lower.includes('bn254_scalar_mul')) detected.push('bn254_scalar_mul');
         else detected.push('bn254_mul');
       }
@@ -139,7 +166,11 @@ export function detectBn254Ops(functionName: string | null): Bn254Op[] {
   }
 
   // For ZKP verifier functions, infer the primary operation
-  if (lower.includes('verify_proof') || lower.includes('verify_snark') || lower.includes('verify_groth16')) {
+  if (
+    lower.includes('verify_proof') ||
+    lower.includes('verify_snark') ||
+    lower.includes('verify_groth16')
+  ) {
     if (!detected.includes('bn254_pairing_check')) detected.push('bn254_pairing_check');
     if (!detected.includes('bn254_multiscalar_mul')) detected.push('bn254_multiscalar_mul');
   }
@@ -153,7 +184,7 @@ export function detectBn254Ops(functionName: string | null): Bn254Op[] {
  */
 export function estimateMsmComplexity(
   functionName: string | null,
-  cpuInstructions: number
+  cpuInstructions: number,
 ): number {
   if (!functionName) return 0;
 
@@ -192,16 +223,13 @@ export function computeWasmMultiplier(ops: Bn254Op[]): number {
  * Calculate estimated Wasm CPU instructions for a given set of BN254
  * operations and complexity.
  */
-export function estimateWasmCpu(
-  ops: Bn254Op[],
-  msmComplexity: number
-): number {
+export function estimateWasmCpu(ops: Bn254Op[], msmComplexity: number): number {
   if (ops.length === 0) return 0;
 
   let hostCpu = 0;
   for (const op of ops) {
     if (op === 'bn254_multiscalar_mul') {
-      hostCpu += HOST_BASE_CPU[op] + (msmComplexity * 15_000);
+      hostCpu += HOST_BASE_CPU[op] + msmComplexity * 15_000;
     } else {
       hostCpu += HOST_BASE_CPU[op];
     }
@@ -211,7 +239,7 @@ export function estimateWasmCpu(
   let wasmCpu = 0;
   for (const op of ops) {
     if (op === 'bn254_multiscalar_mul') {
-      const base = HOST_BASE_CPU[op] + (msmComplexity * 15_000);
+      const base = HOST_BASE_CPU[op] + msmComplexity * 15_000;
       wasmCpu += Math.round(base * WASM_COST_MULTIPLIERS[op]);
     } else {
       wasmCpu += Math.round(HOST_BASE_CPU[op] * WASM_COST_MULTIPLIERS[op]);
@@ -234,7 +262,7 @@ export function calculateSavings(
   ops: Bn254Op[],
   feeCharged: string | null,
   cpuInstructions: number,
-  msmComplexity: number
+  msmComplexity: number,
 ): {
   estimatedWasmFee: string | null;
   stroopSavings: string | null;
@@ -263,9 +291,7 @@ export function calculateSavings(
 
   const estimatedWasm = BigInt(Math.round(Number(actualFee) * multiplier));
   const savings = estimatedWasm - actualFee;
-  const savingsPct = estimatedWasm > 0n
-    ? Number((savings * 100n) / estimatedWasm)
-    : 0;
+  const savingsPct = estimatedWasm > 0n ? Number((savings * 100n) / estimatedWasm) : 0;
 
   return {
     estimatedWasmFee: estimatedWasm.toString(),
@@ -294,9 +320,7 @@ export async function trackBn254GasExemption(
   // Skip if no BN254 operations detected
   if (ops.length === 0) return null;
 
-  const cpuInstructions = Number(
-    (sorobanResources as any)?.cpuInstructions ?? 0
-  );
+  const cpuInstructions = Number((sorobanResources as any)?.cpuInstructions ?? 0);
   const msmComplexity = estimateMsmComplexity(functionName, cpuInstructions);
   const { estimatedWasmFee, stroopSavings, savingsPct } = calculateSavings(
     ops,
@@ -374,9 +398,10 @@ export async function getBn254ExemptionByTx(
     savingsPct: record.savingsPct,
     cpuInstructions: record.cpuInstructions,
     msmComplexity: record.msmComplexity,
-    humanReadable: record.savingsPct != null
-      ? `Saved ${record.savingsPct}% in processing fees via host ZK acceleration (${(record.bn254Ops as string[]).join(', ')})`
-      : '',
+    humanReadable:
+      record.savingsPct != null
+        ? `Saved ${record.savingsPct}% in processing fees via host ZK acceleration (${(record.bn254Ops as string[]).join(', ')})`
+        : '',
   };
 }
 
@@ -402,9 +427,10 @@ export async function getBn254ExemptionsByContract(
     savingsPct: r.savingsPct,
     cpuInstructions: r.cpuInstructions,
     msmComplexity: r.msmComplexity,
-    humanReadable: r.savingsPct != null
-      ? `Saved ${r.savingsPct}% in processing fees via host ZK acceleration (${(r.bn254Ops as string[]).join(', ')})`
-      : '',
+    humanReadable:
+      r.savingsPct != null
+        ? `Saved ${r.savingsPct}% in processing fees via host ZK acceleration (${(r.bn254Ops as string[]).join(', ')})`
+        : '',
   }));
 }
 

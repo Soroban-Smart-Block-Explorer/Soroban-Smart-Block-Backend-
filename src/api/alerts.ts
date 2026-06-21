@@ -3,6 +3,7 @@ import { detectSpikes } from '../indexer/spikeDetector';
 import { detectFlashLoans } from '../indexer/flashLoanDetector';
 import { DRAIN_EXPLOIT_WARNING } from '../indexer/reentrancy-detector';
 import { prismaRead as prisma } from '../db';
+import { asyncHandler } from '../middleware/asyncHandler';
 
 /**
  * @swagger
@@ -59,14 +60,17 @@ export const alertsRouter = Router();
  *                       windowMinutes: { type: integer }
  *                       detectedAt: { type: string, format: date-time }
  */
-alertsRouter.get('/spikes', async (req: Request, res: Response) => {
-  const window = Math.max(1, parseInt(String(req.query.window ?? '5'), 10));
-  const history = Math.max(1, parseInt(String(req.query.history ?? '12'), 10));
-  const threshold = parseFloat(String(req.query.threshold ?? '3.0'));
+alertsRouter.get(
+  '/spikes',
+  asyncHandler(async (req: Request, res: Response) => {
+    const window = Math.max(1, parseInt(String(req.query.window ?? '5'), 10));
+    const history = Math.max(1, parseInt(String(req.query.history ?? '12'), 10));
+    const threshold = parseFloat(String(req.query.threshold ?? '3.0'));
 
-  const alerts = await detectSpikes(window, history, isNaN(threshold) ? 3.0 : threshold);
-  res.json({ alerts });
-});
+    const alerts = await detectSpikes(window, history, isNaN(threshold) ? 3.0 : threshold);
+    res.json({ alerts });
+  }),
+);
 
 /**
  * @swagger
@@ -101,24 +105,27 @@ alertsRouter.get('/spikes', async (req: Request, res: Response) => {
  *                       severity: { type: string, enum: [low, medium, high] }
  *                       transactions: { type: array, items: { type: string } }
  */
-alertsRouter.get('/flash-loans', async (req: Request, res: Response) => {
-  let ledger = parseInt(String(req.query.ledger ?? '0'), 10);
+alertsRouter.get(
+  '/flash-loans',
+  asyncHandler(async (req: Request, res: Response) => {
+    let ledger = parseInt(String(req.query.ledger ?? '0'), 10);
 
-  if (ledger === 0) {
-    const latest = await prisma.ledger.findFirst({
-      orderBy: { sequence: 'desc' },
-      select: { sequence: true },
-    });
-    ledger = latest?.sequence ?? 0;
-  }
+    if (ledger === 0) {
+      const latest = await prisma.ledger.findFirst({
+        orderBy: { sequence: 'desc' },
+        select: { sequence: true },
+      });
+      ledger = latest?.sequence ?? 0;
+    }
 
-  if (ledger === 0) {
-    return res.json({ alerts: [] });
-  }
+    if (ledger === 0) {
+      return res.json({ alerts: [] });
+    }
 
-  const alerts = await detectFlashLoans(ledger);
-  res.json({ alerts });
-});
+    const alerts = await detectFlashLoans(ledger);
+    res.json({ alerts });
+  }),
+);
 
 /**
  * @swagger
@@ -141,25 +148,28 @@ alertsRouter.get('/flash-loans', async (req: Request, res: Response) => {
  *       200:
  *         description: Re-entrancy alerts
  */
-alertsRouter.get('/reentrancy', async (req: Request, res: Response) => {
-  const contract = req.query.contract ? String(req.query.contract) : undefined;
-  const severity = req.query.severity ? String(req.query.severity) : undefined;
-  const limit = Math.min(100, Math.max(1, parseInt(String(req.query.limit ?? '20'), 10)));
+alertsRouter.get(
+  '/reentrancy',
+  asyncHandler(async (req: Request, res: Response) => {
+    const contract = req.query.contract ? String(req.query.contract) : undefined;
+    const severity = req.query.severity ? String(req.query.severity) : undefined;
+    const limit = Math.min(100, Math.max(1, parseInt(String(req.query.limit ?? '20'), 10)));
 
-  const alerts = await prisma.reentrancyAlert.findMany({
-    where: {
-      ...(contract ? { contractAddress: contract } : {}),
-      ...(severity ? { severity } : {}),
-    },
-    orderBy: { createdAt: 'desc' },
-    take: limit,
-  });
+    const alerts = await prisma.reentrancyAlert.findMany({
+      where: {
+        ...(contract ? { contractAddress: contract } : {}),
+        ...(severity ? { severity } : {}),
+      },
+      orderBy: { createdAt: 'desc' },
+      take: limit,
+    });
 
-  // Attach the canonical warning label to every alert for API consumers
-  const annotated = alerts.map((a) => ({ ...a, warningLabel: DRAIN_EXPLOIT_WARNING }));
+    // Attach the canonical warning label to every alert for API consumers
+    const annotated = alerts.map((a) => ({ ...a, warningLabel: DRAIN_EXPLOIT_WARNING }));
 
-  res.json({ alerts: annotated });
-});
+    res.json({ alerts: annotated });
+  }),
+);
 
 /**
  * @swagger
@@ -181,24 +191,26 @@ alertsRouter.get('/reentrancy', async (req: Request, res: Response) => {
  *       200:
  *         description: Volume spike alerts
  */
-alertsRouter.get('/volume', async (req: Request, res: Response) => {
-  const contract = req.query.contract ? String(req.query.contract) : undefined;
-  const limit = Math.min(100, Math.max(1, parseInt(String(req.query.limit ?? '20'), 10)));
-  const acknowledged = req.query.acknowledged !== undefined
-    ? req.query.acknowledged === 'true'
-    : undefined;
+alertsRouter.get(
+  '/volume',
+  asyncHandler(async (req: Request, res: Response) => {
+    const contract = req.query.contract ? String(req.query.contract) : undefined;
+    const limit = Math.min(100, Math.max(1, parseInt(String(req.query.limit ?? '20'), 10)));
+    const acknowledged =
+      req.query.acknowledged !== undefined ? req.query.acknowledged === 'true' : undefined;
 
-  const alerts = await prisma.volumeAlert.findMany({
-    where: {
-      ...(contract ? { contractAddress: contract } : {}),
-      ...(acknowledged !== undefined ? { acknowledged } : {}),
-    },
-    orderBy: { detectedAt: 'desc' },
-    take: limit,
-  });
+    const alerts = await prisma.volumeAlert.findMany({
+      where: {
+        ...(contract ? { contractAddress: contract } : {}),
+        ...(acknowledged !== undefined ? { acknowledged } : {}),
+      },
+      orderBy: { detectedAt: 'desc' },
+      take: limit,
+    });
 
-  res.json({ alerts });
-});
+    res.json({ alerts });
+  }),
+);
 
 /**
  * PATCH /api/v1/alerts/volume/:id/acknowledge — mark a volume alert as acknowledged

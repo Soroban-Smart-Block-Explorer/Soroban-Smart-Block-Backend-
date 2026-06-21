@@ -12,7 +12,15 @@ analysisRouter.get('/pause-timing', async (_req: Request, res: Response) => {
     });
 
     const byHour: Record<string, number> = {};
-    const byDow: Record<string, number> = { mon: 0, tue: 0, wed: 0, thu: 0, fri: 0, sat: 0, sun: 0 };
+    const byDow: Record<string, number> = {
+      mon: 0,
+      tue: 0,
+      wed: 0,
+      thu: 0,
+      fri: 0,
+      sat: 0,
+      sun: 0,
+    };
     const dowKeys = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'];
 
     for (const ev of events) {
@@ -35,7 +43,10 @@ analysisRouter.get('/pauser-behavior', async (_req: Request, res: Response) => {
       select: { pauserAddress: true, contractAddress: true, durationSeconds: true },
     });
 
-    const pauserMap: Record<string, { count: number; contracts: Set<string>; totalDuration: bigint }> = {};
+    const pauserMap: Record<
+      string,
+      { count: number; contracts: Set<string>; totalDuration: bigint }
+    > = {};
     for (const ev of events) {
       const addr = ev.pauserAddress!;
       if (!pauserMap[addr]) pauserMap[addr] = { count: 0, contracts: new Set(), totalDuration: 0n };
@@ -63,7 +74,10 @@ analysisRouter.get('/pauser-behavior', async (_req: Request, res: Response) => {
         const b = pauserMap[pauserList[j].address].contracts;
         const shared = [...a].filter((c) => b.has(c)).length;
         if (shared > 0) {
-          overlap.push({ addresses: [pauserList[i].address, pauserList[j].address], sharedContracts: shared });
+          overlap.push({
+            addresses: [pauserList[i].address, pauserList[j].address],
+            sharedContracts: shared,
+          });
         }
       }
     }

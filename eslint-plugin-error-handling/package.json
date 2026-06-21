@@ -1,0 +1,9 @@
+{
+  "name": "eslint-plugin-error-handling",
+  "version": "1.0.0",
+  "main": "index.js",
+  "dependencies": {},
+  "peerDependencies": {
+    "eslint": ">=8.0.0"
+  }
+}

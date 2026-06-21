@@ -4,8 +4,15 @@ import multer from 'multer';
 import * as path from 'path';
 import * as os from 'os';
 import { prisma } from '../db';
-import { extractArchive, compileSandboxed, hashFile, cleanupDir, extractSourceFiles } from './compiler';
+import {
+  extractArchive,
+  compileSandboxed,
+  hashFile,
+  cleanupDir,
+  extractSourceFiles,
+} from './compiler';
 import { decompileWasm } from '../indexer/wasm-decompiler';
+import { asyncHandler } from '../middleware/asyncHandler';
 
 export const verifyRouter = Router();
 
@@ -15,65 +22,82 @@ const upload = multer({
   limits: { fileSize: 50 * 1024 * 1024 },
   fileFilter: (_req, file, cb: any) => {
     const allowed = ['.tar.gz', '.tgz', '.zip'];
-    const ok = allowed.some(ext => file.originalname.endsWith(ext));
+    const ok = allowed.some((ext) => file.originalname.endsWith(ext));
     cb(ok ? null : new Error('Only .tar.gz / .zip archives are accepted'), ok);
   },
 });
 
 // POST /verify — submit a source archive for verification
-verifyRouter.post('/', upload.single('archive'), async (req: Request, res: Response) => {
-  if (!req.file) {
-    res.status(400).json({ error: 'No archive uploaded. Use field name "archive".' });
-    return;
-  }
+verifyRouter.post(
+  '/',
+  upload.single('archive'),
+  asyncHandler(async (req: Request, res: Response) => {
+    if (!req.file) {
+      res.status(400).json({ error: 'No archive uploaded. Use field name "archive".' });
+      return;
+    }
 
-  const { contractAddress, toolchain = 'soroban-cli@0.9.4' } = req.body as {
-    contractAddress?: string;
-    toolchain?: string;
-  };
+    const { contractAddress, toolchain = 'soroban-cli@0.9.4' } = req.body as {
+      contractAddress?: string;
+      toolchain?: string;
+    };
 
-  // Hash the raw archive for deduplication / audit
-  const uploadedHash = hashFile(req.file.path);
+    // Hash the raw archive for deduplication / audit
+    const uploadedHash = hashFile(req.file.path);
 
-  // Create the job record immediately so the client can poll
-  const job = await prisma.verificationJob.create({
-    data: { contractAddress, toolchain, status: 'pending', uploadedHash },
-  });
+    // Create the job record immediately so the client can poll
+    const job = await prisma.verificationJob.create({
+      data: { contractAddress, toolchain, status: 'pending', uploadedHash },
+    });
 
-  // Run compilation asynchronously — do not await
-  runVerification(job.id, req.file.path, req.file.mimetype, toolchain, contractAddress).catch(() => {
-    // errors are persisted inside runVerification
-  });
+    // Run compilation asynchronously — do not await
+    runVerification(job.id, req.file.path, req.file.mimetype, toolchain, contractAddress).catch(
+      () => {
+        // errors are persisted inside runVerification
+      },
+    );
 
-  res.status(202).json({ jobId: job.id, status: 'pending' });
-});
+    res.status(202).json({ jobId: job.id, status: 'pending' });
+  }),
+);
 
 // GET /verify/:id — poll job status
-verifyRouter.get('/:id', async (req: Request, res: Response) => {
-  const job = await prisma.verificationJob.findUnique({ where: { id: req.params.id } });
-  if (!job) {
-    res.status(404).json({ error: 'Job not found' });
-    return;
-  }
-  res.json(job);
-});
+verifyRouter.get(
+  '/:id',
+  asyncHandler(async (req: Request, res: Response) => {
+    const job = await prisma.verificationJob.findUnique({ where: { id: req.params.id } });
+    if (!job) {
+      res.status(404).json({ error: 'Job not found' });
+      return;
+    }
+    res.json(job);
+  }),
+);
 
 // GET /verify/:id/snippet — return extracted source code files for a verification job
-verifyRouter.get('/:id/snippet', async (req: Request, res: Response) => {
-  const job = await prisma.verificationJob.findUnique({
-    where: { id: req.params.id },
-    select: { id: true, status: true, sourceFiles: true },
-  });
-  if (!job) {
-    res.status(404).json({ error: 'Job not found' });
-    return;
-  }
-  if (!job.sourceFiles) {
-    res.status(404).json({ error: 'Source files not available. Job may still be pending or failed before extraction.' });
-    return;
-  }
-  res.json({ jobId: job.id, status: job.status, files: job.sourceFiles });
-});
+verifyRouter.get(
+  '/:id/snippet',
+  asyncHandler(async (req: Request, res: Response) => {
+    const job = await prisma.verificationJob.findUnique({
+      where: { id: req.params.id },
+      select: { id: true, status: true, sourceFiles: true },
+    });
+    if (!job) {
+      res.status(404).json({ error: 'Job not found' });
+      return;
+    }
+    if (!job.sourceFiles) {
+      res
+        .status(404)
+        .json({
+          error:
+            'Source files not available. Job may still be pending or failed before extraction.',
+        });
+      return;
+    }
+    res.json({ jobId: job.id, status: job.status, files: job.sourceFiles });
+  }),
+);
 
 // ── async worker ─────────────────────────────────────────────────────────────
 
@@ -121,10 +145,12 @@ async function runVerification(
       },
     });
   } catch (err: any) {
-    await prisma.verificationJob.update({
-      where: { id: jobId },
-      data: { status: 'failed', errorMsg: err.message ?? String(err) },
-    }).catch(() => {});
+    await prisma.verificationJob
+      .update({
+        where: { id: jobId },
+        data: { status: 'failed', errorMsg: err.message ?? String(err) },
+      })
+      .catch(() => {});
   } finally {
     if (extractedDir) await cleanupDir(path.dirname(extractedDir));
     await cleanupDir(archivePath);
@@ -177,38 +203,44 @@ const wasmUpload = multer({
  *
  * Multipart field name: "wasm"
  */
-verifyRouter.post('/decompile', wasmUpload.single('wasm'), async (req: Request, res: Response) => {
-  if (!req.file) {
-    res.status(400).json({ error: 'No Wasm file uploaded. Use multipart field name "wasm".' });
-    return;
-  }
+verifyRouter.post(
+  '/decompile',
+  wasmUpload.single('wasm'),
+  asyncHandler(async (req: Request, res: Response) => {
+    if (!req.file) {
+      res.status(400).json({ error: 'No Wasm file uploaded. Use multipart field name "wasm".' });
+      return;
+    }
 
-  let wasmBytes: Buffer;
-  try {
-    const fs = await import('fs');
-    wasmBytes = await fs.promises.readFile(req.file.path);
-  } catch (err: any) {
-    res.status(500).json({ error: 'Failed to read uploaded file', detail: String(err) });
-    return;
-  } finally {
-    // Best-effort cleanup of temp file
-    import('fs').then((fs) => fs.promises.unlink(req.file!.path).catch(() => {}));
-  }
+    let wasmBytes: Buffer;
+    try {
+      const fs = await import('fs');
+      wasmBytes = await fs.promises.readFile(req.file.path);
+    } catch (err: any) {
+      res.status(500).json({ error: 'Failed to read uploaded file', detail: String(err) });
+      return;
+    } finally {
+      // Best-effort cleanup of temp file
+      import('fs').then((fs) => fs.promises.unlink(req.file!.path).catch(() => {}));
+    }
 
-  let result;
-  try {
-    result = decompileWasm(wasmBytes);
-  } catch (err: any) {
-    res.status(422).json({ error: 'Failed to decompile Wasm binary', detail: err.message ?? String(err) });
-    return;
-  }
+    let result;
+    try {
+      result = decompileWasm(wasmBytes);
+    } catch (err: any) {
+      res
+        .status(422)
+        .json({ error: 'Failed to decompile Wasm binary', detail: err.message ?? String(err) });
+      return;
+    }
 
-  res.json({
-    totalOpcodes: result.opcodeIndex.totalOpcodes,
-    distinctOpcodes: result.opcodeIndex.distinctOpcodes,
-    opcodeFrequency: result.opcodeIndex.frequency,
-    hasVulnerabilities: result.hasVulnerabilities,
-    vulnerabilities: result.vulnerabilities,
-    warningMessage: result.warningMessage,
-  });
-});
+    res.json({
+      totalOpcodes: result.opcodeIndex.totalOpcodes,
+      distinctOpcodes: result.opcodeIndex.distinctOpcodes,
+      opcodeFrequency: result.opcodeIndex.frequency,
+      hasVulnerabilities: result.hasVulnerabilities,
+      vulnerabilities: result.vulnerabilities,
+      warningMessage: result.warningMessage,
+    });
+  }),
+);

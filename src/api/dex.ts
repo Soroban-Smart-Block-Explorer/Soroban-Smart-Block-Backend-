@@ -20,7 +20,7 @@ dexRouter.get('/analyze/:hash', async (req: Request, res: Response) => {
 const rangeSchema = z.object({
   ledgerMin: z.coerce.number().int().min(0),
   ledgerMax: z.coerce.number().int().min(0),
-  limit:     z.coerce.number().int().min(1).max(500).default(100),
+  limit: z.coerce.number().int().min(1).max(500).default(100),
 });
 
 // GET /dex/analyze?ledgerMin=&ledgerMax=&limit= — analyze a ledger range

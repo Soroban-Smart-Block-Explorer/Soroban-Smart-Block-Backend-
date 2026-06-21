@@ -74,12 +74,25 @@ export interface HorizonAssetRecord {
   num_liquidity_pools: number;
   num_contracts: number;
   amount: string;
-  accounts: { authorized: number; authorized_to_maintain_liabilities: number; unauthorized: number };
+  accounts: {
+    authorized: number;
+    authorized_to_maintain_liabilities: number;
+    unauthorized: number;
+  };
   claimable_balances_amount: string;
   liquidity_pools_amount: string;
   contracts_amount: string;
-  balances: { authorized: string; authorized_to_maintain_liabilities: string; unauthorized: string };
-  flags: { auth_required: boolean; auth_revocable: boolean; auth_immutable: boolean; auth_clawback_enabled: boolean };
+  balances: {
+    authorized: string;
+    authorized_to_maintain_liabilities: string;
+    unauthorized: string;
+  };
+  flags: {
+    auth_required: boolean;
+    auth_revocable: boolean;
+    auth_immutable: boolean;
+    auth_clawback_enabled: boolean;
+  };
   toml_meta?: { home_domain?: string; org_name?: string };
 }
 
@@ -99,7 +112,10 @@ export async function fetchHorizonAccount(address: string): Promise<HorizonAccou
   return horizonGet<HorizonAccount>(`/accounts/${encodeURIComponent(address)}`);
 }
 
-export async function fetchHorizonClaimableBalances(address: string, limit = 20): Promise<HorizonClaimableBalance[]> {
+export async function fetchHorizonClaimableBalances(
+  address: string,
+  limit = 20,
+): Promise<HorizonClaimableBalance[]> {
   const data = await horizonGet<{ _embedded: { records: HorizonClaimableBalance[] } }>(
     '/claimable_balances',
     { claimant: address, limit, order: 'desc' },
@@ -107,7 +123,11 @@ export async function fetchHorizonClaimableBalances(address: string, limit = 20)
   return data?._embedded?.records ?? [];
 }
 
-export async function fetchHorizonOperations(address: string, limit = 50, cursor?: string): Promise<{
+export async function fetchHorizonOperations(
+  address: string,
+  limit = 50,
+  cursor?: string,
+): Promise<{
   records: HorizonOperation[];
   nextCursor: string | null;
 }> {
@@ -125,7 +145,10 @@ export async function fetchHorizonOperations(address: string, limit = 50, cursor
   return { records, nextCursor };
 }
 
-export async function fetchHorizonPayments(address: string, limit = 50): Promise<HorizonOperation[]> {
+export async function fetchHorizonPayments(
+  address: string,
+  limit = 50,
+): Promise<HorizonOperation[]> {
   const data = await horizonGet<{ _embedded: { records: HorizonOperation[] } }>(
     `/accounts/${encodeURIComponent(address)}/payments`,
     { limit, order: 'desc' },
@@ -133,7 +156,10 @@ export async function fetchHorizonPayments(address: string, limit = 50): Promise
   return data?._embedded?.records ?? [];
 }
 
-export async function fetchHorizonAsset(code: string, issuer: string): Promise<HorizonAssetRecord | null> {
+export async function fetchHorizonAsset(
+  code: string,
+  issuer: string,
+): Promise<HorizonAssetRecord | null> {
   const data = await horizonGet<{ _embedded: { records: HorizonAssetRecord[] } }>(`/assets`, {
     asset_code: code,
     asset_issuer: issuer,
@@ -141,7 +167,10 @@ export async function fetchHorizonAsset(code: string, issuer: string): Promise<H
   return data?._embedded?.records?.[0] ?? null;
 }
 
-export async function fetchHorizonAssets(limit = 200, cursor?: string): Promise<{
+export async function fetchHorizonAssets(
+  limit = 200,
+  cursor?: string,
+): Promise<{
   records: HorizonAssetRecord[];
   nextCursor: string | null;
 }> {
@@ -153,7 +182,10 @@ export async function fetchHorizonAssets(limit = 200, cursor?: string): Promise<
   }>('/assets', params);
 
   const records = data?._embedded?.records ?? [];
-  const nextCursor = records.length > 0 ? (records[records.length - 1] as { paging_token?: string }).paging_token ?? null : null;
+  const nextCursor =
+    records.length > 0
+      ? ((records[records.length - 1] as { paging_token?: string }).paging_token ?? null)
+      : null;
   return { records, nextCursor };
 }
 
@@ -162,7 +194,10 @@ export async function fetchHorizonOrderbook(
   sellingAssetIssuer: string,
   buyingAssetCode: string,
   buyingAssetIssuer?: string,
-): Promise<{ bids: Array<{ price_r: { n: number; d: number }; price: string; amount: string }>; asks: Array<{ price_r: { n: number; d: number }; price: string; amount: string }> } | null> {
+): Promise<{
+  bids: Array<{ price_r: { n: number; d: number }; price: string; amount: string }>;
+  asks: Array<{ price_r: { n: number; d: number }; price: string; amount: string }>;
+} | null> {
   const params: Record<string, string> = {
     selling_asset_type: sellingAssetCode === 'XLM' ? 'native' : 'credit_alphanum4',
     buying_asset_type: buyingAssetCode === 'XLM' ? 'native' : 'credit_alphanum4',
@@ -179,7 +214,9 @@ export async function fetchHorizonOrderbook(
   return horizonGet('/order_book', params);
 }
 
-export async function fetchStellarToml(homeDomain: string): Promise<Record<string, unknown> | null> {
+export async function fetchStellarToml(
+  homeDomain: string,
+): Promise<Record<string, unknown> | null> {
   try {
     const url = `https://${homeDomain}/.well-known/stellar.toml`;
     const resp = await axios.get<string>(url, { timeout: TIMEOUT, responseType: 'text' });
@@ -233,7 +270,10 @@ export async function verifyHomeDomain(accountId: string, homeDomain: string): P
   if (!toml) return false;
   const accounts = toml.ACCOUNTS;
   if (typeof accounts === 'string') {
-    return accounts.split(',').map((a) => a.trim()).includes(accountId);
+    return accounts
+      .split(',')
+      .map((a) => a.trim())
+      .includes(accountId);
   }
   return false;
 }

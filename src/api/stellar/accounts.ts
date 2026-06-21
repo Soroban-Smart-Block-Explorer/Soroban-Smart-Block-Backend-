@@ -17,45 +17,61 @@ const paginationSchema = z.object({
 });
 
 // GET /api/v1/stellar/accounts/:address
-accountsRouter.get('/:address', validateAddressParam('address'), async (req: Request, res: Response) => {
-  try {
-    const view = await getUnifiedAccountView(req.params.address);
-    res.json(view);
-  } catch (e) {
-    res.status(500).json({ error: String(e) });
-  }
-});
+accountsRouter.get(
+  '/:address',
+  validateAddressParam('address'),
+  async (req: Request, res: Response) => {
+    try {
+      const view = await getUnifiedAccountView(req.params.address);
+      res.json(view);
+    } catch (e) {
+      res.status(500).json({ error: String(e) });
+    }
+  },
+);
 
 // GET /api/v1/stellar/accounts/:address/trustlines
-accountsRouter.get('/:address/trustlines', validateAddressParam('address'), async (req: Request, res: Response) => {
-  try {
-    const data = await getAccountTrustlines(req.params.address);
-    res.json(data);
-  } catch (e) {
-    res.status(500).json({ error: String(e) });
-  }
-});
+accountsRouter.get(
+  '/:address/trustlines',
+  validateAddressParam('address'),
+  async (req: Request, res: Response) => {
+    try {
+      const data = await getAccountTrustlines(req.params.address);
+      res.json(data);
+    } catch (e) {
+      res.status(500).json({ error: String(e) });
+    }
+  },
+);
 
 // GET /api/v1/stellar/accounts/:address/signers
-accountsRouter.get('/:address/signers', validateAddressParam('address'), async (req: Request, res: Response) => {
-  try {
-    const data = await getAccountSigners(req.params.address);
-    res.json(data);
-  } catch (e) {
-    res.status(500).json({ error: String(e) });
-  }
-});
+accountsRouter.get(
+  '/:address/signers',
+  validateAddressParam('address'),
+  async (req: Request, res: Response) => {
+    try {
+      const data = await getAccountSigners(req.params.address);
+      res.json(data);
+    } catch (e) {
+      res.status(500).json({ error: String(e) });
+    }
+  },
+);
 
 // GET /api/v1/stellar/accounts/:address/transactions
-accountsRouter.get('/:address/transactions', validateAddressParam('address'), async (req: Request, res: Response) => {
-  try {
-    const { page, limit } = paginationSchema.parse(req.query);
-    const data = await getUnifiedTransactions(req.params.address, page, limit);
-    res.json(data);
-  } catch (e) {
-    res.status(400).json({ error: String(e) });
-  }
-});
+accountsRouter.get(
+  '/:address/transactions',
+  validateAddressParam('address'),
+  async (req: Request, res: Response) => {
+    try {
+      const { page, limit } = paginationSchema.parse(req.query);
+      const data = await getUnifiedTransactions(req.params.address, page, limit);
+      res.json(data);
+    } catch (e) {
+      res.status(400).json({ error: String(e) });
+    }
+  },
+);
 
 // GET /api/v1/stellar/accounts/:address/transactions/cross-domain
 accountsRouter.get(

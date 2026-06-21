@@ -70,7 +70,12 @@ export function trackTtlChanges(
   try {
     envelope = xdr.TransactionEnvelope.fromXDR(envelopeXdr, 'base64');
   } catch {
-    return { hasExtendOp: false, extensions: [], rentPayment: null, summary: 'Could not parse transaction envelope' };
+    return {
+      hasExtendOp: false,
+      extensions: [],
+      rentPayment: null,
+      summary: 'Could not parse transaction envelope',
+    };
   }
 
   const switchName = envelope.switch().name;
@@ -78,15 +83,18 @@ export function trackTtlChanges(
     switchName === 'envelopeTypeTx'
       ? envelope.v1().tx().operations()
       : switchName === 'envelopeTypeTxV0'
-      ? envelope.v0().tx().operations()
-      : [];
+        ? envelope.v0().tx().operations()
+        : [];
 
-  const extendOps = ops.filter(
-    (op) => op.body().switch().name === 'extendFootprintTtl',
-  );
+  const extendOps = ops.filter((op) => op.body().switch().name === 'extendFootprintTtl');
 
   if (extendOps.length === 0) {
-    return { hasExtendOp: false, extensions: [], rentPayment: null, summary: 'No ExtendFootprintTTLOp found' };
+    return {
+      hasExtendOp: false,
+      extensions: [],
+      rentPayment: null,
+      summary: 'No ExtendFootprintTTLOp found',
+    };
   }
 
   const extensions: TtlExtension[] = [];
@@ -151,7 +159,8 @@ export function trackTtlChanges(
   }
 
   const totalExtended = extensions.reduce((sum, e) => sum + (e.ledgersExtended ?? 0), 0);
-  const summary = `Extended TTL for ${extensions.length} entr${extensions.length === 1 ? 'y' : 'ies'}` +
+  const summary =
+    `Extended TTL for ${extensions.length} entr${extensions.length === 1 ? 'y' : 'ies'}` +
     (totalExtended > 0 ? ` (+${totalExtended} ledgers total)` : '') +
     (rentPayment ? `, rent paid: ${rentPayment.feeChargedXlm}` : '');
 

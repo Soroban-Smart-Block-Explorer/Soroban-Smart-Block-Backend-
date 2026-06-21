@@ -21,27 +21,24 @@ interface DistributionData {
   distributionId?: string;
 }
 
-export function extractDistributionData(decoded: Record<string, unknown> | null): DistributionData | null {
+export function extractDistributionData(
+  decoded: Record<string, unknown> | null,
+): DistributionData | null {
   if (!decoded) return null;
 
-  const data = decoded && typeof decoded === 'object' && 'data' in decoded
-    ? (decoded as Record<string, unknown>).data
-    : decoded;
+  const data =
+    decoded && typeof decoded === 'object' && 'data' in decoded
+      ? (decoded as Record<string, unknown>).data
+      : decoded;
 
-  const d = data && typeof data === 'object'
-    ? (data as Record<string, unknown>)
-    : decoded;
+  const d = data && typeof data === 'object' ? (data as Record<string, unknown>) : decoded;
 
   const recipient = String(d.recipient ?? d.to ?? d.address ?? d.account ?? '');
   const amount = String(d.amount ?? d.value ?? d.quantity ?? d.yield ?? '');
 
   if (!recipient || !amount || amount === '0' || amount === '0n') return null;
 
-  const tokenSymbol = d.token
-    ? String(d.token)
-    : d.tokenSymbol
-      ? String(d.tokenSymbol)
-      : undefined;
+  const tokenSymbol = d.token ? String(d.token) : d.tokenSymbol ? String(d.tokenSymbol) : undefined;
 
   const distributionId = d.distributionId
     ? String(d.distributionId)
@@ -123,9 +120,9 @@ export async function backfillYieldDistributions(
     try {
       const dataScVal = xdr.ScVal.fromXDR(event.data, 'base64');
       const native = scValToNative(dataScVal);
-      decoded = (typeof native === 'object' && native !== null
-        ? native
-        : { value: String(native) }) as Record<string, unknown>;
+      decoded = (
+        typeof native === 'object' && native !== null ? native : { value: String(native) }
+      ) as Record<string, unknown>;
     } catch {
       decoded = null;
     }

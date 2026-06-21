@@ -65,9 +65,7 @@ function median(values: number[]): number {
   if (values.length === 0) return 0;
   const sorted = [...values].sort((a, b) => a - b);
   const mid = Math.floor(sorted.length / 2);
-  return sorted.length % 2 === 0
-    ? (sorted[mid - 1] + sorted[mid]) / 2
-    : sorted[mid];
+  return sorted.length % 2 === 0 ? (sorted[mid - 1] + sorted[mid]) / 2 : sorted[mid];
 }
 
 async function runAnalyticsAggregation(period: string): Promise<void> {
@@ -107,7 +105,9 @@ async function runAnalyticsAggregation(period: string): Promise<void> {
 
   const scores = privateTxs.filter((t) => t.privacyScore !== null).map((t) => t.privacyScore!);
   const riskScores = privateTxs.filter((t) => t.riskScore !== null).map((t) => t.riskScore!);
-  const anonSets = privateTxs.filter((t) => t.anonymitySetSize !== null).map((t) => t.anonymitySetSize!);
+  const anonSets = privateTxs
+    .filter((t) => t.anonymitySetSize !== null)
+    .map((t) => t.anonymitySetSize!);
   const totalVolume = privateTxs.reduce((acc, t) => acc + (Number(t.totalValue) || 0), 0);
   const uniqueUsers = new Set(privateTxs.flatMap((t) => t.participants)).size;
   const uniqueContracts = new Set(privateTxs.flatMap((t) => t.contractAddresses)).size;
@@ -120,13 +120,18 @@ async function runAnalyticsAggregation(period: string): Promise<void> {
       totalTx: totalTxCount,
       totalVolume: String(totalVolume),
       privacyShare: totalTxCount > 0 ? privateTxs.length / totalTxCount : 0,
-      volumeShare: totalTxCount > 0 ? privateTxs.filter((t) => t.totalValue !== null).length / totalTxCount : 0,
+      volumeShare:
+        totalTxCount > 0
+          ? privateTxs.filter((t) => t.totalValue !== null).length / totalTxCount
+          : 0,
       byProtocol,
-      avgAnonymitySet: anonSets.length > 0 ? anonSets.reduce((a, b) => a + b, 0) / anonSets.length : null,
+      avgAnonymitySet:
+        anonSets.length > 0 ? anonSets.reduce((a, b) => a + b, 0) / anonSets.length : null,
       maxAnonymitySet: anonSets.length > 0 ? Math.max(...anonSets) : null,
       medianAnonymitySet: anonSets.length > 0 ? median(anonSets) : null,
       avgPrivacyScore: scores.length > 0 ? scores.reduce((a, b) => a + b, 0) / scores.length : null,
-      avgRiskScore: riskScores.length > 0 ? riskScores.reduce((a, b) => a + b, 0) / riskScores.length : null,
+      avgRiskScore:
+        riskScores.length > 0 ? riskScores.reduce((a, b) => a + b, 0) / riskScores.length : null,
       uniqueUsers,
       uniqueContracts,
     },
@@ -134,7 +139,9 @@ async function runAnalyticsAggregation(period: string): Promise<void> {
 
   for (const [protocol, count] of Object.entries(byProtocol)) {
     const protoTxs = privateTxs.filter((t) => t.protocols.includes(protocol as any));
-    const protoAnonSets = protoTxs.filter((t) => t.anonymitySetSize !== null).map((t) => t.anonymitySetSize!);
+    const protoAnonSets = protoTxs
+      .filter((t) => t.anonymitySetSize !== null)
+      .map((t) => t.anonymitySetSize!);
     const protoUsers = new Set(protoTxs.flatMap((t) => t.participants));
 
     await prismaWrite.privacyProtocolDetail.create({
@@ -146,9 +153,10 @@ async function runAnalyticsAggregation(period: string): Promise<void> {
         volume: String(protoTxs.reduce((a, t) => a + (Number(t.totalValue) || 0), 0)),
         uniqueUsers: protoUsers.size,
         uniqueContracts: new Set(protoTxs.flatMap((t) => t.contractAddresses)).size,
-        avgAnonymitySet: protoAnonSets.length > 0
-          ? protoAnonSets.reduce((a, b) => a + b, 0) / protoAnonSets.length
-          : null,
+        avgAnonymitySet:
+          protoAnonSets.length > 0
+            ? protoAnonSets.reduce((a, b) => a + b, 0) / protoAnonSets.length
+            : null,
       },
     });
   }
@@ -176,7 +184,9 @@ async function captureAnonymitySetSnapshots(): Promise<void> {
     if (sets.length === 0) continue;
     const setSize = Math.max(...sets);
 
-    const prTx = privacyTxs.find((t) => t.protocols.includes(protocol as any) && t.anonymitySetSize !== null);
+    const prTx = privacyTxs.find(
+      (t) => t.protocols.includes(protocol as any) && t.anonymitySetSize !== null,
+    );
     const effectiveSetSize = prTx?.effectiveAnonymitySet ?? null;
 
     await prismaWrite.anonymitySetSnapshot.create({
@@ -190,7 +200,11 @@ async function captureAnonymitySetSnapshots(): Promise<void> {
   }
 }
 
-export async function runPrivacyDetection(): Promise<{ detected: number; analytics: boolean; snapshots: boolean }> {
+export async function runPrivacyDetection(): Promise<{
+  detected: number;
+  analytics: boolean;
+  snapshots: boolean;
+}> {
   const detected = await scanRecentTransactions(200);
   await runAnalyticsAggregation('hour');
   await runAnalyticsAggregation('day');

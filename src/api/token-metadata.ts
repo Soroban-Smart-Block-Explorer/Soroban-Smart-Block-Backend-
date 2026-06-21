@@ -20,6 +20,7 @@
  */
 
 import { Router, Request, Response } from 'express';
+import { asyncHandler } from '../middleware/asyncHandler';
 import { z } from 'zod';
 import {
   getTokenMetadata,
@@ -60,16 +61,19 @@ export const tokenMetadataRouter = Router();
  *       404:
  *         description: Token metadata could not be resolved
  */
-tokenMetadataRouter.get('/:address', async (req: Request, res: Response) => {
-  const { address } = req.params;
-  const meta = await getTokenMetadata(address);
-  if (!meta) {
-    return res.status(404).json({
-      error: 'Token metadata not found. The contract may not be a SEP-41 token.',
-    });
-  }
-  res.json(meta);
-});
+tokenMetadataRouter.get(
+  '/:address',
+  asyncHandler(async (req: Request, res: Response) => {
+    const { address } = req.params;
+    const meta = await getTokenMetadata(address);
+    if (!meta) {
+      return res.status(404).json({
+        error: 'Token metadata not found. The contract may not be a SEP-41 token.',
+      });
+    }
+    res.json(meta);
+  }),
+);
 
 // ─── GET /token-metadata/:address/format ─────────────────────────────────────
 
@@ -108,28 +112,31 @@ const formatQuerySchema = z.object({
  *       400:
  *         description: Invalid amount parameter
  */
-tokenMetadataRouter.get('/:address/format', async (req: Request, res: Response) => {
-  const parsed = formatQuerySchema.safeParse(req.query);
-  if (!parsed.success) {
-    return res.status(400).json({ error: parsed.error.flatten().fieldErrors });
-  }
+tokenMetadataRouter.get(
+  '/:address/format',
+  asyncHandler(async (req: Request, res: Response) => {
+    const parsed = formatQuerySchema.safeParse(req.query);
+    if (!parsed.success) {
+      return res.status(400).json({ error: parsed.error.flatten().fieldErrors });
+    }
 
-  const { address } = req.params;
-  const raw = BigInt(parsed.data.amount);
+    const { address } = req.params;
+    const raw = BigInt(parsed.data.amount);
 
-  const meta = await getTokenMetadata(address);
-  const decimals = meta?.decimals ?? 7;
-  const symbol = meta?.symbol ?? null;
+    const meta = await getTokenMetadata(address);
+    const decimals = meta?.decimals ?? 7;
+    const symbol = meta?.symbol ?? null;
 
-  const formatted = await formatTokenAmount(raw, address);
+    const formatted = await formatTokenAmount(raw, address);
 
-  res.json({
-    raw: parsed.data.amount,
-    formatted,
-    decimals,
-    symbol,
-  });
-});
+    res.json({
+      raw: parsed.data.amount,
+      formatted,
+      decimals,
+      symbol,
+    });
+  }),
+);
 
 // ─── POST /token-metadata/batch ──────────────────────────────────────────────
 
@@ -160,21 +167,24 @@ const batchBodySchema = z.object({
  *       400:
  *         description: Validation error
  */
-tokenMetadataRouter.post('/batch', async (req: Request, res: Response) => {
-  const parsed = batchBodySchema.safeParse(req.body);
-  if (!parsed.success) {
-    return res.status(400).json({ error: parsed.error.flatten() });
-  }
+tokenMetadataRouter.post(
+  '/batch',
+  asyncHandler(async (req: Request, res: Response) => {
+    const parsed = batchBodySchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({ error: parsed.error.flatten() });
+    }
 
-  const results = await Promise.all(
-    parsed.data.addresses.map(async (address) => {
-      const meta = await getTokenMetadata(address);
-      return [address, meta] as const;
-    }),
-  );
+    const results = await Promise.all(
+      parsed.data.addresses.map(async (address) => {
+        const meta = await getTokenMetadata(address);
+        return [address, meta] as const;
+      }),
+    );
 
-  res.json({ tokens: Object.fromEntries(results) });
-});
+    res.json({ tokens: Object.fromEntries(results) });
+  }),
+);
 
 // ─── DELETE /token-metadata/:address/cache ────────────────────────────────────
 

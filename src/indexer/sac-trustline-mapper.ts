@@ -126,9 +126,18 @@ export function extractGAccountFromArgs(
   if (!functionArgs) return null;
 
   const candidateKeys = [
-    'account', 'to', 'from', 'address', 'g_account',
-    'gAddress', 'g_address', 'target', 'holder',
-    'trustor', 'trusted', 'trustee',
+    'account',
+    'to',
+    'from',
+    'address',
+    'g_account',
+    'gAddress',
+    'g_address',
+    'target',
+    'holder',
+    'trustor',
+    'trusted',
+    'trustee',
   ];
 
   for (const key of candidateKeys) {
@@ -155,9 +164,7 @@ export function extractGAccountFromArgs(
  * Extract the trustline limit from function arguments.
  * Returns "0" if not found.
  */
-export function extractTrustlineLimit(
-  functionArgs: Record<string, unknown> | null,
-): string {
+export function extractTrustlineLimit(functionArgs: Record<string, unknown> | null): string {
   if (!functionArgs) return '0';
 
   const limitKeys = ['limit', 'amount', 'trustline_limit', 'max_amount', 'ceiling'];
@@ -175,7 +182,10 @@ export function extractTrustlineLimit(
 /**
  * Extract asset type from function args or derive from SAC context.
  */
-export function extractAssetType(functionArgs: Record<string, unknown> | null, assetCode?: string): string {
+export function extractAssetType(
+  functionArgs: Record<string, unknown> | null,
+  assetCode?: string,
+): string {
   if (assetCode === 'XLM') return 'native';
   if (!functionArgs) return 'credit_alphanum4';
 
@@ -235,8 +245,8 @@ export async function findMatchingChangeTrustOp(
     const lower = (tx.humanReadable ?? '').toLowerCase();
     const rawLower = tx.rawXdr.toLowerCase();
 
-    const mentionsAsset = lower.includes(assetCode.toLowerCase()) ||
-      rawLower.includes(assetCode.toLowerCase());
+    const mentionsAsset =
+      lower.includes(assetCode.toLowerCase()) || rawLower.includes(assetCode.toLowerCase());
     const mentionsTrustline = lower.includes('trust') || rawLower.includes('trust');
 
     if (mentionsAsset && mentionsTrustline) {
@@ -305,7 +315,10 @@ export async function trackSacTrustline(
 
   // Attempt to match with classic ChangeTrustOp
   const changeTrustOp = await findMatchingChangeTrustOp(
-    gAccount, assetCode, assetIssuer, ledgerSequence,
+    gAccount,
+    assetCode,
+    assetIssuer,
+    ledgerSequence,
   );
 
   const status: 'active' | 'deactivated' | 'frozen' = 'active';
@@ -398,12 +411,17 @@ export async function trackTrustlineEvent(
   // Extract limit from event data if available
   const trustlineLimit = eventDecoded?.['limit']
     ? String(eventDecoded['limit'])
-    : (eventDecoded?.['amount'] ? String(eventDecoded['amount']) : '9223372036854775807');
+    : eventDecoded?.['amount']
+      ? String(eventDecoded['amount'])
+      : '9223372036854775807';
 
   const unlimited = isUnlimitedTrustline(trustlineLimit);
 
   const changeTrustOp = await findMatchingChangeTrustOp(
-    gAccount, assetCode, assetIssuer, ledgerSequence,
+    gAccount,
+    assetCode,
+    assetIssuer,
+    ledgerSequence,
   );
 
   const isRemoved = topicSymbol === 'trustline_removed';

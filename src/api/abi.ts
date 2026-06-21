@@ -2,6 +2,7 @@ import { Router, Request, Response } from 'express';
 import { z } from 'zod';
 import { getCachedAbi, setCachedAbi, deleteCachedAbi } from '../indexer/abi-cache';
 import { fetchContractSpec } from '../indexer/wasm-spec';
+import { asyncHandler } from '../middleware/asyncHandler';
 
 export const abiRouter = Router({ mergeParams: true });
 
@@ -20,43 +21,52 @@ const abiBodySchema = z.object({
  * GET /contracts/:address/abi
  * Priority: 1) on-chain Wasm spec  2) manually stored ABI
  */
-abiRouter.get('/', async (req: Request, res: Response) => {
-  const { address } = req.params;
+abiRouter.get(
+  '/',
+  asyncHandler(async (req: Request, res: Response) => {
+    const { address } = req.params;
 
-  // 1. Try on-chain spec first
-  const onChain = await fetchContractSpec(address);
-  if (onChain) return res.json({ source: 'on-chain', abi: onChain });
+    // 1. Try on-chain spec first
+    const onChain = await fetchContractSpec(address);
+    if (onChain) return res.json({ source: 'on-chain', abi: onChain });
 
-  // 2. Fall back to stored ABI
-  const stored = await getCachedAbi(address);
-  if (stored) return res.json({ source: 'manual', abi: stored });
+    // 2. Fall back to stored ABI
+    const stored = await getCachedAbi(address);
+    if (stored) return res.json({ source: 'manual', abi: stored });
 
-  res.status(404).json({ error: 'No ABI found. Upload one via PUT /contracts/:address/abi' });
-});
+    res.status(404).json({ error: 'No ABI found. Upload one via PUT /contracts/:address/abi' });
+  }),
+);
 
 /**
  * PUT /contracts/:address/abi
  * Create or replace the manually stored ABI.
  */
-abiRouter.put('/', async (req: Request, res: Response) => {
-  const { address } = req.params;
-  const parsed = abiBodySchema.safeParse(req.body);
-  if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
+abiRouter.put(
+  '/',
+  asyncHandler(async (req: Request, res: Response) => {
+    const { address } = req.params;
+    const parsed = abiBodySchema.safeParse(req.body);
+    if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
 
-  await setCachedAbi(address, parsed.data);
-  res.json({ address, abi: parsed.data });
-});
+    await setCachedAbi(address, parsed.data);
+    res.json({ address, abi: parsed.data });
+  }),
+);
 
 /**
  * DELETE /contracts/:address/abi
  * Remove the manually stored ABI.
  */
-abiRouter.delete('/', async (req: Request, res: Response) => {
-  const { address } = req.params;
-  try {
-    await deleteCachedAbi(address);
-    res.status(204).send();
-  } catch {
-    res.status(404).json({ error: 'Contract not found' });
-  }
-});
+abiRouter.delete(
+  '/',
+  asyncHandler(async (req: Request, res: Response) => {
+    const { address } = req.params;
+    try {
+      await deleteCachedAbi(address);
+      res.status(204).send();
+    } catch {
+      res.status(404).json({ error: 'Contract not found' });
+    }
+  }),
+);

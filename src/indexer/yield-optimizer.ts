@@ -30,19 +30,8 @@ const YIELD_OPPORTUNITY_TOPICS: Record<YieldType, ReadonlySet<string>> = {
     'mint_pool_token',
     'burn_pool_token',
   ]),
-  staking: new Set([
-    'stake',
-    'unstake',
-    'claim_staking_rewards',
-    'compound_stake',
-  ]),
-  lending: new Set([
-    'deposit',
-    'withdraw',
-    'borrow',
-    'repay',
-    'claim_lending_rewards',
-  ]),
+  staking: new Set(['stake', 'unstake', 'claim_staking_rewards', 'compound_stake']),
+  lending: new Set(['deposit', 'withdraw', 'borrow', 'repay', 'claim_lending_rewards']),
   liquid_staking: new Set([
     'mint_lp_token',
     'redeem_lp_token',
@@ -50,12 +39,7 @@ const YIELD_OPPORTUNITY_TOPICS: Record<YieldType, ReadonlySet<string>> = {
     'liquid_stake',
     'liquid_unstake',
   ]),
-  vault: new Set([
-    'vault_deposit',
-    'vault_withdraw',
-    'vault_harvest',
-    'auto_compound',
-  ]),
+  vault: new Set(['vault_deposit', 'vault_withdraw', 'vault_harvest', 'auto_compound']),
 };
 
 export interface YieldOpportunityData {
@@ -150,7 +134,10 @@ export function adjustedLApy(baseApy: number, incentiveApy: number, priceRatio: 
 // ---------------------------------------------------------------------------
 
 /** Infer the yield type from a topic symbol and event payload. */
-export function inferYieldType(topicSymbol: string | null, decoded: Record<string, unknown> | null): YieldType | null {
+export function inferYieldType(
+  topicSymbol: string | null,
+  decoded: Record<string, unknown> | null,
+): YieldType | null {
   if (!topicSymbol) return null;
   const sym = topicSymbol.toLowerCase();
   for (const [type, set] of Object.entries(YIELD_OPPORTUNITY_TOPICS)) {
@@ -160,7 +147,7 @@ export function inferYieldType(topicSymbol: string | null, decoded: Record<strin
   // Heuristics from the decoded payload
   if (decoded && typeof decoded === 'object') {
     const d = decoded as Record<string, unknown>;
-    const nested = (d.data && typeof d.data === 'object') ? d.data as Record<string, unknown> : d;
+    const nested = d.data && typeof d.data === 'object' ? (d.data as Record<string, unknown>) : d;
     const poolKeys = ['pool', 'pair', 'lp_token', 'liquidity'];
     if (poolKeys.some((k) => k in nested)) return 'lp_farming';
     if ('stake_id' in nested || 'validator' in nested) return 'staking';
@@ -178,9 +165,10 @@ export function inferYieldType(topicSymbol: string | null, decoded: Record<strin
  */
 export function extractTokens(decoded: Record<string, unknown> | null): string[] {
   if (!decoded) return [];
-  const d = (decoded as any).data && typeof (decoded as any).data === 'object'
-    ? (decoded as any).data
-    : decoded;
+  const d =
+    (decoded as any).data && typeof (decoded as any).data === 'object'
+      ? (decoded as any).data
+      : decoded;
 
   const out = new Set<string>();
   const tokenKeys = ['tokens', 'assets', 'symbol', 'symbols', 'token_a', 'token_b'];
@@ -208,7 +196,11 @@ export function buildOpportunityId(contractAddress: string, type: YieldType): st
 }
 
 /** Default human-friendly name if the contract does not provide one. */
-export function defaultOpportunityName(contractAddress: string, type: YieldType, tokens: string[]): string {
+export function defaultOpportunityName(
+  contractAddress: string,
+  type: YieldType,
+  tokens: string[],
+): string {
   const short = contractAddress.slice(0, 6).toUpperCase();
   if (tokens.length >= 2) return `${tokens.join('-')} ${type.replace('_', ' ')}`;
   if (tokens.length === 1) return `${tokens[0]} ${type.replace('_', ' ')}`;
@@ -231,11 +223,11 @@ export function riskLabelFor(score: number): RiskLabel {
 }
 
 export interface RiskFactors {
-  smartContractRisk: number;     // 0-100
-  impermanentLossRisk: number;   // 0-100
-  concentrationRisk: number;     // 0-100
-  incentiveRisk: number;         // 0-100
-  lockupRisk: number;            // 0-100
+  smartContractRisk: number; // 0-100
+  impermanentLossRisk: number; // 0-100
+  concentrationRisk: number; // 0-100
+  incentiveRisk: number; // 0-100
+  lockupRisk: number; // 0-100
 }
 
 /**
@@ -243,13 +235,16 @@ export interface RiskFactors {
  * Weights: smart contract 35, IL 25 (only counted for LP), incentive 20,
  * concentration 15, lockup 5.
  */
-export function computeRiskScore(type: YieldType, factors: Partial<RiskFactors> & {
-  smartContractRisk?: number;
-  incentiveApy?: number;
-  totalApy?: number;
-  concentrationRisk?: number;
-  lockupDays?: number;
-}): number {
+export function computeRiskScore(
+  type: YieldType,
+  factors: Partial<RiskFactors> & {
+    smartContractRisk?: number;
+    incentiveApy?: number;
+    totalApy?: number;
+    concentrationRisk?: number;
+    lockupDays?: number;
+  },
+): number {
   const sc = clamp(factors.smartContractRisk ?? 25, 0, 100);
   const con = clamp(factors.concentrationRisk ?? 20, 0, 100);
   const incRaw = clamp(factors.incentiveApy ?? 0, 0, 100);
@@ -259,12 +254,7 @@ export function computeRiskScore(type: YieldType, factors: Partial<RiskFactors> 
   const lock = clamp(((factors.lockupDays ?? 0) / 90) * 100, 0, 100);
   const il = type === 'lp_farming' ? clamp(factors.impermanentLossRisk ?? 20, 0, 100) : 0;
 
-  const weighted =
-    sc * 0.35 +
-    il * 0.25 +
-    incShare * 0.2 +
-    con * 0.15 +
-    lock * 0.05;
+  const weighted = sc * 0.35 + il * 0.25 + incShare * 0.2 + con * 0.15 + lock * 0.05;
 
   return Math.round(weighted);
 }
@@ -327,10 +317,12 @@ export function optimizePortfolio(input: {
   }
 
   // Risk-adjusted APY: penalise riskier options
-  const scored = candidates.map((o) => ({
-    o,
-    score: o.totalApy / (1 + o.riskScore),
-  })).sort((a, b) => b.score - a.score);
+  const scored = candidates
+    .map((o) => ({
+      o,
+      score: o.totalApy / (1 + o.riskScore),
+    }))
+    .sort((a, b) => b.score - a.score);
 
   // Pick up to 5 picks, preferring type diversity
   const picks: typeof scored = [];
@@ -481,7 +473,7 @@ export function simulateDeposit(
 ): SimulationResult {
   const principal = Math.max(0, Number(deposit) || 0);
   const days = Math.max(0, Math.floor(periodDays));
-  const dailyRate = (apyPct / 100) / 365;
+  const dailyRate = apyPct / 100 / 365;
   const balance = principal * Math.pow(1 + dailyRate, days);
   const gross = balance - principal;
   const fees = principal * (Math.max(0, feesPct) / 100);
@@ -530,7 +522,11 @@ export async function processYieldOpportunityEvent(
   // If the event payload carries no APY at all, skip the upsert rather than
   // synthesise a 5% default rate — fake APYs would pollute the registry.
   const basePresent = hasNumericField(decoded, ['base_apy', 'base_apy_pct', 'apy']);
-  const incentivePresent = hasNumericField(decoded, ['incentive_apy', 'reward_apy', 'emission_apy']);
+  const incentivePresent = hasNumericField(decoded, [
+    'incentive_apy',
+    'reward_apy',
+    'emission_apy',
+  ]);
   if (!basePresent && !incentivePresent && !prev) {
     // Brand-new opportunity with no APY signal yet — wait for a richer event.
     return;
@@ -538,17 +534,31 @@ export async function processYieldOpportunityEvent(
 
   const base = basePresent
     ? readNumericField(decoded, ['base_apy', 'base_apy_pct', 'apy'], prev?.baseApy ?? 0)
-    : prev?.baseApy ?? 0;
+    : (prev?.baseApy ?? 0);
   const incentive = incentivePresent
-    ? readNumericField(decoded, ['incentive_apy', 'reward_apy', 'emission_apy'], prev?.incentiveApy ?? 0)
-    : prev?.incentiveApy ?? 0;
+    ? readNumericField(
+        decoded,
+        ['incentive_apy', 'reward_apy', 'emission_apy'],
+        prev?.incentiveApy ?? 0,
+      )
+    : (prev?.incentiveApy ?? 0);
   const total = round2(base + incentive);
   const tvl = readStringField(decoded, ['tvl', 'total_value_locked']) ?? prev?.tvl ?? '0';
-  const lockup = readIntField(decoded, ['lockup_days', 'lockup', 'lock_period_days'], prev?.lockupDays ?? 0);
-  const minDeposit = readStringField(decoded, ['min_deposit', 'minimum_deposit']) ?? prev?.minDeposit ?? '0';
+  const lockup = readIntField(
+    decoded,
+    ['lockup_days', 'lockup', 'lock_period_days'],
+    prev?.lockupDays ?? 0,
+  );
+  const minDeposit =
+    readStringField(decoded, ['min_deposit', 'minimum_deposit']) ?? prev?.minDeposit ?? '0';
   const depositFee = readNumericField(decoded, ['deposit_fee', 'entry_fee'], prev?.depositFee ?? 0);
-  const withdrawFee = readNumericField(decoded, ['withdraw_fee', 'exit_fee'], prev?.withdrawFee ?? 0);
-  const name = readStringField(decoded, ['name', 'pool_name']) ??
+  const withdrawFee = readNumericField(
+    decoded,
+    ['withdraw_fee', 'exit_fee'],
+    prev?.withdrawFee ?? 0,
+  );
+  const name =
+    readStringField(decoded, ['name', 'pool_name']) ??
     defaultOpportunityName(contractAddress, type, tokens);
 
   const riskScore = computeRiskScore(type, {
@@ -628,7 +638,11 @@ function startOfUtcDay(d: Date): Date {
   return c;
 }
 
-function readNumericField(obj: Record<string, unknown> | null, keys: string[], fallback: number): number {
+function readNumericField(
+  obj: Record<string, unknown> | null,
+  keys: string[],
+  fallback: number,
+): number {
   if (!obj) return fallback;
   const root = (obj as any).data && typeof (obj as any).data === 'object' ? (obj as any).data : obj;
   for (const k of keys) {
@@ -663,7 +677,11 @@ function readStringField(obj: Record<string, unknown> | null, keys: string[]): s
   return null;
 }
 
-function readIntField(obj: Record<string, unknown> | null, keys: string[], fallback: number): number {
+function readIntField(
+  obj: Record<string, unknown> | null,
+  keys: string[],
+  fallback: number,
+): number {
   if (!obj) return fallback;
   const root = (obj as any).data && typeof (obj as any).data === 'object' ? (obj as any).data : obj;
   for (const k of keys) {
@@ -700,9 +718,10 @@ export async function backfillYieldOpportunities(
     try {
       const sc = xdr.ScVal.fromXDR(event.data, 'base64');
       const native = scValToNative(sc);
-      decoded = (typeof native === 'object' && native !== null
-        ? (native as Record<string, unknown>)
-        : { value: String(native) });
+      decoded =
+        typeof native === 'object' && native !== null
+          ? (native as Record<string, unknown>)
+          : { value: String(native) };
     } catch {
       decoded = null;
     }

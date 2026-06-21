@@ -60,7 +60,10 @@ i18nRouter.get('/languages', async (_req: Request, res: Response) => {
     const masterKeys = getAllStaticKeys();
     const total = masterKeys.length;
 
-    const coverage: Record<string, { static: number; staticPct: number; hasStaticDictionary: boolean }> = {};
+    const coverage: Record<
+      string,
+      { static: number; staticPct: number; hasStaticDictionary: boolean }
+    > = {};
 
     for (const lang of SUPPORTED_LANGUAGES) {
       const dict = getStaticDictionary(lang as SupportedLanguage);
@@ -296,7 +299,10 @@ i18nRouter.get('/matrix', async (req: Request, res: Response) => {
     let keys: string[];
 
     if (keysParam) {
-      keys = keysParam.split(',').map((k) => k.trim()).filter(Boolean);
+      keys = keysParam
+        .split(',')
+        .map((k) => k.trim())
+        .filter(Boolean);
     } else {
       keys = getAllStaticKeys();
     }
@@ -423,9 +429,7 @@ i18nRouter.post('/translations', async (req: Request, res: Response) => {
  */
 i18nRouter.patch('/translations/:id', async (req: Request, res: Response) => {
   try {
-    const { approvedBy } = z
-      .object({ approvedBy: z.string().min(1) })
-      .parse(req.body);
+    const { approvedBy } = z.object({ approvedBy: z.string().min(1) }).parse(req.body);
 
     const translation = await prismaWrite.translation.update({
       where: { id: req.params['id'] },

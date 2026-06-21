@@ -51,7 +51,10 @@ function cacheEvictIfFull(): void {
   }
 }
 
-async function readCachedMetadata(localKey: string, remoteKey: string): Promise<TokenMetadata | null> {
+async function readCachedMetadata(
+  localKey: string,
+  remoteKey: string,
+): Promise<TokenMetadata | null> {
   const local = metaCache.get(localKey);
   if (local) return local;
 
@@ -63,7 +66,12 @@ async function readCachedMetadata(localKey: string, remoteKey: string): Promise<
   return remote;
 }
 
-async function writeCachedMetadata(localKey: string, remoteKey: string, meta: TokenMetadata, ttlSeconds?: number | null): Promise<void> {
+async function writeCachedMetadata(
+  localKey: string,
+  remoteKey: string,
+  meta: TokenMetadata,
+  ttlSeconds?: number | null,
+): Promise<void> {
   metaCache.delete(localKey);
   cacheEvictIfFull();
   metaCache.set(localKey, meta);
@@ -360,17 +368,13 @@ export async function warmTokenMetadataCache(): Promise<void> {
   ]);
 
   for (const t of tokens) {
-    await writeCachedMetadata(
-      t.address,
-      `${TOKEN_METADATA_PREFIX}${t.address}`,
-      {
-        address: t.address,
-        symbol: t.tokenSymbol ?? null,
-        name: t.tokenName ?? null,
-        decimals: t.tokenDecimals ?? 7,
-        source: 'db',
-      },
-    );
+    await writeCachedMetadata(t.address, `${TOKEN_METADATA_PREFIX}${t.address}`, {
+      address: t.address,
+      symbol: t.tokenSymbol ?? null,
+      name: t.tokenName ?? null,
+      decimals: t.tokenDecimals ?? 7,
+      source: 'db',
+    });
   }
 
   for (const s of sacMappings) {

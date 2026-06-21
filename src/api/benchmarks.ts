@@ -31,8 +31,15 @@ function stdDev(values: number[], mean: number): number {
   return Math.sqrt(squaredDiffs.reduce((a, b) => a + b, 0) / (values.length - 1));
 }
 
-function tTestScore(meanA: number, meanB: number, stdA: number, stdB: number, nA: number, nB: number): number {
-  const se = Math.sqrt((stdA ** 2) / nA + (stdB ** 2) / nB);
+function tTestScore(
+  meanA: number,
+  meanB: number,
+  stdA: number,
+  stdB: number,
+  nA: number,
+  nB: number,
+): number {
+  const se = Math.sqrt(stdA ** 2 / nA + stdB ** 2 / nB);
   if (se === 0) return 0;
   return Math.abs(meanA - meanB) / se;
 }
@@ -56,29 +63,32 @@ function mapFunctionName(fn: string | null): string {
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 async function getContractMetrics(contractAddress: string) {
-    const txs = await prismaRead.transaction.findMany({
-      where: {
-        contractAddress,
-        status: 'success',
-        sorobanResources: { not: Prisma.JsonNullValueFilter.JsonNull },
-      },
-      select: {
-        functionName: true,
-        feeCharged: true,
-        sorobanResources: true,
-        hash: true,
-        ledgerCloseTime: true,
-      },
-      orderBy: { ledgerCloseTime: 'asc' },
-    });
+  const txs = await prismaRead.transaction.findMany({
+    where: {
+      contractAddress,
+      status: 'success',
+      sorobanResources: { not: Prisma.JsonNullValueFilter.JsonNull },
+    },
+    select: {
+      functionName: true,
+      feeCharged: true,
+      sorobanResources: true,
+      hash: true,
+      ledgerCloseTime: true,
+    },
+    orderBy: { ledgerCloseTime: 'asc' },
+  });
 
-  const byFunction = new Map<string, {
-    fees: bigint[];
-    cpus: number[];
-    mems: number[];
-    samples: number;
-    txs: Array<{ hash: string; fee: bigint; cpu: number; mem: number; ledgerCloseTime: Date }>;
-  }>();
+  const byFunction = new Map<
+    string,
+    {
+      fees: bigint[];
+      cpus: number[];
+      mems: number[];
+      samples: number;
+      txs: Array<{ hash: string; fee: bigint; cpu: number; mem: number; ledgerCloseTime: Date }>;
+    }
+  >();
 
   for (const tx of txs) {
     const fn = tx.functionName ?? 'unknown';
@@ -223,8 +233,22 @@ benchmarkRouter.get('/compare', async (req: Request, res: Response) => {
 
       comparison.push({
         functionName: fn,
-        contractA: a ? { avgCpu: a.avgCpu, avgMemory: a.avgMemory, avgFee: stroopsToXlm(a.avgFeeStroops), samples: a.samples } : null,
-        contractB: b ? { avgCpu: b.avgCpu, avgMemory: b.avgMemory, avgFee: stroopsToXlm(b.avgFeeStroops), samples: b.samples } : null,
+        contractA: a
+          ? {
+              avgCpu: a.avgCpu,
+              avgMemory: a.avgMemory,
+              avgFee: stroopsToXlm(a.avgFeeStroops),
+              samples: a.samples,
+            }
+          : null,
+        contractB: b
+          ? {
+              avgCpu: b.avgCpu,
+              avgMemory: b.avgMemory,
+              avgFee: stroopsToXlm(b.avgFeeStroops),
+              samples: b.samples,
+            }
+          : null,
         moreEfficient,
         tStatistic: Math.round(tStatistic * 100) / 100,
         significant,
@@ -322,7 +346,9 @@ benchmarkRouter.get('/contracts/:address/trends', async (req: Request, res: Resp
     const alerts: string[] = [];
     for (const t of trends) {
       if (t.regression && t.regressionPct !== null) {
-        alerts.push(`Function "${t.functionName}" cost increased by ${t.regressionPct.toFixed(1)}% — possible regression`);
+        alerts.push(
+          `Function "${t.functionName}" cost increased by ${t.regressionPct.toFixed(1)}% — possible regression`,
+        );
       }
     }
 
@@ -372,7 +398,10 @@ benchmarkRouter.get('/contracts/:address/optimizations', async (req: Request, re
         cheapestFee: stroopsToXlm(BigInt(minFeeNum)),
         cheapestTx,
         savingsPct: Math.round(savingsPct * 100) / 100,
-        tips: (tip?.tips as string[]) ?? ['Review storage access patterns', 'Minimize event data emissions'],
+        tips: (tip?.tips as string[]) ?? [
+          'Review storage access patterns',
+          'Minimize event data emissions',
+        ],
       });
     }
 
@@ -400,12 +429,15 @@ benchmarkRouter.get('/leaderboard', async (_req: Request, res: Response) => {
       },
     });
 
-    const contractAgg = new Map<string, {
-      fees: bigint[];
-      cpus: number[];
-      mems: number[];
-      byFunction: Map<string, { fees: bigint[]; cpus: number[] }>;
-    }>();
+    const contractAgg = new Map<
+      string,
+      {
+        fees: bigint[];
+        cpus: number[];
+        mems: number[];
+        byFunction: Map<string, { fees: bigint[]; cpus: number[] }>;
+      }
+    >();
 
     for (const tx of txs) {
       const addr = tx.contractAddress!;
@@ -451,9 +483,10 @@ benchmarkRouter.get('/leaderboard', async (_req: Request, res: Response) => {
     const allFnGroups = new Map<string, Array<{ addr: string; avgCpu: number }>>();
 
     for (const [addr, entry] of contractAgg) {
-      const avgFeeNum = entry.fees.length > 0
-        ? Number(entry.fees.reduce((a, b) => a + b, 0n) / BigInt(entry.fees.length))
-        : 0;
+      const avgFeeNum =
+        entry.fees.length > 0
+          ? Number(entry.fees.reduce((a, b) => a + b, 0n) / BigInt(entry.fees.length))
+          : 0;
 
       // Normalize: lower fee/cpu = higher score (0-100)
       efficiencyScores.push({
@@ -469,9 +502,10 @@ benchmarkRouter.get('/leaderboard', async (_req: Request, res: Response) => {
           fnGroup = [];
           allFnGroups.set(fn, fnGroup);
         }
-        const avgFnCpu = fnEntry.cpus.length > 0
-          ? Math.round(fnEntry.cpus.reduce((a, b) => a + b, 0) / fnEntry.cpus.length)
-          : 0;
+        const avgFnCpu =
+          fnEntry.cpus.length > 0
+            ? Math.round(fnEntry.cpus.reduce((a, b) => a + b, 0) / fnEntry.cpus.length)
+            : 0;
         fnGroup.push({ addr, avgCpu: avgFnCpu });
       }
     }
@@ -547,9 +581,10 @@ benchmarkRouter.get('/leaderboard/gas-wasters', async (_req: Request, res: Respo
     }> = [];
 
     for (const [addr, entry] of contractAgg) {
-      const avgFeeNum = entry.fees.length > 0
-        ? Number(entry.fees.reduce((a, b) => a + b, 0n) / BigInt(entry.fees.length))
-        : 0;
+      const avgFeeNum =
+        entry.fees.length > 0
+          ? Number(entry.fees.reduce((a, b) => a + b, 0n) / BigInt(entry.fees.length))
+          : 0;
       wasters.push({
         contract: addr,
         name: nameMap.get(addr) ?? null,

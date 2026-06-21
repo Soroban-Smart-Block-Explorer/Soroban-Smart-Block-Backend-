@@ -23,18 +23,22 @@ interface StellarNodeInfo {
 
 export async function fetchNetworkNodes(): Promise<StellarNodeInfo[]> {
   const nodes: StellarNodeInfo[] = [];
-  
+
   try {
     // Basic node fetching from known endpoints
     const rpcUrl = config.stellarRpcUrl;
     if (!rpcUrl) return nodes;
 
     try {
-      const resp = await axios.post(rpcUrl, {
-        jsonrpc: '2.0',
-        id: 1,
-        method: 'getNetworkNetwork',
-      }, { timeout: 10000 });
+      const resp = await axios.post(
+        rpcUrl,
+        {
+          jsonrpc: '2.0',
+          id: 1,
+          method: 'getNetworkNetwork',
+        },
+        { timeout: 10000 },
+      );
 
       if (resp.data?.result?.peers && Array.isArray(resp.data.result.peers)) {
         resp.data.result.peers.forEach((peer: any) => {
@@ -58,7 +62,7 @@ export async function fetchNetworkNodes(): Promise<StellarNodeInfo[]> {
 export async function indexNetworkNodes(): Promise<void> {
   try {
     logger.info('Starting network node indexing...');
-    
+
     const nodes = await fetchNetworkNodes();
     logger.info(`Found ${nodes.length} nodes from network`);
 
@@ -85,10 +89,12 @@ export async function indexNetworkNodes(): Promise<void> {
               data: {
                 nodeId: existing.id,
                 eventType: 'version_change',
-                details: JSON.parse(JSON.stringify({
-                  from: existing.version,
-                  to: nodeData.version,
-                })),
+                details: JSON.parse(
+                  JSON.stringify({
+                    from: existing.version,
+                    to: nodeData.version,
+                  }),
+                ),
                 timestamp: new Date(),
               },
             });
@@ -110,10 +116,14 @@ export async function indexNetworkNodes(): Promise<void> {
         }
 
         // Record metric snapshot
-        const nodeId = (existing?.id) || (await prisma.networkNode.findUnique({
-          where: { publicKey: nodeData.publicKey },
-          select: { id: true },
-        }))?.id;
+        const nodeId =
+          existing?.id ||
+          (
+            await prisma.networkNode.findUnique({
+              where: { publicKey: nodeData.publicKey },
+              select: { id: true },
+            })
+          )?.id;
 
         if (nodeId) {
           await prisma.networkNodeMetric.create({
@@ -159,23 +169,31 @@ export async function indexConsensusRounds(): Promise<void> {
     if (!rpcUrl) return;
 
     try {
-      const resp = await axios.post(rpcUrl, {
-        jsonrpc: '2.0',
-        id: 1,
-        method: 'getLatestLedger',
-      }, { timeout: 10000 });
+      const resp = await axios.post(
+        rpcUrl,
+        {
+          jsonrpc: '2.0',
+          id: 1,
+          method: 'getLatestLedger',
+        },
+        { timeout: 10000 },
+      );
 
       const currentLedger = resp.data?.result?.sequence || startLedger;
 
       // Batch fetch and index recent consensus rounds (max 20 ledgers)
       for (let seq = Math.max(startLedger + 1, currentLedger - 20); seq <= currentLedger; seq++) {
         try {
-          const ledgerResp = await axios.post(rpcUrl, {
-            jsonrpc: '2.0',
-            id: 1,
-            method: 'getLedger',
-            params: { sequence: seq },
-          }, { timeout: 10000 });
+          const ledgerResp = await axios.post(
+            rpcUrl,
+            {
+              jsonrpc: '2.0',
+              id: 1,
+              method: 'getLedger',
+              params: { sequence: seq },
+            },
+            { timeout: 10000 },
+          );
 
           const ledger = ledgerResp.data?.result;
           if (!ledger) continue;
@@ -228,33 +246,35 @@ export async function calculateNodeMetrics(): Promise<void> {
         },
       });
 
-      const uptime24h = metrics24h.length > 0 ? 
-        (metrics24h.filter(m => m.latency !== null).length / metrics24h.length) * 100 
-        : 0;
+      const uptime24h =
+        metrics24h.length > 0
+          ? (metrics24h.filter((m) => m.latency !== null).length / metrics24h.length) * 100
+          : 0;
 
       // Calculate avg latency
       const latencies = metrics24h
-        .filter(m => m.latency !== null)
-        .map(m => m.latency!) as number[];
-      
-      const avgLatency = latencies.length > 0 
-        ? latencies.reduce((a, b) => a + b, 0) / latencies.length 
-        : 0;
+        .filter((m) => m.latency !== null)
+        .map((m) => m.latency!) as number[];
+
+      const avgLatency =
+        latencies.length > 0 ? latencies.reduce((a, b) => a + b, 0) / latencies.length : 0;
 
       // Calculate p95 latency
       const sortedLatencies = latencies.sort((a, b) => a - b);
-      const p95Latency = sortedLatencies.length > 0
-        ? sortedLatencies[Math.ceil(sortedLatencies.length * 0.95) - 1]
-        : 0;
+      const p95Latency =
+        sortedLatencies.length > 0
+          ? sortedLatencies[Math.ceil(sortedLatencies.length * 0.95) - 1]
+          : 0;
 
       // Calculate avg agreement rate
       const agreementRates = metrics24h
-        .filter(m => m.agreementRate !== null)
-        .map(m => m.agreementRate!) as number[];
+        .filter((m) => m.agreementRate !== null)
+        .map((m) => m.agreementRate!) as number[];
 
-      const avgAgreement = agreementRates.length > 0 
-        ? agreementRates.reduce((a, b) => a + b, 0) / agreementRates.length 
-        : 0;
+      const avgAgreement =
+        agreementRates.length > 0
+          ? agreementRates.reduce((a, b) => a + b, 0) / agreementRates.length
+          : 0;
 
       await prisma.networkNode.update({
         where: { id: node.id },

@@ -7,6 +7,7 @@ import { schedulePruner } from './dataPruner';
 import { initWhaleWatcher } from './whaleWatcher';
 import { startMicroBlockPoller } from './microBlockPoller';
 import { scheduleSettlementCompactor } from './settlement-compactor';
+import { scheduleDexAnalytics } from './dex/pool-processor';
 
 async function main() {
   await prisma.$connect();
@@ -28,6 +29,10 @@ async function main() {
 
   // #220: Schedule batch-settlement event compactor
   scheduleSettlementCompactor();
+
+  // Institutional DEX Analytics: continuously recompute pool metrics, prices,
+  // historical snapshots, and arbitrage opportunities.
+  scheduleDexAnalytics();
 
   await runIndexer();
 }

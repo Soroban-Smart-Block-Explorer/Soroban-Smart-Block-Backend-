@@ -32,7 +32,7 @@ export interface NftMetadata {
   tokenUri: string;
   name: string;
   description: string;
-  image: string;          // resolved HTTP URL (gateway-rewritten if IPFS)
+  image: string; // resolved HTTP URL (gateway-rewritten if IPFS)
   attributes: Array<{ trait_type: string; value: string }>;
   raw: Record<string, unknown>;
 }
@@ -46,19 +46,21 @@ function sanitize(value: unknown): string {
   return String(value ?? '').replace(XSS_PATTERN, '');
 }
 
-function sanitizeMetadata(raw: Record<string, unknown>): Pick<NftMetadata, 'name' | 'description' | 'image' | 'attributes'> {
+function sanitizeMetadata(
+  raw: Record<string, unknown>,
+): Pick<NftMetadata, 'name' | 'description' | 'image' | 'attributes'> {
   const attrs = Array.isArray(raw.attributes)
     ? (raw.attributes as Array<Record<string, unknown>>).map((a) => ({
         trait_type: sanitize(a.trait_type),
-        value:      sanitize(a.value),
+        value: sanitize(a.value),
       }))
     : [];
 
   return {
-    name:        sanitize(raw.name),
+    name: sanitize(raw.name),
     description: sanitize(raw.description),
-    image:       resolveUri(sanitize(raw.image)),
-    attributes:  attrs,
+    image: resolveUri(sanitize(raw.image)),
+    attributes: attrs,
   };
 }
 
@@ -111,7 +113,7 @@ function writeCache(meta: NftMetadata): void {
 function extractUriFromLedgerEntry(xdrBase64: string): { tokenId: string; uri: string } | null {
   try {
     const entry = xdr.LedgerEntry.fromXDR(xdrBase64, 'base64');
-    const data  = entry.data();
+    const data = entry.data();
     if (data.switch().name !== 'contractData') return null;
 
     const key = data.contractData().key();
@@ -123,12 +125,10 @@ function extractUriFromLedgerEntry(xdrBase64: string): { tokenId: string; uri: s
     // Key is a map like { TokenUri: <tokenId> } or { uri: <tokenId> }
     if (keyNative && typeof keyNative === 'object' && !Array.isArray(keyNative)) {
       const km = keyNative as Record<string, unknown>;
-      const uriKey = Object.keys(km).find((k) =>
-        /uri/i.test(k)
-      );
+      const uriKey = Object.keys(km).find((k) => /uri/i.test(k));
       if (uriKey) {
         const tokenId = String(km[uriKey]);
-        const uri     = String(valNative ?? '');
+        const uri = String(valNative ?? '');
         if (uri) return { tokenId, uri };
       }
     }

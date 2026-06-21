@@ -37,10 +37,14 @@ export async function dispatchNotifications(payload: NotificationPayload): Promi
 async function dispatch(channel: string, target: string, p: NotificationPayload): Promise<void> {
   const text = formatMessage(p);
   switch (channel) {
-    case 'slack':    return sendSlack(target, text);
-    case 'discord':  return sendDiscord(target, text);
-    case 'telegram': return sendTelegram(target, text);
-    case 'email':    return sendEmail(target, p.title, text);
+    case 'slack':
+      return sendSlack(target, text);
+    case 'discord':
+      return sendDiscord(target, text);
+    case 'telegram':
+      return sendTelegram(target, text);
+    case 'email':
+      return sendEmail(target, p.title, text);
   }
 }
 
@@ -70,12 +74,18 @@ async function sendEmail(to: string, subject: string, body: string): Promise<voi
   if (!process.env.SMTP_HOST) return;
   // nodemailer is not a required dependency; install it and set SMTP_* vars to enable.
   // eslint-disable-next-line no-console
-  console.log(`[TIP] email skipped (nodemailer not installed): to=${to} subject=${subject} body=${body}`);
+  console.log(
+    `[TIP] email skipped (nodemailer not installed): to=${to} subject=${subject} body=${body}`,
+  );
 }
 
 // ─── Outbound webhook with HMAC ───────────────────────────────────────────────
 
-async function sendWebhook(url: string, secret: string, payload: NotificationPayload): Promise<void> {
+async function sendWebhook(
+  url: string,
+  secret: string,
+  payload: NotificationPayload,
+): Promise<void> {
   const body = JSON.stringify(payload);
   const sig = createHmac('sha256', secret).update(body).digest('hex');
   await axios.post(url, payload, {
@@ -90,7 +100,10 @@ function formatMessage(p: NotificationPayload): string {
   return `🔐 [${p.severity.toUpperCase()}] ${p.title}\nEvent: ${p.event}\n${p.url ?? ''}`;
 }
 
-function matchesFilter(filters: { severity?: string[]; tags?: string[] } | null, p: NotificationPayload): boolean {
+function matchesFilter(
+  filters: { severity?: string[]; tags?: string[] } | null,
+  p: NotificationPayload,
+): boolean {
   if (!filters) return true;
   if (filters.severity?.length && !filters.severity.includes(p.severity)) return false;
   return true;

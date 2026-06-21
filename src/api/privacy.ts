@@ -17,64 +17,77 @@ import {
 
 export const privacyRouter = Router();
 
-const PRIVACY_PROTOCOLS_INFO: Record<string, { name: string; description: string; category: string; strength: number }> = {
+const PRIVACY_PROTOCOLS_INFO: Record<
+  string,
+  { name: string; description: string; category: string; strength: number }
+> = {
   SHIELDED_TRANSFER: {
     name: 'Shielded Transfer',
-    description: 'Commitment-based transfers with hash commitments, encrypted memo fields, and balance concealment via cryptographic accumulators.',
+    description:
+      'Commitment-based transfers with hash commitments, encrypted memo fields, and balance concealment via cryptographic accumulators.',
     category: 'transfer',
     strength: 8,
   },
   ZK_SNARK: {
     name: 'zk-SNARK',
-    description: 'Zero-knowledge Succinct Non-Interactive Argument of Knowledge. Groth16 and PLONK proving systems for private transactions.',
+    description:
+      'Zero-knowledge Succinct Non-Interactive Argument of Knowledge. Groth16 and PLONK proving systems for private transactions.',
     category: 'zkp',
     strength: 15,
   },
   ZK_STARK: {
     name: 'zk-STARK',
-    description: 'Zero-knowledge Scalable Transparent Argument of Knowledge. Post-quantum secure proofs without trusted setup.',
+    description:
+      'Zero-knowledge Scalable Transparent Argument of Knowledge. Post-quantum secure proofs without trusted setup.',
     category: 'zkp',
     strength: 14,
   },
   BULLETPROOF: {
     name: 'Bulletproofs',
-    description: 'Short non-interactive zero-knowledge proofs for range proofs and membership proofs. No trusted setup required.',
+    description:
+      'Short non-interactive zero-knowledge proofs for range proofs and membership proofs. No trusted setup required.',
     category: 'zkp',
     strength: 12,
   },
   STEALTH_ADDRESS: {
     name: 'Stealth Address',
-    description: 'One-time address generation using ephemeral public keys and stealth meta-address registration with key blinding.',
+    description:
+      'One-time address generation using ephemeral public keys and stealth meta-address registration with key blinding.',
     category: 'address',
     strength: 10,
   },
   MIXER: {
     name: 'Mixer / Tumbler',
-    description: 'CoinJoin-style multi-party transactions with deposit-wait-withdraw patterns and anonymity pool participation.',
+    description:
+      'CoinJoin-style multi-party transactions with deposit-wait-withdraw patterns and anonymity pool participation.',
     category: 'mixer',
     strength: 9,
   },
   PRIVATE_VOTING: {
     name: 'Private Voting',
-    description: 'Encrypted vote submissions, commitment-reveal voting schemes, and quadratic voting with privacy guarantees.',
+    description:
+      'Encrypted vote submissions, commitment-reveal voting schemes, and quadratic voting with privacy guarantees.',
     category: 'voting',
     strength: 13,
   },
   OFF_CHAIN_DATA: {
     name: 'Off-Chain Data',
-    description: 'Off-chain data availability with on-chain proofs, private data feed subscriptions, and oracle integrity proofs.',
+    description:
+      'Off-chain data availability with on-chain proofs, private data feed subscriptions, and oracle integrity proofs.',
     category: 'data',
     strength: 6,
   },
   ENCRYPTED_STATE: {
     name: 'Encrypted State',
-    description: 'Encrypted contract state storage preserving data confidentiality while maintaining on-chain verifiability.',
+    description:
+      'Encrypted contract state storage preserving data confidentiality while maintaining on-chain verifiability.',
     category: 'storage',
     strength: 7,
   },
   DIFFERENTIAL_PRIVACY: {
     name: 'Differential Privacy',
-    description: 'Differentially private aggregators using Laplace and Gaussian noise mechanisms for private analytics queries.',
+    description:
+      'Differentially private aggregators using Laplace and Gaussian noise mechanisms for private analytics queries.',
     category: 'analytics',
     strength: 11,
   },
@@ -86,9 +99,16 @@ const paginationSchema = z.object({
 });
 
 const protocolEnum = z.enum([
-  'SHIELDED_TRANSFER', 'ZK_SNARK', 'ZK_STARK', 'BULLETPROOF',
-  'STEALTH_ADDRESS', 'MIXER', 'PRIVATE_VOTING', 'OFF_CHAIN_DATA',
-  'ENCRYPTED_STATE', 'DIFFERENTIAL_PRIVACY',
+  'SHIELDED_TRANSFER',
+  'ZK_SNARK',
+  'ZK_STARK',
+  'BULLETPROOF',
+  'STEALTH_ADDRESS',
+  'MIXER',
+  'PRIVATE_VOTING',
+  'OFF_CHAIN_DATA',
+  'ENCRYPTED_STATE',
+  'DIFFERENTIAL_PRIVACY',
 ]);
 
 // GET /api/v1/privacy/overview -- overall privacy landscape
@@ -350,7 +370,11 @@ privacyRouter.get('/history/:protocol', async (req: Request, res: Response) => {
       orderBy: { timestamp: 'asc' },
     });
 
-    res.json({ protocol: PRIVACY_PROTOCOLS_INFO[protocol] || { name: protocol }, days, data: details });
+    res.json({
+      protocol: PRIVACY_PROTOCOLS_INFO[protocol] || { name: protocol },
+      days,
+      data: details,
+    });
   } catch (e) {
     res.status(400).json({ error: String(e) });
   }
@@ -366,7 +390,10 @@ privacyRouter.get('/leaderboard', async (req: Request, res: Response) => {
       select: { contractAddresses: true, protocols: true, privacyScore: true },
     });
 
-    const contractStats = new Map<string, { txCount: number; protocols: Set<string>; totalScore: number }>();
+    const contractStats = new Map<
+      string,
+      { txCount: number; protocols: Set<string>; totalScore: number }
+    >();
 
     for (const tx of allTxs) {
       for (const addr of tx.contractAddresses) {
@@ -410,7 +437,10 @@ privacyRouter.get('/leaderboard/users', async (req: Request, res: Response) => {
       select: { participants: true, protocols: true, privacyScore: true, totalValue: true },
     });
 
-    const userStats = new Map<string, { txCount: number; protocols: Set<string>; totalScore: number; totalValue: number }>();
+    const userStats = new Map<
+      string,
+      { txCount: number; protocols: Set<string>; totalScore: number; totalValue: number }
+    >();
 
     for (const tx of allTxs) {
       for (const addr of tx.participants) {
@@ -527,7 +557,10 @@ privacyRouter.get('/scores/contracts', async (req: Request, res: Response) => {
       select: { contractAddresses: true, privacyScore: true, riskScore: true, protocols: true },
     });
 
-    const contractMap = new Map<string, { scores: number[]; risks: number[]; protocols: Set<string>; txCount: number }>();
+    const contractMap = new Map<
+      string,
+      { scores: number[]; risks: number[]; protocols: Set<string>; txCount: number }
+    >();
 
     for (const tx of allTxs) {
       for (const addr of tx.contractAddresses) {
@@ -546,8 +579,12 @@ privacyRouter.get('/scores/contracts', async (req: Request, res: Response) => {
       .map(([address, stats]) => ({
         address,
         txCount: stats.txCount,
-        avgPrivacyScore: stats.scores.length > 0 ? stats.scores.reduce((a, b) => a + b, 0) / stats.scores.length : 0,
-        avgRiskScore: stats.risks.length > 0 ? stats.risks.reduce((a, b) => a + b, 0) / stats.risks.length : 0,
+        avgPrivacyScore:
+          stats.scores.length > 0
+            ? stats.scores.reduce((a, b) => a + b, 0) / stats.scores.length
+            : 0,
+        avgRiskScore:
+          stats.risks.length > 0 ? stats.risks.reduce((a, b) => a + b, 0) / stats.risks.length : 0,
         protocolCount: stats.protocols.size,
       }))
       .sort((a, b) => b.avgPrivacyScore - a.avgPrivacyScore)
@@ -584,7 +621,9 @@ privacyRouter.get('/compliance/flagged', async (req: Request, res: Response) => 
 privacyRouter.get('/compliance/dashboard', async (_req: Request, res: Response) => {
   try {
     const totalReports = await prismaRead.privacyComplianceReport.count();
-    const flaggedReports = await prismaRead.privacyComplianceReport.count({ where: { flagged: true } });
+    const flaggedReports = await prismaRead.privacyComplianceReport.count({
+      where: { flagged: true },
+    });
 
     const byLabel = await prismaRead.privacyComplianceReport.groupBy({
       by: ['complianceLabel'],
@@ -626,9 +665,8 @@ privacyRouter.get('/compliance/reports/periodic', async (req: Request, res: Resp
     });
 
     const flaggedCount = reports.filter((r) => r.flagged).length;
-    const avgRisk = reports.length > 0
-      ? reports.reduce((a, r) => a + (r.riskScore || 0), 0) / reports.length
-      : 0;
+    const avgRisk =
+      reports.length > 0 ? reports.reduce((a, r) => a + (r.riskScore || 0), 0) / reports.length : 0;
 
     res.json({
       period: `${days} days`,
@@ -707,8 +745,14 @@ privacyRouter.get('/compliance/:address', async (req: Request, res: Response) =>
 
       if (privacyTxs.length > 0) {
         const avgRisk = totalRisk / privacyTxs.length;
-        if (avgRisk > 70) { flagged = true; flagReason = 'High de-anonymization risk score'; }
-        if (protocolSet.has('MIXER')) { flagged = true; flagReason = 'Mixer/tumbler usage detected'; }
+        if (avgRisk > 70) {
+          flagged = true;
+          flagReason = 'High de-anonymization risk score';
+        }
+        if (protocolSet.has('MIXER')) {
+          flagged = true;
+          flagReason = 'Mixer/tumbler usage detected';
+        }
       }
 
       const linkedAddresses = new Set<string>();
@@ -833,7 +877,11 @@ privacyRouter.post('/compliance/flag', async (req: Request, res: Response) => {
     if (existing) {
       await prismaWrite.privacyComplianceReport.update({
         where: { address },
-        data: { flagged: true, flagReason: reason || existing.flagReason, complianceLabel: label || existing.complianceLabel },
+        data: {
+          flagged: true,
+          flagReason: reason || existing.flagReason,
+          complianceLabel: label || existing.complianceLabel,
+        },
       });
     } else {
       await prismaWrite.privacyComplianceReport.create({
@@ -895,7 +943,8 @@ privacyRouter.post('/research/graph', async (req: Request, res: Response) => {
     }
 
     if (body.format === 'graphml') {
-      let xml = '<?xml version="1.0" encoding="UTF-8"?>\n<graphml xmlns="http://graphml.graphdrawing.org/xmlns">\n<graph id="G" edgedefault="directed">\n';
+      let xml =
+        '<?xml version="1.0" encoding="UTF-8"?>\n<graphml xmlns="http://graphml.graphdrawing.org/xmlns">\n<graph id="G" edgedefault="directed">\n';
       for (const node of graph.nodes) {
         xml += `<node id="${node.id}"><data key="type">${node.type}</data><data key="txCount">${node.txCount}</data></node>\n`;
       }
@@ -968,7 +1017,17 @@ privacyRouter.get('/research/datasets', async (_req: Request, res: Response) => 
           name: 'Privacy Transactions',
           description: 'All detected privacy-preserving transactions with scores',
           recordCount: totalTx,
-          fields: ['txHash', 'protocols', 'guarantees', 'privacyScore', 'riskScore', 'anonymitySetSize', 'totalValue', 'participants', 'timestamp'],
+          fields: [
+            'txHash',
+            'protocols',
+            'guarantees',
+            'privacyScore',
+            'riskScore',
+            'anonymitySetSize',
+            'totalValue',
+            'participants',
+            'timestamp',
+          ],
           format: 'json',
           downloadUrl: '/api/v1/privacy/transactions?limit=1000',
         },
@@ -1078,12 +1137,13 @@ privacyRouter.get('/ml/predict-anonymity', async (req: Request, res: Response) =
       select: { anonymitySetSize: true, timestamp: true, protocols: true },
     });
 
-    const sets = recentTxs.filter((t) => t.anonymitySetSize !== null).map((t) => t.anonymitySetSize!);
+    const sets = recentTxs
+      .filter((t) => t.anonymitySetSize !== null)
+      .map((t) => t.anonymitySetSize!);
     const trend = sets.length > 5 ? 'increasing' : sets.length > 0 ? 'stable' : 'unknown';
 
-    const predicted = sets.length > 0
-      ? Math.round(sets.reduce((a, b) => a + b, 0) / sets.length * 1.1)
-      : null;
+    const predicted =
+      sets.length > 0 ? Math.round((sets.reduce((a, b) => a + b, 0) / sets.length) * 1.1) : null;
 
     res.json({
       protocol: protocol || 'all',
@@ -1112,17 +1172,27 @@ privacyRouter.get('/cross-protocol/:address', async (req: Request, res: Response
       orderBy: { timestamp: 'desc' },
     });
 
-    const protocolUsage: Record<string, { count: number; firstUsed: Date; lastUsed: Date; totalValue: string }> = {};
+    const protocolUsage: Record<
+      string,
+      { count: number; firstUsed: Date; lastUsed: Date; totalValue: string }
+    > = {};
 
     for (const tx of privacyTxs) {
       for (const p of tx.protocols) {
         if (!protocolUsage[p]) {
-          protocolUsage[p] = { count: 0, firstUsed: tx.timestamp, lastUsed: tx.timestamp, totalValue: '0' };
+          protocolUsage[p] = {
+            count: 0,
+            firstUsed: tx.timestamp,
+            lastUsed: tx.timestamp,
+            totalValue: '0',
+          };
         }
         protocolUsage[p].count++;
         if (tx.timestamp < protocolUsage[p].firstUsed) protocolUsage[p].firstUsed = tx.timestamp;
         if (tx.timestamp > protocolUsage[p].lastUsed) protocolUsage[p].lastUsed = tx.timestamp;
-        protocolUsage[p].totalValue = String(Number(protocolUsage[p].totalValue) + (Number(tx.totalValue) || 0));
+        protocolUsage[p].totalValue = String(
+          Number(protocolUsage[p].totalValue) + (Number(tx.totalValue) || 0),
+        );
       }
     }
 
@@ -1138,7 +1208,12 @@ privacyRouter.get('/cross-protocol/:address', async (req: Request, res: Response
       avgPrivacyScore: privacyTxs.length > 0 ? totalScore / privacyTxs.length : 0,
       avgRiskScore: privacyTxs.length > 0 ? totalRisk / privacyTxs.length : 0,
       aggregatePrivacyScore: aggregatePrivacy,
-      assessment: aggregatePrivacy > 70 ? 'Strong privacy posture' : aggregatePrivacy > 40 ? 'Moderate privacy' : 'Weak privacy',
+      assessment:
+        aggregatePrivacy > 70
+          ? 'Strong privacy posture'
+          : aggregatePrivacy > 40
+            ? 'Moderate privacy'
+            : 'Weak privacy',
     });
   } catch (e) {
     res.status(500).json({ error: String(e) });
@@ -1158,12 +1233,20 @@ privacyRouter.get('/zk/verifiers', async (req: Request, res: Response) => {
       take: 100,
     });
 
-    const verifierMap = new Map<string, { address: string; txCount: number; proofTypes: Set<string>; lastUsed: Date }>();
+    const verifierMap = new Map<
+      string,
+      { address: string; txCount: number; proofTypes: Set<string>; lastUsed: Date }
+    >();
 
     for (const tx of zkTxs) {
       for (const addr of tx.contractAddresses) {
         if (!verifierMap.has(addr)) {
-          verifierMap.set(addr, { address: addr, txCount: 0, proofTypes: new Set(), lastUsed: tx.timestamp });
+          verifierMap.set(addr, {
+            address: addr,
+            txCount: 0,
+            proofTypes: new Set(),
+            lastUsed: tx.timestamp,
+          });
         }
         const v = verifierMap.get(addr)!;
         v.txCount++;
@@ -1199,9 +1282,8 @@ privacyRouter.get('/zk/verifiers/:address', async (req: Request, res: Response) 
       orderBy: { timestamp: 'desc' },
     });
 
-    const avgScore = txs.length > 0
-      ? txs.reduce((a, t) => a + (t.privacyScore || 0), 0) / txs.length
-      : 0;
+    const avgScore =
+      txs.length > 0 ? txs.reduce((a, t) => a + (t.privacyScore || 0), 0) / txs.length : 0;
 
     res.json({
       address,

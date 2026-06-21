@@ -209,7 +209,10 @@ yieldRouter.get('/leaderboard', async (req: Request, res: Response) => {
 yieldRouter.get('/compare', async (req: Request, res: Response) => {
   try {
     const idsParam = String(req.query.opportunities ?? '');
-    const ids = idsParam.split(',').map((s) => s.trim()).filter(Boolean);
+    const ids = idsParam
+      .split(',')
+      .map((s) => s.trim())
+      .filter(Boolean);
     if (ids.length === 0) {
       res.status(400).json({ error: 'opportunities query param required (comma-separated ids)' });
       return;
@@ -296,7 +299,7 @@ function computeTrend(apySeries: number[]): 'rising' | 'falling' | 'flat' {
   const mid = Math.floor(apySeries.length / 2);
   const first = apySeries.slice(0, mid);
   const last = apySeries.slice(mid);
-  const avg = (xs: number[]) => xs.length === 0 ? 0 : xs.reduce((s, v) => s + v, 0) / xs.length;
+  const avg = (xs: number[]) => (xs.length === 0 ? 0 : xs.reduce((s, v) => s + v, 0) / xs.length);
   const delta = avg(last) - avg(first);
   if (Math.abs(delta) < 0.5) return 'flat';
   return delta > 0 ? 'rising' : 'falling';

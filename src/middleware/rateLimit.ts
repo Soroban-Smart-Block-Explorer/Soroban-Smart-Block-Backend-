@@ -29,12 +29,8 @@ import { Request, Response, NextFunction } from 'express';
  * API-key tiers (set via X-API-Key header).
  * Keys are loaded from env: API_KEYS_DEVELOPER, API_KEYS_PREMIUM (comma-separated).
  */
-const developerKeys = new Set(
-  (process.env.API_KEYS_DEVELOPER ?? '').split(',').filter(Boolean)
-);
-const premiumKeys = new Set(
-  (process.env.API_KEYS_PREMIUM ?? '').split(',').filter(Boolean)
-);
+const developerKeys = new Set((process.env.API_KEYS_DEVELOPER ?? '').split(',').filter(Boolean));
+const premiumKeys = new Set((process.env.API_KEYS_PREMIUM ?? '').split(',').filter(Boolean));
 
 // Tier limits (requests per minute)
 const TIERS = {
@@ -86,7 +82,7 @@ export async function initRateLimitStore(): Promise<void> {
 
     const client = createClient({ url: redisUrl });
     client.on('error', (err: unknown) =>
-      console.warn('[rate-limit] Redis error:', err instanceof Error ? err.message : String(err))
+      console.warn('[rate-limit] Redis error:', err instanceof Error ? err.message : String(err)),
     );
     await client.connect();
 
@@ -101,7 +97,7 @@ export async function initRateLimitStore(): Promise<void> {
   } catch (err) {
     console.warn(
       '[rate-limit] Redis unavailable, falling back to in-memory store:',
-      (err as Error).message
+      (err as Error).message,
     );
   }
 }

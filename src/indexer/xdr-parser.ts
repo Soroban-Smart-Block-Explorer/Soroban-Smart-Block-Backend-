@@ -215,7 +215,9 @@ export function parseInvokeHostFunction(envelopeXdr: string): ParsedInvokeHostFu
   const invokeArgs = hostFn.invokeContract();
   const contractId = StrKey.encodeContract(invokeArgs.contractAddress().contractId());
   const functionName = invokeArgs.functionName().toString();
-  const args: ParsedArg[] = invokeArgs.args().map((a: xdr.ScVal, i: number) => ({ index: i, ...scValToJson(a) }));
+  const args: ParsedArg[] = invokeArgs
+    .args()
+    .map((a: xdr.ScVal, i: number) => ({ index: i, ...scValToJson(a) }));
   const auth: ParsedAuth[] = opBody.auth().map(parseAuthEntry);
 
   return { contractId, functionName, args, auth };
@@ -252,4 +254,9 @@ export function parseInvokeResult(resultXdr: string): ParsedResult | null {
  * Re-export the strkey translator so consumers of xdr-parser have a single
  * import point for all address normalisation utilities.
  */
-export { translateAddress, resolveRoutingIdentity, normalizeAddresses, isValidAnyAddress } from './strkey-translator';
+export {
+  translateAddress,
+  resolveRoutingIdentity,
+  normalizeAddresses,
+  isValidAnyAddress,
+} from './strkey-translator';

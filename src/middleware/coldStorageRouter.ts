@@ -2,7 +2,9 @@ import { Request, Response, NextFunction } from 'express';
 import { config } from '../config';
 
 const RECENT_LEDGER_DAYS = parseInt(process.env.RECENT_LEDGER_DAYS ?? '30');
-const RECENT_LEDGER_THRESHOLD = Math.floor((Date.now() - RECENT_LEDGER_DAYS * 24 * 60 * 60 * 1000) / 1000);
+const RECENT_LEDGER_THRESHOLD = Math.floor(
+  (Date.now() - RECENT_LEDGER_DAYS * 24 * 60 * 60 * 1000) / 1000,
+);
 
 interface ColdStorageConfig {
   recentThresholdSeconds: number;
@@ -12,7 +14,8 @@ interface ColdStorageConfig {
 
 const coldStorageConfig: ColdStorageConfig = {
   recentThresholdSeconds: RECENT_LEDGER_THRESHOLD,
-  coldStorageType: process.env.COLD_STORAGE_TYPE as 'parquet' | 'glacier' | 'archive' ?? 'parquet',
+  coldStorageType:
+    (process.env.COLD_STORAGE_TYPE as 'parquet' | 'glacier' | 'archive') ?? 'parquet',
   coldStoragePath: process.env.COLD_STORAGE_PATH,
 };
 
@@ -83,7 +86,7 @@ function extractLedgerSequence(req: Request): number | null {
 export async function fetchFromColdStorage(
   storageType: string,
   ledgerSeq: number,
-  dataType: 'transactions' | 'events'
+  dataType: 'transactions' | 'events',
 ): Promise<any[]> {
   console.log(`[ColdStorage] Fetching ${dataType} for ledger ${ledgerSeq} from ${storageType}`);
 

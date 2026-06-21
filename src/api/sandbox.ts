@@ -1,6 +1,7 @@
 import { Router, Request, Response } from 'express';
 import { z } from 'zod';
 import { sandboxEngine } from '../sandbox/runtime';
+import { asyncHandler } from '../middleware/asyncHandler';
 
 export const sandboxRouter = Router();
 
@@ -25,7 +26,10 @@ const accountSchema = z.object({
   balance: z.union([z.string(), z.number()]).optional(),
   isPreFunded: z.boolean().optional(),
 });
-const fundSchema = z.object({ publicKey: z.string().min(1), amount: z.union([z.string(), z.number()]) });
+const fundSchema = z.object({
+  publicKey: z.string().min(1),
+  amount: z.union([z.string(), z.number()]),
+});
 const deploySchema = z.object({
   sessionId: z.string().min(1),
   wasm: z.string().optional(),
@@ -53,13 +57,15 @@ const callSchema = z.object({
 });
 const batchCallSchema = z.object({
   sessionId: z.string().min(1),
-  calls: z.array(z.object({
-    contractId: z.string().min(1),
-    functionName: z.string().min(1),
-    args: z.unknown().optional(),
-    sourceAccount: z.string().optional(),
-    batchId: z.string().optional().nullable(),
-  })),
+  calls: z.array(
+    z.object({
+      contractId: z.string().min(1),
+      functionName: z.string().min(1),
+      args: z.unknown().optional(),
+      sourceAccount: z.string().optional(),
+      batchId: z.string().optional().nullable(),
+    }),
+  ),
 });
 const debugSchema = z.object({
   sessionId: z.string().min(1),
@@ -77,26 +83,55 @@ const compareSchema = z.object({
 const fuzzStartSchema = z.object({
   sessionId: z.string().min(1),
   contract: z.string().min(1),
-  strategies: z.array(z.object({
-    type: z.string().min(1),
-    iterations: z.number().int().positive().optional(),
-    params: z.record(z.unknown()).optional(),
-  })),
+  strategies: z.array(
+    z.object({
+      type: z.string().min(1),
+      iterations: z.number().int().positive().optional(),
+      params: z.record(z.unknown()).optional(),
+    }),
+  ),
   timeoutSeconds: z.number().int().positive().optional(),
   stopOnFirst: z.string().optional(),
 });
 const ciSchema = z.object({
   sessionId: z.string().optional(),
-  steps: z.array(z.union([
-    z.object({ action: z.literal('deploy'), wasm: z.string(), name: z.string().optional(), templateId: z.string().optional(), initArgs: z.record(z.unknown()).optional() }),
-    z.object({ action: z.literal('call'), contract: z.string(), function: z.string(), args: z.unknown().optional(), source: z.string().optional() }),
-    z.object({ action: z.literal('assert'), contract: z.string(), function: z.string(), expected: z.unknown(), args: z.unknown().optional(), source: z.string().optional() }),
-  ])),
+  steps: z.array(
+    z.union([
+      z.object({
+        action: z.literal('deploy'),
+        wasm: z.string(),
+        name: z.string().optional(),
+        templateId: z.string().optional(),
+        initArgs: z.record(z.unknown()).optional(),
+      }),
+      z.object({
+        action: z.literal('call'),
+        contract: z.string(),
+        function: z.string(),
+        args: z.unknown().optional(),
+        source: z.string().optional(),
+      }),
+      z.object({
+        action: z.literal('assert'),
+        contract: z.string(),
+        function: z.string(),
+        expected: z.unknown(),
+        args: z.unknown().optional(),
+        source: z.string().optional(),
+      }),
+    ]),
+  ),
   timeout: z.number().int().positive().optional(),
   onFailure: z.enum(['stop', 'continue']).optional(),
 });
-const shareSchema = z.object({ sessionId: z.string().min(1), expiresAt: z.string().datetime().optional() });
-const exportSchema = z.object({ sessionId: z.string().min(1), format: z.enum(['js', 'python', 'json']).optional() });
+const shareSchema = z.object({
+  sessionId: z.string().min(1),
+  expiresAt: z.string().datetime().optional(),
+});
+const exportSchema = z.object({
+  sessionId: z.string().min(1),
+  format: z.enum(['js', 'python', 'json']).optional(),
+});
 const importSchema = z.object({ sessionId: z.string().min(1), payload: z.unknown() });
 const invariantSchema = z.object({
   sessionId: z.string().min(1),
@@ -247,7 +282,11 @@ sandboxRouter.post('/session/:sessionId/fund', async (req, res) => {
 
 sandboxRouter.post('/session/:sessionId/accounts', async (req, res) => {
   try {
-    res.status(201).json(await sandboxEngine.createAccount(getSessionId(req.params), accountSchema.parse(req.body)));
+    res
+      .status(201)
+      .json(
+        await sandboxEngine.createAccount(getSessionId(req.params), accountSchema.parse(req.body)),
+      );
   } catch (error) {
     handleError(res, error);
   }
@@ -287,7 +326,9 @@ sandboxRouter.post('/deploy-from-template', async (req, res) => {
 
 sandboxRouter.post('/deploy-from-mainnet', async (req, res) => {
   try {
-    res.status(201).json(await sandboxEngine.deployFromMainnet(deployMainnetSchema.parse(req.body)));
+    res
+      .status(201)
+      .json(await sandboxEngine.deployFromMainnet(deployMainnetSchema.parse(req.body)));
   } catch (error) {
     handleError(res, error);
   }
@@ -337,14 +378,16 @@ sandboxRouter.get('/session/:sessionId/contracts/:address/abi', async (req, res)
 sandboxRouter.post('/debug', async (req, res) => {
   try {
     const body = debugSchema.parse(req.body);
-    res.json(await sandboxEngine.debug({
-      sessionId: body.sessionId,
-      contractId: body.contract,
-      functionName: body.function,
-      args: body.args,
-      sourceAccount: body.source,
-      traceOptions: body.traceOptions,
-    }));
+    res.json(
+      await sandboxEngine.debug({
+        sessionId: body.sessionId,
+        contractId: body.contract,
+        functionName: body.function,
+        args: body.args,
+        sourceAccount: body.source,
+        traceOptions: body.traceOptions,
+      }),
+    );
   } catch (error) {
     handleError(res, error);
   }
@@ -353,19 +396,29 @@ sandboxRouter.post('/debug', async (req, res) => {
 sandboxRouter.get('/session/:sessionId/debugger-ui', async (req, res) => {
   try {
     const session = await sandboxEngine.getSession(getSessionId(req.params));
-    res.type('html').send(`<!doctype html><html><head><meta charset="utf-8"><title>Sandbox Debugger</title><style>body{font-family:system-ui,sans-serif;background:#0b1020;color:#e8eefc;padding:24px}pre{background:#121a33;padding:16px;border-radius:12px;overflow:auto}</style></head><body><h1>Sandbox Debugger</h1><p>Session ${session.id} is ${session.status}.</p><pre>${escapeHtml(JSON.stringify(session, null, 2))}</pre></body></html>`);
+    res
+      .type('html')
+      .send(
+        `<!doctype html><html><head><meta charset="utf-8"><title>Sandbox Debugger</title><style>body{font-family:system-ui,sans-serif;background:#0b1020;color:#e8eefc;padding:24px}pre{background:#121a33;padding:16px;border-radius:12px;overflow:auto}</style></head><body><h1>Sandbox Debugger</h1><p>Session ${session.id} is ${session.status}.</p><pre>${escapeHtml(JSON.stringify(session, null, 2))}</pre></body></html>`,
+      );
   } catch (error) {
     handleError(res, error);
   }
 });
 
-sandboxRouter.post('/debug/set-breakpoint', async (req, res) => {
-  res.json({ set: true, breakpoint: req.body });
-});
+sandboxRouter.post(
+  '/debug/set-breakpoint',
+  asyncHandler(async (req, res) => {
+    res.json({ set: true, breakpoint: req.body });
+  }),
+);
 
-sandboxRouter.post('/debug/continue', async (req, res) => {
-  res.json({ continued: true, breakpoint: req.body });
-});
+sandboxRouter.post(
+  '/debug/continue',
+  asyncHandler(async (req, res) => {
+    res.json({ continued: true, breakpoint: req.body });
+  }),
+);
 
 sandboxRouter.get('/session/:sessionId/calls', async (req, res) => {
   try {
@@ -473,7 +526,14 @@ sandboxRouter.get('/ci/result/:runId', async (req, res) => {
 sandboxRouter.post('/session/:sessionId/share', async (req, res) => {
   try {
     const body = shareSchema.parse({ sessionId: getSessionId(req.params), ...req.body });
-    res.status(201).json(await sandboxEngine.shareSession(body.sessionId, body.expiresAt ? new Date(body.expiresAt) : undefined));
+    res
+      .status(201)
+      .json(
+        await sandboxEngine.shareSession(
+          body.sessionId,
+          body.expiresAt ? new Date(body.expiresAt) : undefined,
+        ),
+      );
   } catch (error) {
     handleError(res, error);
   }
@@ -508,7 +568,12 @@ sandboxRouter.post('/session/:sessionId/import', async (req, res) => {
 sandboxRouter.post('/optimize', async (req, res) => {
   try {
     const sessionId = z.string().min(1).parse(req.body.sessionId);
-    res.json(await sandboxEngine.optimizeContract(sessionId, typeof req.body.contractId === 'string' ? req.body.contractId : undefined));
+    res.json(
+      await sandboxEngine.optimizeContract(
+        sessionId,
+        typeof req.body.contractId === 'string' ? req.body.contractId : undefined,
+      ),
+    );
   } catch (error) {
     handleError(res, error);
   }
@@ -517,12 +582,14 @@ sandboxRouter.post('/optimize', async (req, res) => {
 sandboxRouter.post('/verify/invariant', async (req, res) => {
   try {
     const body = invariantSchema.parse(req.body);
-    res.json(await sandboxEngine.verifyInvariant(body.sessionId, {
-      contract: body.contract,
-      invariant: body.invariant,
-      checker: body.checker,
-      bound: body.bound,
-    }));
+    res.json(
+      await sandboxEngine.verifyInvariant(body.sessionId, {
+        contract: body.contract,
+        invariant: body.invariant,
+        checker: body.checker,
+        bound: body.bound,
+      }),
+    );
   } catch (error) {
     handleError(res, error);
   }
@@ -587,7 +654,10 @@ sandboxRouter.post('/replay/:txHash', async (req, res) => {
 
 sandboxRouter.get('/replay/:txHash/comparison', async (req, res) => {
   try {
-    res.json({ txHash: req.params.txHash, comparison: await sandboxEngine.replayMainnet(req.params.txHash) });
+    res.json({
+      txHash: req.params.txHash,
+      comparison: await sandboxEngine.replayMainnet(req.params.txHash),
+    });
   } catch (error) {
     handleError(res, error);
   }

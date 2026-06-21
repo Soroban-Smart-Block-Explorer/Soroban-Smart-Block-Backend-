@@ -124,7 +124,12 @@ function buildClassicView(
       inflationDestination: null,
       homeDomain: null,
       homeDomainVerified: false,
-      flags: { authRequired: false, authRevocable: false, authImmutable: false, clawbackEnabled: false },
+      flags: {
+        authRequired: false,
+        authRevocable: false,
+        authImmutable: false,
+        clawbackEnabled: false,
+      },
       thresholds: { low: 0, medium: 0, high: 0 },
       signers: [],
       trustlines: [],
@@ -183,50 +188,51 @@ function buildClassicView(
 }
 
 async function buildSorobanView(address: string): Promise<SorobanAccountView> {
-  const [deployedContracts, adminContracts, wasmUploads, recentTxs, totalSorobanTx] = await Promise.all([
-    prisma.contract.findMany({
-      where: { transactions: { some: { sourceAccount: address } } },
-      select: { address: true },
-      take: 50,
-    }),
-    prisma.contract.findMany({
-      where: {
-        events: {
-          some: {
-            OR: [
-              { decoded: { path: ['admin'], equals: address } },
-              { decoded: { path: ['operator'], equals: address } },
-            ],
+  const [deployedContracts, adminContracts, wasmUploads, recentTxs, totalSorobanTx] =
+    await Promise.all([
+      prisma.contract.findMany({
+        where: { transactions: { some: { sourceAccount: address } } },
+        select: { address: true },
+        take: 50,
+      }),
+      prisma.contract.findMany({
+        where: {
+          events: {
+            some: {
+              OR: [
+                { decoded: { path: ['admin'], equals: address } },
+                { decoded: { path: ['operator'], equals: address } },
+              ],
+            },
           },
         },
-      },
-      select: { address: true },
-      take: 50,
-    }),
-    prisma.wasmUpgradeHistory.findMany({
-      where: {
-        transactionHash: {
-          in: (
-            await prisma.transaction.findMany({
-              where: { sourceAccount: address },
-              select: { hash: true },
-              take: 100,
-            })
-          ).map((t) => t.hash),
+        select: { address: true },
+        take: 50,
+      }),
+      prisma.wasmUpgradeHistory.findMany({
+        where: {
+          transactionHash: {
+            in: (
+              await prisma.transaction.findMany({
+                where: { sourceAccount: address },
+                select: { hash: true },
+                take: 100,
+              })
+            ).map((t) => t.hash),
+          },
         },
-      },
-      select: { newHash: true },
-      distinct: ['newHash'],
-      take: 20,
-    }),
-    prisma.transaction.findMany({
-      where: { sourceAccount: address },
-      orderBy: { ledgerCloseTime: 'desc' },
-      take: 10,
-      select: { hash: true, functionName: true, ledgerCloseTime: true, status: true },
-    }),
-    prisma.transaction.count({ where: { sourceAccount: address } }),
-  ]);
+        select: { newHash: true },
+        distinct: ['newHash'],
+        take: 20,
+      }),
+      prisma.transaction.findMany({
+        where: { sourceAccount: address },
+        orderBy: { ledgerCloseTime: 'desc' },
+        take: 10,
+        select: { hash: true, functionName: true, ledgerCloseTime: true, status: true },
+      }),
+      prisma.transaction.count({ where: { sourceAccount: address } }),
+    ]);
 
   return {
     deployedContracts: deployedContracts.map((c) => c.address),
@@ -242,7 +248,10 @@ async function buildSorobanView(address: string): Promise<SorobanAccountView> {
   };
 }
 
-async function buildCrossDomainView(address: string, trustlines: ClassicAccountView['trustlines']): Promise<CrossDomainView> {
+async function buildCrossDomainView(
+  address: string,
+  trustlines: ClassicAccountView['trustlines'],
+): Promise<CrossDomainView> {
   const bridgedAssets: CrossDomainView['bridgedAssets'] = [];
   let totalValue = 0;
 
@@ -257,7 +266,9 @@ async function buildCrossDomainView(address: string, trustlines: ClassicAccountV
     });
 
     const classicAmount = parseFloat(tl.balance);
-    const sorobanAmount = bridge?.circulationSoroban ? Number(bridge.circulationSoroban) : classicAmount * 0.5;
+    const sorobanAmount = bridge?.circulationSoroban
+      ? Number(bridge.circulationSoroban)
+      : classicAmount * 0.5;
     totalValue += classicAmount + sorobanAmount;
 
     bridgedAssets.push({
@@ -358,7 +369,9 @@ async function persistAccountSnapshot(
   homeDomainVerified: boolean,
 ): Promise<void> {
   const native = account.balances.find((b) => b.asset_type === 'native');
-  const trustlines = account.balances.filter((b) => b.asset_type !== 'native' && !b.liquidity_pool_id);
+  const trustlines = account.balances.filter(
+    (b) => b.asset_type !== 'native' && !b.liquidity_pool_id,
+  );
 
   const data = {
     address,
@@ -481,7 +494,12 @@ export async function getUnifiedTransactions(
   );
 
   if (crossDomainOnly) {
-    const bridgeTypes = ['change_trust', 'create_claimable_balance', 'invoke_host_function', 'payment'];
+    const bridgeTypes = [
+      'change_trust',
+      'create_claimable_balance',
+      'invoke_host_function',
+      'payment',
+    ];
     merged = merged.filter((tx) => bridgeTypes.includes(tx.type) || tx.network === 'soroban');
   }
 
@@ -491,7 +509,10 @@ export async function getUnifiedTransactions(
   return { transactions: paginated, total: merged.length, page, limit };
 }
 
-export async function getBalanceHistory(address: string, days = 30): Promise<Array<{ date: string; xlmBalance: string }>> {
+export async function getBalanceHistory(
+  address: string,
+  days = 30,
+): Promise<Array<{ date: string; xlmBalance: string }>> {
   const resolved = resolveAddress(address);
   const account = await prisma.stellarAccount.findUnique({ where: { address: resolved } });
 

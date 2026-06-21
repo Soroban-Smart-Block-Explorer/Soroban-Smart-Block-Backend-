@@ -37,7 +37,7 @@ export interface CheckedArithmeticTransactionResult {
  * Called during transaction decoding to enrich the decoded output.
  */
 export async function analyzeTransactionForCheckedArithmetic(
-  context: CheckedArithmeticTransactionContext
+  context: CheckedArithmeticTransactionContext,
 ): Promise<CheckedArithmeticTransactionResult> {
   const { functionName, rawArgs, resultVal } = context;
 
@@ -81,7 +81,7 @@ export async function analyzeTransactionForCheckedArithmetic(
  */
 export async function storeCheckedArithmeticAnalysis(
   context: CheckedArithmeticTransactionContext,
-  analysis: CheckedArithmeticAnalysis
+  analysis: CheckedArithmeticAnalysis,
 ): Promise<void> {
   if (!analysis.isCheckedOperation || !analysis.operation) {
     return;
@@ -125,7 +125,7 @@ export async function storeCheckedArithmeticAnalysis(
  */
 async function createOverflowRecord(
   context: CheckedArithmeticTransactionContext,
-  operation: any
+  operation: any,
 ): Promise<void> {
   try {
     // Store in a dedicated table for overflow events
@@ -161,7 +161,7 @@ async function createOverflowRecord(
  */
 export async function analyzeCheckedArithmeticPatterns(
   ledgerRangeStart: number,
-  ledgerRangeEnd: number
+  ledgerRangeEnd: number,
 ): Promise<{
   totalCheckedOperations: number;
   overflowCount: number;
@@ -246,9 +246,7 @@ export async function analyzeCheckedArithmeticPatterns(
  * Identify contracts that handle arithmetic overflows safely.
  * These are contracts that use checked arithmetic and handle overflow gracefully.
  */
-export async function identifyOverflowSafeContracts(
-  minOverflowCount: number = 1
-): Promise<
+export async function identifyOverflowSafeContracts(minOverflowCount: number = 1): Promise<
   Array<{
     contractAddress: string;
     totalCheckedOperations: number;
@@ -279,10 +277,8 @@ export async function identifyOverflowSafeContracts(
       },
     });
 
-    const contractStats: Record<
-      string,
-      { total: number; overflows: number; successes: number }
-    > = {};
+    const contractStats: Record<string, { total: number; overflows: number; successes: number }> =
+      {};
 
     for (const tx of transactions) {
       if (!tx.contractAddress) continue;
@@ -329,7 +325,7 @@ export async function identifyOverflowSafeContracts(
  */
 export async function generateCheckedArithmeticReport(
   ledgerRangeStart: number,
-  ledgerRangeEnd: number
+  ledgerRangeEnd: number,
 ): Promise<Record<string, unknown>> {
   const patterns = await analyzeCheckedArithmeticPatterns(ledgerRangeStart, ledgerRangeEnd);
   const safeContracts = await identifyOverflowSafeContracts(1);

@@ -46,7 +46,9 @@ incidentRouter.post('/', async (req: Request, res: Response) => {
         pauseEventId: data.pauseEventId,
         affectedUsersEstimate: data.affectedUsersEstimate,
         affectedTvlEstimate: data.affectedTvlEstimate,
-        timeline: [{ timestamp: new Date().toISOString(), event: 'created', detail: 'Incident created' }],
+        timeline: [
+          { timestamp: new Date().toISOString(), event: 'created', detail: 'Incident created' },
+        ],
       },
     });
     res.status(201).json(incident);
@@ -65,7 +67,12 @@ incidentRouter.get('/', async (req: Request, res: Response) => {
       ...(severity ? { severity } : {}),
       ...(contract ? { contractAddress: contract } : {}),
       ...(from || to
-        ? { createdAt: { ...(from ? { gte: new Date(from) } : {}), ...(to ? { lte: new Date(to) } : {}) } }
+        ? {
+            createdAt: {
+              ...(from ? { gte: new Date(from) } : {}),
+              ...(to ? { lte: new Date(to) } : {}),
+            },
+          }
         : {}),
     };
 
@@ -99,13 +106,14 @@ incidentRouter.get('/stats', async (_req: Request, res: Response) => {
     ]);
 
     const mttrMs = resolved.length
-      ? resolved.reduce((sum, r) => sum + (r.resolvedAt!.getTime() - r.createdAt.getTime()), 0) / resolved.length
+      ? resolved.reduce((sum, r) => sum + (r.resolvedAt!.getTime() - r.createdAt.getTime()), 0) /
+        resolved.length
       : null;
 
     res.json({
       bySeverity: Object.fromEntries(bySeverity.map((b) => [b.severity, b._count.id])),
       byStatus: Object.fromEntries(byStatus.map((b) => [b.status, b._count.id])),
-      meanTimeToResolveHours: mttrMs ? Math.round(mttrMs / 3600_000 * 10) / 10 : null,
+      meanTimeToResolveHours: mttrMs ? Math.round((mttrMs / 3600_000) * 10) / 10 : null,
       totalResolved: resolved.length,
     });
   } catch (err) {
@@ -151,7 +159,9 @@ incidentRouter.patch('/:id', async (req: Request, res: Response) => {
         ...(data.status ? { status: data.status } : {}),
         ...(data.rootCause ? { rootCause: data.rootCause } : {}),
         ...(data.resolutionNotes ? { resolutionNotes: data.resolutionNotes } : {}),
-        ...(data.affectedUsersEstimate ? { affectedUsersEstimate: data.affectedUsersEstimate } : {}),
+        ...(data.affectedUsersEstimate
+          ? { affectedUsersEstimate: data.affectedUsersEstimate }
+          : {}),
         ...(data.affectedTvlEstimate ? { affectedTvlEstimate: data.affectedTvlEstimate } : {}),
         ...(timelineUpdate ? { timeline: timelineUpdate } : {}),
         updatedAt: new Date(),
@@ -167,7 +177,9 @@ incidentRouter.patch('/:id', async (req: Request, res: Response) => {
 // POST /emergency/incidents/:id/comments
 incidentRouter.post('/:id/comments', async (req: Request, res: Response) => {
   try {
-    const { author, body } = z.object({ author: z.string().min(1), body: z.string().min(1) }).parse(req.body);
+    const { author, body } = z
+      .object({ author: z.string().min(1), body: z.string().min(1) })
+      .parse(req.body);
     const comment = await prismaWrite.incidentComment.create({
       data: { incidentId: req.params.id, author, body },
     });
@@ -180,7 +192,9 @@ incidentRouter.post('/:id/comments', async (req: Request, res: Response) => {
 // POST /emergency/incidents/:id/resolve
 incidentRouter.post('/:id/resolve', async (req: Request, res: Response) => {
   try {
-    const { resolutionNotes } = z.object({ resolutionNotes: z.string().optional() }).parse(req.body);
+    const { resolutionNotes } = z
+      .object({ resolutionNotes: z.string().optional() })
+      .parse(req.body);
     const incident = await prismaRead.incidentReport.findUnique({
       where: { id: req.params.id },
       select: { timeline: true },
@@ -193,7 +207,14 @@ incidentRouter.post('/:id/resolve', async (req: Request, res: Response) => {
         status: 'resolved',
         resolvedAt: new Date(),
         resolutionNotes,
-        timeline: [...timeline, { timestamp: new Date().toISOString(), event: 'resolved', detail: resolutionNotes ?? 'Marked resolved' }],
+        timeline: [
+          ...timeline,
+          {
+            timestamp: new Date().toISOString(),
+            event: 'resolved',
+            detail: resolutionNotes ?? 'Marked resolved',
+          },
+        ],
         updatedAt: new Date(),
       },
     });

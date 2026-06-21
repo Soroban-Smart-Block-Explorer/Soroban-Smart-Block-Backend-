@@ -11,6 +11,7 @@ import { processYieldEvent } from './yield-distribution';
 import { processYieldOpportunityEvent } from './yield-optimizer';
 import { dispatchWebhooks } from '../webhooks/dispatcher';
 import { maybeActivateFromTransferEvent } from './sac-account-activator';
+import { handleUpgradeEvent, looksLikeUpgrade } from './upgrade-detector';
 
 /**
  * Parse DiagnosticEvents from a raw TransactionMeta XDR (base64).
@@ -47,7 +48,10 @@ export function extractEventsFromMeta(metaXdr: string): Array<{
       // contractId() returns null | Buffer — encode as hex string
       const contractIdBuf: Buffer | null = ev.contractId();
       const contractId = contractIdBuf ? contractIdBuf.toString('hex') : '';
-      const topics = (ev.body() as any).v0().topics().map((t: xdr.ScVal) => t.toXDR('base64'));
+      const topics = (ev.body() as any)
+        .v0()
+        .topics()
+        .map((t: xdr.ScVal) => t.toXDR('base64'));
       const data: string = (ev.body() as any).v0().data().toXDR('base64');
       return { contractId, topics, data };
     });
@@ -78,7 +82,7 @@ export async function ingestEventsFromMeta(
   txHash: string,
   ledgerSequence: number,
   ledgerCloseTime: Date,
-  metaXdr: string
+  metaXdr: string,
 ): Promise<number> {
   const raw = extractEventsFromMeta(metaXdr);
   let stored = 0;
@@ -211,17 +215,44 @@ async function storeEvent(event: LedgerEvent): Promise<number> {
     console.error('[webhook] dispatch error:', err),
   );
 
+  // Contract Governance Intelligence: detect WASM upgrades and record them with
+  // diff classification, governance/decentralisation analysis, and
+  // suspicious-activity flags. Gated by a cheap symbol check so the contract
+  // lookup only runs for upgrade-looking events. Non-blocking — never lets an
+  // upgrade failure stall the broadcast/governance pipeline.
+  if (looksLikeUpgrade(eventType, topicSymbol)) {
+    prisma.contract
+      .findUnique({ where: { address: event.contractId }, select: { wasmHash: true } })
+      .then((contract) =>
+        handleUpgradeEvent({
+          contractAddress: event.contractId,
+          eventType,
+          topicSymbol,
+          decoded: decoded as Record<string, unknown> | null,
+          topics: event.topics,
+          transactionHash: event.transactionHash,
+          sourceAccount: txExists.sourceAccount,
+          ledgerSequence: event.ledgerSequence,
+          ledgerCloseTime: event.ledgerCloseTime,
+          previousHash: contract?.wasmHash ?? null,
+        }),
+      )
+      .catch((err) => console.error('[upgrade-governance] processing error:', err));
+  }
+
   // Track governance-related events and proposals
-  import('./governance').then(({ processGovernanceEvent }) =>
-    processGovernanceEvent(
-      event,
-      eventType,
-      topicSymbol,
-      decoded as Record<string, unknown>,
-      event.transactionHash,
-      txExists.sourceAccount,
-    ).catch((err) => console.error('[governance] processing error:', err)),
-  ).catch((err) => console.error('[governance] loader error:', err));
+  import('./governance')
+    .then(({ processGovernanceEvent }) =>
+      processGovernanceEvent(
+        event,
+        eventType,
+        topicSymbol,
+        decoded as Record<string, unknown>,
+        event.transactionHash,
+        txExists.sourceAccount,
+      ).catch((err) => console.error('[governance] processing error:', err)),
+    )
+    .catch((err) => console.error('[governance] loader error:', err));
 
   return 1;
 }

@@ -35,8 +35,8 @@ protocolRouter.get('/reconciliation', async (req: Request, res: Response) => {
 const validateUpgradeSchema = z.object({
   protocolVersion: z.number().int().min(1),
   candidates: z.object({
-    envelopeXdr:   z.string().optional(),
-    resultXdr:     z.string().optional(),
+    envelopeXdr: z.string().optional(),
+    resultXdr: z.string().optional(),
     resultMetaXdr: z.string().optional(),
     ledgerEntryXdr: z.string().optional(),
   }),

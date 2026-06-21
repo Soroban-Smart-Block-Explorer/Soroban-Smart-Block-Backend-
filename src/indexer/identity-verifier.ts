@@ -14,7 +14,7 @@ export function decodeMastercardFlags(args: ParsedArg[]): IdentityVerificationDe
   // In a real-world scenario, we'd need the ABI or argument names to be certain.
   // We look for a 'u32' argument, which is common for bitmasks.
   const flagArg = args.find((a) => a.type === 'u32' || a.type === 'i32');
-  
+
   if (!flagArg) return null;
 
   // Assume bit 0 is the compliance verification flag
@@ -23,8 +23,8 @@ export function decodeMastercardFlags(args: ParsedArg[]): IdentityVerificationDe
 
   return {
     isVerified,
-    complianceMessage: isVerified 
-      ? "Address verified through regulated enterprise compliance gate."
-      : "Address verification failed or not provided."
+    complianceMessage: isVerified
+      ? 'Address verified through regulated enterprise compliance gate.'
+      : 'Address verification failed or not provided.',
   };
 }

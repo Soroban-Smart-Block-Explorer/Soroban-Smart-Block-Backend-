@@ -40,7 +40,8 @@ export async function listBridgedAssets() {
   // Include SAC mappings not yet in bridged_assets
   for (const sac of sacMappings) {
     const exists = bridged.some(
-      (b) => b.classicAssetCode === sac.assetCode && b.classicAssetIssuer === (sac.assetIssuer ?? ''),
+      (b) =>
+        b.classicAssetCode === sac.assetCode && b.classicAssetIssuer === (sac.assetIssuer ?? ''),
     );
     if (exists) continue;
 
@@ -59,7 +60,10 @@ export async function listBridgedAssets() {
   }
 
   const totalBridgedValue = bridgedAssets
-    .reduce((sum, b) => sum + parseFloat(b.circulation.classic) + parseFloat(b.circulation.soroban), 0)
+    .reduce(
+      (sum, b) => sum + parseFloat(b.circulation.classic) + parseFloat(b.circulation.soroban),
+      0,
+    )
     .toFixed(0);
 
   return { bridgedAssets, totalBridgedValue: `${totalBridgedValue} USD` };
@@ -110,10 +114,14 @@ export async function getBridgeAssetDetail(assetCode: string) {
 }
 
 export async function listBridgeProtocols() {
-  const bridged = await prisma.bridgedAsset.findMany({ select: { bridgeProtocol: true, status: true } });
+  const bridged = await prisma.bridgedAsset.findMany({
+    select: { bridgeProtocol: true, status: true },
+  });
   const sacCount = await prisma.sacMapping.count();
 
-  const protocols: Record<string, { count: number; status: string }> = { sac: { count: sacCount, status: 'active' } };
+  const protocols: Record<string, { count: number; status: string }> = {
+    sac: { count: sacCount, status: 'active' },
+  };
 
   for (const b of bridged) {
     if (!protocols[b.bridgeProtocol]) {

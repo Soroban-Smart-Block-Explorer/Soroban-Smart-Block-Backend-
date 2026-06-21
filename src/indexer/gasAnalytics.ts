@@ -12,16 +12,14 @@ type Bucket = 'hour' | 'day' | 'week';
 
 const BUCKET_MS: Record<Bucket, number> = {
   hour: 60 * 60 * 1000,
-  day:  24 * 60 * 60 * 1000,
-  week: 7  * 24 * 60 * 60 * 1000,
+  day: 24 * 60 * 60 * 1000,
+  week: 7 * 24 * 60 * 60 * 1000,
 };
 
 function median(sorted: number[]): number {
   if (sorted.length === 0) return 0;
   const mid = Math.floor(sorted.length / 2);
-  return sorted.length % 2 === 0
-    ? (sorted[mid - 1] + sorted[mid]) / 2
-    : sorted[mid];
+  return sorted.length % 2 === 0 ? (sorted[mid - 1] + sorted[mid]) / 2 : sorted[mid];
 }
 
 async function computeBucket(bucket: Bucket, bucketStart: Date): Promise<void> {
@@ -44,14 +42,23 @@ async function computeBucket(bucket: Bucket, bucketStart: Date): Promise<void> {
 
   if (fees.length === 0) return;
 
-  const avgFee  = fees.reduce((a, b) => a + b, 0) / fees.length;
+  const avgFee = fees.reduce((a, b) => a + b, 0) / fees.length;
   const medianFee = median(fees);
   const peakFee = fees[fees.length - 1];
-  const minFee  = fees[0];
+  const minFee = fees[0];
 
   await prismaWrite.gasAnalyticsSnapshot.upsert({
     where: { bucket_bucketStart: { bucket, bucketStart } },
-    create: { bucket, bucketStart, bucketEnd, avgFee, medianFee, peakFee, minFee, txCount: fees.length },
+    create: {
+      bucket,
+      bucketStart,
+      bucketEnd,
+      avgFee,
+      medianFee,
+      peakFee,
+      minFee,
+      txCount: fees.length,
+    },
     update: { bucketEnd, avgFee, medianFee, peakFee, minFee, txCount: fees.length },
   });
 }

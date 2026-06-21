@@ -46,15 +46,13 @@ export function decodeArgs(
   fnName: string,
   rawArgs: xdr.ScVal[],
   abi: ContractAbi,
-  decimals?: number
+  decimals?: number,
 ): Record<string, unknown> | null {
   const fn = abi.functions.find((f) => f.name === fnName);
   if (!fn) return null;
   const typed = decodeTypedArgs(fn.inputs, rawArgs, decimals);
   // Expose { raw, formatted } per key so callers can choose
-  return Object.fromEntries(
-    Object.entries(typed).map(([k, v]) => [k, v])
-  );
+  return Object.fromEntries(Object.entries(typed).map(([k, v]) => [k, v]));
 }
 
 /**
@@ -66,9 +64,13 @@ export function renderHuman(
   args: Record<string, unknown>,
   abi: ContractAbi,
   contractName?: string | null,
-  decimals?: number
+  decimals?: number,
 ): string {
   const fn = abi.functions.find((f) => f.name === fnName);
   if (!fn?.humanTemplate) return `Called ${fnName} on ${contractName ?? 'contract'}`;
-  return renderTemplate(fn.humanTemplate, { args, decimals, contractName: contractName ?? undefined });
+  return renderTemplate(fn.humanTemplate, {
+    args,
+    decimals,
+    contractName: contractName ?? undefined,
+  });
 }

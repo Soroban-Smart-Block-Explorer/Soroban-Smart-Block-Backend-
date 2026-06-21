@@ -28,10 +28,7 @@ export async function computeHealthScore(contractAddress: string): Promise<void>
     prismaRead.contract.findUnique({ where: { address: contractAddress }, select: { name: true } }),
   ]);
 
-  const totalDowntime30d = pauses30d.reduce(
-    (sum, p) => sum + Number(p.durationSeconds ?? 0),
-    0,
-  );
+  const totalDowntime30d = pauses30d.reduce((sum, p) => sum + Number(p.durationSeconds ?? 0), 0);
   const avgPauseDuration30d = pauses30d.length
     ? Math.round(totalDowntime30d / pauses30d.length)
     : null;
@@ -59,9 +56,10 @@ export async function computeHealthScore(contractAddress: string): Promise<void>
   }
 
   // Transparency (10%): incidents with descriptions = transparent
-  const transparencyScore = incidents.length > 0
-    ? Math.round((incidents.filter((i) => i.description).length / incidents.length) * 100)
-    : 50;
+  const transparencyScore =
+    incidents.length > 0
+      ? Math.round((incidents.filter((i) => i.description).length / incidents.length) * 100)
+      : 50;
 
   const healthScore = Math.round(
     reliabilityScore * 0.4 + recovScore * 0.3 + decScore * 0.2 + transparencyScore * 0.1,

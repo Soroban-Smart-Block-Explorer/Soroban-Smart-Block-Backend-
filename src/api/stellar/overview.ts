@@ -1,6 +1,10 @@
 import { Router, Request, Response } from 'express';
 import { z } from 'zod';
-import { getEcosystemOverview, getOverviewHistory, getNetworkComparison } from '../../stellar/overview-service';
+import {
+  getEcosystemOverview,
+  getOverviewHistory,
+  getNetworkComparison,
+} from '../../stellar/overview-service';
 
 export const overviewRouter = Router();
 

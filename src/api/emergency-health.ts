@@ -24,7 +24,9 @@ healthRouter.get('/', async (_req: Request, res: Response) => {
 
     const byHealth = [...sorted].sort((a, b) => b.healthScore - a.healthScore);
     const byRecovery = [...sorted].sort((a, b) => b.recoveryScore - a.recoveryScore);
-    const byDecentralization = [...sorted].sort((a, b) => b.decentralizationScore - a.decentralizationScore);
+    const byDecentralization = [...sorted].sort(
+      (a, b) => b.decentralizationScore - a.decentralizationScore,
+    );
 
     res.json({
       protocols: sorted,
@@ -45,7 +47,8 @@ healthRouter.get('/:address', validateAddressParam, async (req: Request, res: Re
     const score = await prismaRead.protocolHealthScore.findUnique({
       where: { contractAddress: req.params.address },
     });
-    if (!score) return res.status(404).json({ error: 'No health score available for this contract.' });
+    if (!score)
+      return res.status(404).json({ error: 'No health score available for this contract.' });
     res.json(score);
   } catch (err) {
     res.status(500).json({ error: String(err) });

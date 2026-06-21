@@ -24,10 +24,10 @@ export interface StateExtensionAnalysis {
   transactionHash: string;
   ledgerSequence: number;
   ledgerCloseTime: Date;
-  
+
   // Raw parameters extracted from the function call
   params: StateExtensionParams;
-  
+
   // Derived metrics
   extensionRange: {
     min: bigint;
@@ -35,7 +35,7 @@ export interface StateExtensionAnalysis {
     spread: bigint;
     spreadPercent: number;
   };
-  
+
   // Clamping analysis against network parameters
   clampingAnalysis: {
     networkMaxExtension: bigint;
@@ -44,7 +44,7 @@ export interface StateExtensionAnalysis {
     isClamped: boolean;
     clampingTightness: 'loose' | 'moderate' | 'tight' | 'extreme';
   };
-  
+
   // Equity analysis
   equityMetrics: {
     rentTopUpAmount: bigint;
@@ -52,7 +52,7 @@ export interface StateExtensionAnalysis {
     fairnessScore: number; // 0-100, higher = more equitable
     complianceStatus: 'compliant' | 'warning' | 'violation';
   };
-  
+
   // Historical context
   historicalContext: {
     previousExtensionLedger?: number;
@@ -69,10 +69,10 @@ export interface StateExtensionMetrics {
   violationCount: number;
   equityScoreDistribution: {
     excellent: number; // 80-100
-    good: number;      // 60-79
-    fair: number;      // 40-59
-    poor: number;      // 20-39
-    critical: number;  // 0-19
+    good: number; // 60-79
+    fair: number; // 40-59
+    poor: number; // 20-39
+    critical: number; // 0-19
   };
 }
 
@@ -90,7 +90,7 @@ const PROTOCOL_26_PARAMS = {
  */
 export function extractStateExtensionParams(
   functionName: string,
-  rawArgs: xdr.ScVal[]
+  rawArgs: xdr.ScVal[],
 ): StateExtensionParams | null {
   if (!['extend_to', 'min_extension', 'max_extension'].includes(functionName)) {
     return null;
@@ -145,7 +145,7 @@ function analyzeExtensionRange(params: StateExtensionParams): {
  */
 function analyzeClampingBehavior(
   params: StateExtensionParams,
-  networkMax: bigint = PROTOCOL_26_PARAMS.MAX_EXTENSION_LEDGERS
+  networkMax: bigint = PROTOCOL_26_PARAMS.MAX_EXTENSION_LEDGERS,
 ): {
   networkMaxExtension: bigint;
   contractMaxExtension: bigint;
@@ -182,7 +182,7 @@ function analyzeClampingBehavior(
  */
 function calculateEquityMetrics(
   params: StateExtensionParams,
-  ledgerSequence: number
+  ledgerSequence: number,
 ): {
   rentTopUpAmount: bigint;
   topUpPerLedger: number;
@@ -196,9 +196,7 @@ function calculateEquityMetrics(
   const rentTopUpAmount = extend_to - BigInt(ledgerSequence);
 
   // Top-up per ledger (normalized)
-  const topUpPerLedger = rentTopUpAmount > 0
-    ? Number(rentTopUpAmount) / Number(max_ext)
-    : 0;
+  const topUpPerLedger = rentTopUpAmount > 0 ? Number(rentTopUpAmount) / Number(max_ext) : 0;
 
   // Fairness score: how close to the fair threshold
   const fairThreshold = PROTOCOL_26_PARAMS.FAIR_EXTENSION_THRESHOLD;
@@ -206,9 +204,9 @@ function calculateEquityMetrics(
 
   if (rentTopUpAmount >= fairThreshold) {
     fairnessScore = 100; // Excellent: extends well beyond fair threshold
-  } else if (rentTopUpAmount >= (fairThreshold / BigInt(2))) {
+  } else if (rentTopUpAmount >= fairThreshold / BigInt(2)) {
     fairnessScore = 75; // Good: extends to half the fair threshold
-  } else if (rentTopUpAmount >= (fairThreshold / BigInt(4))) {
+  } else if (rentTopUpAmount >= fairThreshold / BigInt(4)) {
     fairnessScore = 50; // Fair: extends to quarter threshold
   } else if (rentTopUpAmount > BigInt(0)) {
     fairnessScore = 25; // Poor: minimal extension
@@ -218,9 +216,9 @@ function calculateEquityMetrics(
 
   // Compliance status based on clamping and fairness
   let complianceStatus: 'compliant' | 'warning' | 'violation';
-  if (fairnessScore >= 75 && max_ext >= (fairThreshold / BigInt(2))) {
+  if (fairnessScore >= 75 && max_ext >= fairThreshold / BigInt(2)) {
     complianceStatus = 'compliant';
-  } else if (fairnessScore >= 50 || max_ext >= (fairThreshold / BigInt(4))) {
+  } else if (fairnessScore >= 50 || max_ext >= fairThreshold / BigInt(4)) {
     complianceStatus = 'warning';
   } else {
     complianceStatus = 'violation';
@@ -239,7 +237,7 @@ function calculateEquityMetrics(
  */
 async function analyzeHistoricalContext(
   contractAddress: string,
-  currentLedger: number
+  currentLedger: number,
 ): Promise<{
   previousExtensionLedger?: number;
   extensionFrequency: 'frequent' | 'moderate' | 'rare';
@@ -281,7 +279,8 @@ async function analyzeHistoricalContext(
       }
     }
 
-    const averageExtensionSize = validCount > 0 ? (totalExtension / BigInt(validCount)).toString() : undefined;
+    const averageExtensionSize =
+      validCount > 0 ? (totalExtension / BigInt(validCount)).toString() : undefined;
 
     // Determine frequency based on gap between extensions
     const ledgerGap = currentLedger - (previousExtensionLedger ?? currentLedger);
@@ -314,7 +313,7 @@ export async function analyzeStateExtension(
   functionName: string,
   rawArgs: xdr.ScVal[],
   ledgerSequence: number,
-  ledgerCloseTime: Date
+  ledgerCloseTime: Date,
 ): Promise<StateExtensionAnalysis | null> {
   const params = extractStateExtensionParams(functionName, rawArgs);
   if (!params) return null;
@@ -340,40 +339,40 @@ export async function analyzeStateExtension(
 /**
  * Store analysis results in the database.
  */
-export async function storeStateExtensionAnalysis(
-  analysis: StateExtensionAnalysis
-): Promise<void> {
+export async function storeStateExtensionAnalysis(analysis: StateExtensionAnalysis): Promise<void> {
   try {
     // Create or update a record in a new table (to be added to schema)
     // For now, we'll store in the Transaction's functionArgs as enriched metadata
     await prisma.transaction.update({
       where: { hash: analysis.transactionHash },
       data: {
-        functionArgs: JSON.parse(JSON.stringify({
-          ...analysis.params,
-          _analysis: {
-            extensionRange: {
-              min: analysis.extensionRange.min.toString(),
-              max: analysis.extensionRange.max.toString(),
-              spread: analysis.extensionRange.spread.toString(),
-              spreadPercent: analysis.extensionRange.spreadPercent,
+        functionArgs: JSON.parse(
+          JSON.stringify({
+            ...analysis.params,
+            _analysis: {
+              extensionRange: {
+                min: analysis.extensionRange.min.toString(),
+                max: analysis.extensionRange.max.toString(),
+                spread: analysis.extensionRange.spread.toString(),
+                spreadPercent: analysis.extensionRange.spreadPercent,
+              },
+              clampingAnalysis: {
+                networkMaxExtension: analysis.clampingAnalysis.networkMaxExtension.toString(),
+                contractMaxExtension: analysis.clampingAnalysis.contractMaxExtension.toString(),
+                clampingRatio: analysis.clampingAnalysis.clampingRatio,
+                isClamped: analysis.clampingAnalysis.isClamped,
+                clampingTightness: analysis.clampingAnalysis.clampingTightness,
+              },
+              equityMetrics: {
+                rentTopUpAmount: analysis.equityMetrics.rentTopUpAmount.toString(),
+                topUpPerLedger: analysis.equityMetrics.topUpPerLedger,
+                fairnessScore: analysis.equityMetrics.fairnessScore,
+                complianceStatus: analysis.equityMetrics.complianceStatus,
+              },
+              historicalContext: analysis.historicalContext,
             },
-            clampingAnalysis: {
-              networkMaxExtension: analysis.clampingAnalysis.networkMaxExtension.toString(),
-              contractMaxExtension: analysis.clampingAnalysis.contractMaxExtension.toString(),
-              clampingRatio: analysis.clampingAnalysis.clampingRatio,
-              isClamped: analysis.clampingAnalysis.isClamped,
-              clampingTightness: analysis.clampingAnalysis.clampingTightness,
-            },
-            equityMetrics: {
-              rentTopUpAmount: analysis.equityMetrics.rentTopUpAmount.toString(),
-              topUpPerLedger: analysis.equityMetrics.topUpPerLedger,
-              fairnessScore: analysis.equityMetrics.fairnessScore,
-              complianceStatus: analysis.equityMetrics.complianceStatus,
-            },
-            historicalContext: analysis.historicalContext,
-          },
-        })),
+          }),
+        ),
       },
     });
   } catch (error) {
@@ -386,7 +385,7 @@ export async function storeStateExtensionAnalysis(
  */
 export async function generateStateExtensionMetrics(
   ledgerRangeStart: number,
-  ledgerRangeEnd: number
+  ledgerRangeEnd: number,
 ): Promise<StateExtensionMetrics> {
   try {
     const extensions = await prisma.transaction.findMany({
@@ -484,7 +483,7 @@ export async function generateStateExtensionMetrics(
  * Identify contracts with concerning extension patterns.
  */
 export async function identifyProblematicContracts(
-  threshold: 'tight' | 'extreme' = 'extreme'
+  threshold: 'tight' | 'extreme' = 'extreme',
 ): Promise<
   Array<{
     contractAddress: string;

@@ -10,7 +10,7 @@ export async function collectWasmUpgrades(
   newWasmHash: string,
   ledgerSequence: number,
   ledgerCloseTime: Date,
-  transactionHash?: string
+  transactionHash?: string,
 ): Promise<void> {
   const contract = await prisma.contract.findUnique({
     where: { address: contractAddress },

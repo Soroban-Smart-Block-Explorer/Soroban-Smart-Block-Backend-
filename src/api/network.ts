@@ -210,16 +210,15 @@ router.get('/consensus', async (req: Request, res: Response) => {
 
     const stats = {
       totalRounds: rounds.length,
-      successfulRounds: rounds.filter(r => r.successful).length,
-      successRate: rounds.length > 0 
-        ? (rounds.filter(r => r.successful).length / rounds.length) * 100 
-        : 0,
-      avgDurationMs: rounds.length > 0
-        ? rounds.reduce((sum, r) => sum + r.durationMs, 0) / rounds.length
-        : 0,
-      avgAgreementRate: rounds.length > 0
-        ? rounds.reduce((sum, r) => sum + (r.agreementRate || 0), 0) / rounds.length
-        : 0,
+      successfulRounds: rounds.filter((r) => r.successful).length,
+      successRate:
+        rounds.length > 0 ? (rounds.filter((r) => r.successful).length / rounds.length) * 100 : 0,
+      avgDurationMs:
+        rounds.length > 0 ? rounds.reduce((sum, r) => sum + r.durationMs, 0) / rounds.length : 0,
+      avgAgreementRate:
+        rounds.length > 0
+          ? rounds.reduce((sum, r) => sum + (r.agreementRate || 0), 0) / rounds.length
+          : 0,
     };
 
     res.json({ stats, rounds: rounds.slice(0, 100) });
@@ -262,8 +261,8 @@ router.get('/versions', async (req: Request, res: Response) => {
     });
 
     const versionMap = new Map<string, { validators: number; full_nodes: number }>();
-    
-    nodes.forEach(node => {
+
+    nodes.forEach((node) => {
       const ver = node.stellarCoreVersion || 'unknown';
       if (!versionMap.has(ver)) {
         versionMap.set(ver, { validators: 0, full_nodes: 0 });
@@ -295,8 +294,8 @@ router.get('/geography', async (req: Request, res: Response) => {
     });
 
     const geoMap = new Map<string, { count: number; validators: number; avgLatency: number }>();
-    
-    nodes.forEach(node => {
+
+    nodes.forEach((node) => {
       const key = node.country || 'unknown';
       if (!geoMap.has(key)) {
         geoMap.set(key, { count: 0, validators: 0, avgLatency: 0 });
@@ -347,9 +346,10 @@ router.get('/health', async (req: Request, res: Response) => {
       take: 60,
     });
 
-    const consensusHealth = recentRounds.length > 0
-      ? (recentRounds.filter(r => r.successful).length / recentRounds.length) * 100
-      : 0;
+    const consensusHealth =
+      recentRounds.length > 0
+        ? (recentRounds.filter((r) => r.successful).length / recentRounds.length) * 100
+        : 0;
 
     res.json({
       activeNodes,
@@ -445,7 +445,7 @@ router.get('/topology/quorum-slices/:publicKey', async (req: Request, res: Respo
 router.get('/topology/intersection', async (req: Request, res: Response) => {
   try {
     const { publicKeys } = req.query;
-    
+
     if (!publicKeys || !Array.isArray(publicKeys)) {
       return res.status(400).json({ error: 'publicKeys array required' });
     }
@@ -462,7 +462,7 @@ router.get('/topology/intersection', async (req: Request, res: Response) => {
 router.get('/topology/partitions', async (req: Request, res: Response) => {
   try {
     const partitions = await detectNetworkPartitions();
-    res.json({ 
+    res.json({
       partitionCount: partitions.length,
       isPartitioned: partitions.length > 1,
       partitions,
@@ -495,7 +495,7 @@ router.get('/topology/centrality', async (req: Request, res: Response) => {
 router.get('/versions/outdated', async (req: Request, res: Response) => {
   try {
     const drift = await detectVersionDrift();
-    
+
     if (!drift.driftDetected || drift.outdatedNodes.length === 0) {
       return res.json({ outdatedNodes: [], driftDetected: false });
     }
@@ -538,12 +538,15 @@ router.get('/versions/history', async (req: Request, res: Response) => {
       take: 1000,
     });
 
-    const timeline = events.reduce((acc, evt) => {
-      const date = evt.timestamp.toISOString().split('T')[0];
-      if (!acc[date]) acc[date] = 0;
-      acc[date]++;
-      return acc;
-    }, {} as Record<string, number>);
+    const timeline = events.reduce(
+      (acc, evt) => {
+        const date = evt.timestamp.toISOString().split('T')[0];
+        if (!acc[date]) acc[date] = 0;
+        acc[date]++;
+        return acc;
+      },
+      {} as Record<string, number>,
+    );
 
     res.json({ timeline, totalChanges: events.length });
   } catch (err) {

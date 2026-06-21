@@ -59,13 +59,15 @@ alertConfigRouter.get('/', async (req: Request, res: Response) => {
 // PATCH /emergency/alerts/:id
 alertConfigRouter.patch('/:id', async (req: Request, res: Response) => {
   try {
-    const patch = z.object({
-      name: z.string().optional(),
-      isActive: z.boolean().optional(),
-      conditions: z.record(z.unknown()).optional(),
-      channels: z.array(channelSchema).optional(),
-      cooldownMinutes: z.coerce.number().int().optional(),
-    }).parse(req.body);
+    const patch = z
+      .object({
+        name: z.string().optional(),
+        isActive: z.boolean().optional(),
+        conditions: z.record(z.unknown()).optional(),
+        channels: z.array(channelSchema).optional(),
+        cooldownMinutes: z.coerce.number().int().optional(),
+      })
+      .parse(req.body);
 
     const updated = await prismaWrite.alertConfiguration.update({
       where: { id: req.params.id },
@@ -128,16 +130,17 @@ alertConfigRouter.post('/:id/test', async (req: Request, res: Response) => {
 });
 
 /** Fire alerts for a pause event — called by the emergency indexer */
-export async function fireAlertsForPause(contractAddress: string, severity: string, reason?: string | null): Promise<void> {
+export async function fireAlertsForPause(
+  contractAddress: string,
+  severity: string,
+  reason?: string | null,
+): Promise<void> {
   const now = new Date();
   const alerts = await prismaRead.alertConfiguration.findMany({
     where: {
       isActive: true,
       alertType: 'pause_detected',
-      OR: [
-        { contractAddress },
-        { contractAddress: null },
-      ],
+      OR: [{ contractAddress }, { contractAddress: null }],
     },
   });
 
@@ -184,7 +187,16 @@ async function deliverAlert(
       await postJson(webhookUrl, {
         text: payload.message,
         username: 'Emergency Monitor',
-        attachments: [{ color: 'danger', fields: Object.entries(payload).map(([k, v]) => ({ title: k, value: String(v), short: true })) }],
+        attachments: [
+          {
+            color: 'danger',
+            fields: Object.entries(payload).map(([k, v]) => ({
+              title: k,
+              value: String(v),
+              short: true,
+            })),
+          },
+        ],
       });
       break;
     }
@@ -208,10 +220,18 @@ function postJson(url: string, body: unknown): Promise<void> {
     const data = JSON.stringify(body);
     const mod = url.startsWith('https') ? https : http;
     const parsed = new URL(url);
-    const req = mod.request({ hostname: parsed.hostname, path: parsed.pathname + parsed.search, method: 'POST', headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(data) } }, (res) => {
-      res.resume();
-      res.on('end', resolve);
-    });
+    const req = mod.request(
+      {
+        hostname: parsed.hostname,
+        path: parsed.pathname + parsed.search,
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(data) },
+      },
+      (res) => {
+        res.resume();
+        res.on('end', resolve);
+      },
+    );
     req.on('error', reject);
     req.write(data);
     req.end();

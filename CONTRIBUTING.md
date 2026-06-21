@@ -70,6 +70,15 @@ prisma/
 - Keep functions small and focused.
 - Add a comment if the logic isn't obvious.
 
+## Freeze Management System Architecture
+
+The Soroban Smart Block Explorer includes a robust CAP-0077 Consensus Asset-Freeze transaction interceptor and management system:
+- **`FrozenLedgerKey` Model**: Maintains a registry of currently frozen ledger keys.
+- **`FreezeViolation` Model**: Records transactions that touched frozen keys, along with a severity level (`low`, `medium`, `high`, `critical`).
+- **`AuditLog` Model**: Stores an immutable event log for all freeze-related state changes (freezing, thawing, resolving violations).
+- **Scanner (`src/indexer/freeze-scanner.ts`)**: In real-time, extracts the read/write footprint of transactions and checks against the in-memory cache of frozen keys. Critical violations trigger webhooks.
+- **API (`src/api/freeze.ts`)**: Provides complete CRUD and aggregation operations for keys, violations, and audit logs.
+
 ## Questions?
 
 Open a GitHub Discussion or ask in the [Stellar Discord](https://discord.gg/stellardev).

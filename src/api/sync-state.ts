@@ -23,8 +23,7 @@ export async function getSyncState(): Promise<{
   ]);
 
   const dbLedger = agg._max.sequence ?? 0;
-  const syncPercent =
-    networkLedger > 0 ? Math.min(100, (dbLedger / networkLedger) * 100) : 100;
+  const syncPercent = networkLedger > 0 ? Math.min(100, (dbLedger / networkLedger) * 100) : 100;
 
   return {
     dbLedger,

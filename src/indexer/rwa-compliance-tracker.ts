@@ -12,7 +12,7 @@ export async function trackRwaClawback(
   issuerAddress: string,
   targetAddress: string,
   amount: string,
-  complianceReason: string
+  complianceReason: string,
 ): Promise<void> {
   const humanStatement = `Issuer recovered ${amount} tokens from address ${targetAddress} based on ${complianceReason}`;
 

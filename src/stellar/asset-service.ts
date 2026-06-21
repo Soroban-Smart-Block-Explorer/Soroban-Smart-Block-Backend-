@@ -26,12 +26,19 @@ export interface AssetListResponse {
   totalVolume24h: string;
 }
 
-async function fetchAssetPrice(code: string, issuer: string): Promise<{ xlm: number; usd: number } | null> {
+async function fetchAssetPrice(
+  code: string,
+  issuer: string,
+): Promise<{ xlm: number; usd: number } | null> {
   try {
-    const { data } = await axios.get<{ _embedded: { records: Array<{ asset: string; traded_amount: number; payments_amount: number }> } }>(
-      'https://api.stellar.expert/explorer/public/asset',
-      { params: { search: `${code}-${issuer}`, limit: 1 }, timeout: 5000 },
-    );
+    const { data } = await axios.get<{
+      _embedded: {
+        records: Array<{ asset: string; traded_amount: number; payments_amount: number }>;
+      };
+    }>('https://api.stellar.expert/explorer/public/asset', {
+      params: { search: `${code}-${issuer}`, limit: 1 },
+      timeout: 5000,
+    });
     const record = data?._embedded?.records?.[0];
     if (!record) return null;
     return { xlm: record.traded_amount / Math.max(record.payments_amount, 1), usd: 0 };
@@ -42,7 +49,13 @@ async function fetchAssetPrice(code: string, issuer: string): Promise<{ xlm: num
 
 function horizonAssetToSummary(
   record: Awaited<ReturnType<typeof fetchHorizonAssets>>['records'][0],
-  dbAsset?: { isBridgedToSoroban: boolean; sorobanContract: string | null; volume24h: unknown; trades24h: number; anchorName: string | null },
+  dbAsset?: {
+    isBridgedToSoroban: boolean;
+    sorobanContract: string | null;
+    volume24h: unknown;
+    trades24h: number;
+    anchorName: string | null;
+  },
   price?: { xlm: number } | null,
   sacContract?: string | null,
 ): AssetSummary {
@@ -87,7 +100,9 @@ export async function listAssets(filters?: {
   ]);
 
   const dbMap = new Map(dbAssets.map((a) => [`${a.assetCode}:${a.assetIssuer}`, a]));
-  const sacMap = new Map(sacMappings.map((s) => [`${s.assetCode}:${s.assetIssuer ?? ''}`, s.sacAddress]));
+  const sacMap = new Map(
+    sacMappings.map((s) => [`${s.assetCode}:${s.assetIssuer ?? ''}`, s.sacAddress]),
+  );
 
   const assets: AssetSummary[] = [];
   for (const record of horizonResult.records) {
@@ -122,15 +137,24 @@ export async function listAssets(filters?: {
 export async function getAssetDetail(code: string, issuer: string) {
   const [horizonAsset, dbAsset, sacMapping, bridge] = await Promise.all([
     fetchHorizonAsset(code, issuer),
-    prisma.stellarAsset.findUnique({ where: { assetCode_assetIssuer: { assetCode: code, assetIssuer: issuer } } }),
+    prisma.stellarAsset.findUnique({
+      where: { assetCode_assetIssuer: { assetCode: code, assetIssuer: issuer } },
+    }),
     prisma.sacMapping.findFirst({ where: { assetCode: code, assetIssuer: issuer } }),
-    prisma.bridgedAsset.findFirst({ where: { classicAssetCode: code, classicAssetIssuer: issuer } }),
+    prisma.bridgedAsset.findFirst({
+      where: { classicAssetCode: code, classicAssetIssuer: issuer },
+    }),
   ]);
 
   if (!horizonAsset) return null;
 
   const price = await fetchAssetPrice(code, issuer);
-  const summary = horizonAssetToSummary(horizonAsset, dbAsset ?? undefined, price, sacMapping?.sacAddress ?? null);
+  const summary = horizonAssetToSummary(
+    horizonAsset,
+    dbAsset ?? undefined,
+    price,
+    sacMapping?.sacAddress ?? null,
+  );
 
   const orderbook = await fetchHorizonOrderbook(code, issuer, 'XLM');
 
@@ -142,7 +166,9 @@ export async function getAssetDetail(code: string, issuer: string) {
           asks: orderbook.asks.slice(0, 10),
           spread:
             orderbook.asks.length > 0 && orderbook.bids.length > 0
-              ? (parseFloat(orderbook.asks[0].price) - parseFloat(orderbook.bids[0].price)).toFixed(7)
+              ? (parseFloat(orderbook.asks[0].price) - parseFloat(orderbook.bids[0].price)).toFixed(
+                  7,
+                )
               : null,
         }
       : null,

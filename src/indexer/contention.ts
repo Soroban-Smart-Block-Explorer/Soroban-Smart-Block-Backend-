@@ -54,7 +54,7 @@ function extractWriteKeys(rawXdr: string, contractAddress: string | null): strin
  */
 export async function detectContention(
   ledgerSequence: number,
-  txs: Array<{ hash: string; contractAddress: string | null; rawXdr: string }>
+  txs: Array<{ hash: string; contractAddress: string | null; rawXdr: string }>,
 ): Promise<void> {
   // Build footprint map: key → list of tx hashes that write to it
   const keyToTxs = new Map<string, { hashes: string[]; contract: string }>();

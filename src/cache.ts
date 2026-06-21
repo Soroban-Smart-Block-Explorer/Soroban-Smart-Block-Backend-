@@ -102,7 +102,11 @@ export async function cacheGet<T>(key: string): Promise<T | null> {
   }
 }
 
-export async function cacheSet<T>(key: string, value: T, ttlSeconds?: number | null): Promise<void> {
+export async function cacheSet<T>(
+  key: string,
+  value: T,
+  ttlSeconds?: number | null,
+): Promise<void> {
   const normalizedKey = key;
   const payload = JSON.stringify(value);
   memoryStore.set(normalizedKey, {

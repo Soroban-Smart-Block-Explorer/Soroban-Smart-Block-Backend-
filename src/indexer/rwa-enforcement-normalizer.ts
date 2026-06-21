@@ -46,8 +46,7 @@ const RWA_EVENTS: Record<RwaEnforcementSymbol, RwaEventDef> = {
       { name: 'from', type: 'address' },
     ],
     dataType: 'string',
-    humanTemplate:
-      'Issuer {issuer} froze {asset} holdings of address {from} — reason: {reason}',
+    humanTemplate: 'Issuer {issuer} froze {asset} holdings of address {from} — reason: {reason}',
   },
   seize: {
     topicParams: [
@@ -112,9 +111,10 @@ export function parseRwaEnforcementEvent(
   let symbol: string;
   try {
     const symVal = xdr.ScVal.fromXDR(topics[0], 'base64');
-    symbol = symVal.switch().name === 'scvSymbol'
-      ? symVal.sym().toString()
-      : String(scValToNative(symVal));
+    symbol =
+      symVal.switch().name === 'scvSymbol'
+        ? symVal.sym().toString()
+        : String(scValToNative(symVal));
   } catch {
     return null;
   }
@@ -132,7 +132,7 @@ export function parseRwaEnforcementEvent(
   };
 
   const issuer = decodeAddress(topics[1]);
-  const from   = decodeAddress(topics[2]);
+  const from = decodeAddress(topics[2]);
 
   // Decode data
   let amount: string | undefined;
@@ -156,8 +156,12 @@ export function parseRwaEnforcementEvent(
   }
 
   const humanReadable = renderTemplate(def.humanTemplate, {
-    issuer, from, amount: amount ?? '', asset: assetSymbol,
-    reason: reason ?? '', action: reason ?? '',
+    issuer,
+    from,
+    amount: amount ?? '',
+    asset: assetSymbol,
+    reason: reason ?? '',
+    action: reason ?? '',
   });
 
   return {
@@ -188,12 +192,7 @@ export async function processRwaEnforcementEvent(
     decimals?: number;
   },
 ): Promise<RwaEnforcementEvent | null> {
-  const parsed = parseRwaEnforcementEvent(
-    topics,
-    data,
-    context.assetSymbol,
-    context.decimals,
-  );
+  const parsed = parseRwaEnforcementEvent(topics, data, context.assetSymbol, context.decimals);
   if (!parsed) return null;
 
   await trackRwaClawback(

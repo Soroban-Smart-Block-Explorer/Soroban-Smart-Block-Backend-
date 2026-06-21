@@ -21,8 +21,8 @@ authorizationRouter.get('/', async (req: Request, res: Response) => {
       active === 'true' || active === '1'
         ? { expiryLedger: { gt: latestLedger } }
         : active === 'false' || active === '0'
-        ? { expiryLedger: { lte: latestLedger } }
-        : {};
+          ? { expiryLedger: { lte: latestLedger } }
+          : {};
 
     const where = {
       ...(contract ? { contractAddress: contract } : {}),

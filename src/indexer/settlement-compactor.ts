@@ -15,10 +15,10 @@
 
 import { prismaWrite as prisma } from '../db';
 
-const WINDOW_SIZE   = Number(process.env.COMPACTOR_WINDOW_SIZE   ?? 100);  // ledgers per window
-const MIN_EVENTS    = Number(process.env.COMPACTOR_MIN_EVENTS     ?? 10);   // min events to compact
-const INTERVAL_MS   = Number(process.env.COMPACTOR_INTERVAL_MS    ?? 60_000);
-const BATCH_LIMIT   = Number(process.env.COMPACTOR_BATCH_LIMIT    ?? 5_000); // max events per run
+const WINDOW_SIZE = Number(process.env.COMPACTOR_WINDOW_SIZE ?? 100); // ledgers per window
+const MIN_EVENTS = Number(process.env.COMPACTOR_MIN_EVENTS ?? 10); // min events to compact
+const INTERVAL_MS = Number(process.env.COMPACTOR_INTERVAL_MS ?? 60_000);
+const BATCH_LIMIT = Number(process.env.COMPACTOR_BATCH_LIMIT ?? 5_000); // max events per run
 
 let timer: ReturnType<typeof setInterval> | null = null;
 
@@ -83,7 +83,11 @@ export async function runCompactor(): Promise<void> {
       // Accept common field names used by settlement events
       const amt = d['amount'] ?? d['settlement_amount'] ?? d['value'];
       if (typeof amt === 'string' || typeof amt === 'number') {
-        try { totalAmount += BigInt(String(amt).replace(/[^0-9]/g, '') || '0'); } catch { /* skip */ }
+        try {
+          totalAmount += BigInt(String(amt).replace(/[^0-9]/g, '') || '0');
+        } catch {
+          /* skip */
+        }
       }
       for (const field of ['from', 'to', 'seller', 'buyer', 'sender', 'receiver']) {
         if (typeof d[field] === 'string') uniqueParties.add(d[field] as string);
@@ -91,19 +95,19 @@ export async function runCompactor(): Promise<void> {
     }
 
     const windowStart = batch[0].ledgerCloseTime;
-    const windowEnd   = batch[batch.length - 1].ledgerCloseTime;
+    const windowEnd = batch[batch.length - 1].ledgerCloseTime;
 
     await prisma.$transaction(async (tx) => {
       await tx.settlementBatchSummary.upsert({
         where: { contractAddress_windowKey: { contractAddress, windowKey } },
         update: {
-          eventCount:    batch.length,
-          totalAmount:   totalAmount.toString(),
+          eventCount: batch.length,
+          totalAmount: totalAmount.toString(),
           uniqueParties: uniqueParties.size,
           ledgerMin,
           ledgerMax,
           windowEnd,
-          updatedAt:     new Date(),
+          updatedAt: new Date(),
         },
         create: {
           contractAddress,
@@ -112,8 +116,8 @@ export async function runCompactor(): Promise<void> {
           ledgerMax,
           windowStart,
           windowEnd,
-          eventCount:    batch.length,
-          totalAmount:   totalAmount.toString(),
+          eventCount: batch.length,
+          totalAmount: totalAmount.toString(),
           uniqueParties: uniqueParties.size,
         },
       });
@@ -121,7 +125,7 @@ export async function runCompactor(): Promise<void> {
       // Mark events as compacted
       await tx.event.updateMany({
         where: { id: { in: batch.map((e) => e.id) } },
-        data:  { compacted: true },
+        data: { compacted: true },
       });
     });
 

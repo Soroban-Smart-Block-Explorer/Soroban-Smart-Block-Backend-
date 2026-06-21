@@ -172,7 +172,7 @@ export async function runRepairSweep(): Promise<{ hardGaps: number; softGaps: nu
 export async function startRepairLoop(): Promise<void> {
   console.log(
     `[repair] Starting background repair loop ` +
-    `(interval=${SWEEP_INTERVAL_MS}ms, chunk=${REPAIR_CHUNK}, network=${config.stellarNetwork})`
+      `(interval=${SWEEP_INTERVAL_MS}ms, chunk=${REPAIR_CHUNK}, network=${config.stellarNetwork})`,
   );
 
   // eslint-disable-next-line no-constant-condition

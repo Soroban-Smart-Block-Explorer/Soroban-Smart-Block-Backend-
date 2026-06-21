@@ -6,7 +6,7 @@ import { SorobanRpc } from '@stellar/stellar-sdk';
 export type StorageType = 'INSTANCE' | 'PERSISTENT' | 'TEMPORARY';
 
 export interface StorageEntry {
-  key: string;          // hex-encoded ledger key
+  key: string; // hex-encoded ledger key
   storageType: StorageType;
   isReadOnly: boolean;
 }
@@ -62,16 +62,23 @@ function classifyLedgerKey(key: xdr.LedgerKey): StorageType {
 export function classifyStorageEntries(
   source: SorobanRpc.Api.SimulateTransactionSuccessResponse | SorobanDataBuilder,
 ): StorageClassification {
-  const builder = source instanceof SorobanDataBuilder
-    ? source
-    : (source.transactionData as SorobanDataBuilder);
+  const builder =
+    source instanceof SorobanDataBuilder ? source : (source.transactionData as SorobanDataBuilder);
 
   const readOnlyKeys: xdr.LedgerKey[] = builder.getReadOnly();
   const readWriteKeys: xdr.LedgerKey[] = builder.getReadWrite();
 
   const entries: StorageEntry[] = [
-    ...readOnlyKeys.map((k) => ({ key: ledgerKeyToHex(k), storageType: classifyLedgerKey(k), isReadOnly: true })),
-    ...readWriteKeys.map((k) => ({ key: ledgerKeyToHex(k), storageType: classifyLedgerKey(k), isReadOnly: false })),
+    ...readOnlyKeys.map((k) => ({
+      key: ledgerKeyToHex(k),
+      storageType: classifyLedgerKey(k),
+      isReadOnly: true,
+    })),
+    ...readWriteKeys.map((k) => ({
+      key: ledgerKeyToHex(k),
+      storageType: classifyLedgerKey(k),
+      isReadOnly: false,
+    })),
   ];
 
   const instance = entries.filter((e) => e.storageType === 'INSTANCE');

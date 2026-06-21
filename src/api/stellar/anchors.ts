@@ -10,6 +10,7 @@ import {
   getAnchorTransactionAnalytics,
 } from '../../stellar/anchor-service';
 import { requireWalletAuth, requireAdminAuth } from './middleware';
+import { asyncHandler } from '../../middleware/asyncHandler';
 
 export const anchorsRouter = Router();
 
@@ -124,17 +125,25 @@ anchorsRouter.get('/:address/sep24/info', async (req: Request, res: Response) =>
 });
 
 // POST /api/v1/stellar/anchors/:address/sep24/deposit
-anchorsRouter.post('/:address/sep24/deposit', requireWalletAuth, async (req: Request, res: Response) => {
-  res.status(501).json({
-    error: 'SEP-24 deposit flow requires interactive anchor integration',
-    info: 'Use the anchor transfer server directly for KYC and deposit initiation',
-  });
-});
+anchorsRouter.post(
+  '/:address/sep24/deposit',
+  requireWalletAuth,
+  asyncHandler(async (req: Request, res: Response) => {
+    res.status(501).json({
+      error: 'SEP-24 deposit flow requires interactive anchor integration',
+      info: 'Use the anchor transfer server directly for KYC and deposit initiation',
+    });
+  }),
+);
 
 // POST /api/v1/stellar/anchors/:address/sep24/withdraw
-anchorsRouter.post('/:address/sep24/withdraw', requireWalletAuth, async (req: Request, res: Response) => {
-  res.status(501).json({
-    error: 'SEP-24 withdrawal flow requires interactive anchor integration',
-    info: 'Use the anchor transfer server directly for KYC and withdrawal initiation',
-  });
-});
+anchorsRouter.post(
+  '/:address/sep24/withdraw',
+  requireWalletAuth,
+  asyncHandler(async (req: Request, res: Response) => {
+    res.status(501).json({
+      error: 'SEP-24 withdrawal flow requires interactive anchor integration',
+      info: 'Use the anchor transfer server directly for KYC and withdrawal initiation',
+    });
+  }),
+);

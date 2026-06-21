@@ -11,6 +11,7 @@ import { Router, Request, Response } from 'express';
 import { prismaRead as prisma } from '../db';
 import { enqueueExport } from '../indexer/csv-exporter';
 import { z } from 'zod';
+import { asyncHandler } from '../middleware/asyncHandler';
 
 export const exportsRouter = Router();
 
@@ -33,40 +34,56 @@ exportsRouter.post('/', async (req: Request, res: Response) => {
 });
 
 // GET /exports — list
-exportsRouter.get('/', async (_req: Request, res: Response) => {
-  const jobs = await prisma.exportJob.findMany({
-    orderBy: { createdAt: 'desc' },
-    take: 50,
-    select: { id: true, status: true, exportType: true, rowCount: true, createdAt: true, updatedAt: true },
-  });
-  res.json(jobs);
-});
+exportsRouter.get(
+  '/',
+  asyncHandler(async (_req: Request, res: Response) => {
+    const jobs = await prisma.exportJob.findMany({
+      orderBy: { createdAt: 'desc' },
+      take: 50,
+      select: {
+        id: true,
+        status: true,
+        exportType: true,
+        rowCount: true,
+        createdAt: true,
+        updatedAt: true,
+      },
+    });
+    res.json(jobs);
+  }),
+);
 
 // GET /exports/:id — status
-exportsRouter.get('/:id', async (req: Request, res: Response) => {
-  const job = await prisma.exportJob.findUnique({ where: { id: req.params.id } });
-  if (!job) return res.status(404).json({ error: 'Job not found' });
-  res.json(job);
-});
+exportsRouter.get(
+  '/:id',
+  asyncHandler(async (req: Request, res: Response) => {
+    const job = await prisma.exportJob.findUnique({ where: { id: req.params.id } });
+    if (!job) return res.status(404).json({ error: 'Job not found' });
+    res.json(job);
+  }),
+);
 
 // GET /exports/:id/file — download
-exportsRouter.get('/:id/file', async (req: Request, res: Response) => {
-  const job = await prisma.exportJob.findUnique({ where: { id: req.params.id } });
-  if (!job) return res.status(404).json({ error: 'Job not found' });
-  if (job.status !== 'done' || !job.filePath) {
-    return res.status(409).json({ error: `Export not ready (status: ${job.status})` });
-  }
+exportsRouter.get(
+  '/:id/file',
+  asyncHandler(async (req: Request, res: Response) => {
+    const job = await prisma.exportJob.findUnique({ where: { id: req.params.id } });
+    if (!job) return res.status(404).json({ error: 'Job not found' });
+    if (job.status !== 'done' || !job.filePath) {
+      return res.status(409).json({ error: `Export not ready (status: ${job.status})` });
+    }
 
-  const absPath = path.isAbsolute(job.filePath)
-    ? job.filePath
-    : path.join(EXPORT_DIR, job.filePath);
+    const absPath = path.isAbsolute(job.filePath)
+      ? job.filePath
+      : path.join(EXPORT_DIR, job.filePath);
 
-  if (!fs.existsSync(absPath)) {
-    return res.status(410).json({ error: 'Export file no longer available' });
-  }
+    if (!fs.existsSync(absPath)) {
+      return res.status(410).json({ error: 'Export file no longer available' });
+    }
 
-  const fileName = `${job.exportType}-${job.id}.csv`;
-  res.setHeader('Content-Type', 'text/csv');
-  res.setHeader('Content-Disposition', `attachment; filename="${fileName}"`);
-  fs.createReadStream(absPath).pipe(res);
-});
+    const fileName = `${job.exportType}-${job.id}.csv`;
+    res.setHeader('Content-Type', 'text/csv');
+    res.setHeader('Content-Disposition', `attachment; filename="${fileName}"`);
+    fs.createReadStream(absPath).pipe(res);
+  }),
+);

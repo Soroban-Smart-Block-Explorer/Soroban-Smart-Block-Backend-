@@ -39,7 +39,7 @@ async function getHorizonLatestLedger(): Promise<number> {
  */
 async function findLedgerGaps(
   minLedger: number,
-  maxLedger: number
+  maxLedger: number,
 ): Promise<Array<[number, number]>> {
   if (maxLedger <= minLedger) return [];
 
@@ -75,7 +75,11 @@ async function sendAlert(message: string): Promise<void> {
 
   if (webhookUrl) {
     try {
-      await axios.post(webhookUrl, { text: `🚨 Soroban Indexer Alert\n${message}` }, { timeout: 5_000 });
+      await axios.post(
+        webhookUrl,
+        { text: `🚨 Soroban Indexer Alert\n${message}` },
+        { timeout: 5_000 },
+      );
       console.log('[reconciliation] Alert sent to webhook');
     } catch (err) {
       console.error('[reconciliation] Failed to send webhook alert:', err);
@@ -122,7 +126,7 @@ export async function runReconciliation(lookbackLedgers = 1000): Promise<Reconci
   if (ledgerGap > MAX_ACCEPTABLE_GAP) {
     discrepancies.push(
       `Indexer is ${ledgerGap} ledgers behind Horizon ` +
-      `(local: ${localLatestLedger}, horizon: ${horizonLatestLedger})`
+        `(local: ${localLatestLedger}, horizon: ${horizonLatestLedger})`,
     );
   }
 
@@ -134,7 +138,7 @@ export async function runReconciliation(lookbackLedgers = 1000): Promise<Reconci
     const totalMissing = missingLedgerRanges.reduce((sum, [s, e]) => sum + (e - s + 1), 0);
     discrepancies.push(
       `Found ${missingLedgerRanges.length} gap(s) covering ${totalMissing} missing ledgers ` +
-      `in range ${lookbackStart}–${localLatestLedger}`
+        `in range ${lookbackStart}–${localLatestLedger}`,
     );
   }
 

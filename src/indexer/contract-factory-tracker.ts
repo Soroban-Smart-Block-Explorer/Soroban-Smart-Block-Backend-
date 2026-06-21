@@ -9,7 +9,7 @@ export async function trackContractDeployment(
   childContractAddress: string,
   creationTransactionHash: string,
   creationLedgerSequence: number,
-  creationTimestamp: Date
+  creationTimestamp: Date,
 ): Promise<void> {
   await prisma.contractFactory.upsert({
     where: {
@@ -60,7 +60,7 @@ export async function getFactoryTree(parentContractAddress: string) {
         select: { address: true, name: true, isToken: true },
       });
       return { ...child, contractMetadata: contract };
-    })
+    }),
   );
 
   return {

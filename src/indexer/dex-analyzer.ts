@@ -30,8 +30,8 @@ export interface FlashLoanResult {
   ledgerCloseTime: Date;
   token: string;
   grossAmount: bigint;
-  netSlippage: bigint;       // grossIn - grossOut (positive = cost, negative = profit)
-  slippageBps: number;       // basis points
+  netSlippage: bigint; // grossIn - grossOut (positive = cost, negative = profit)
+  slippageBps: number; // basis points
   contractsInvolved: string[];
 }
 
@@ -39,19 +39,25 @@ export interface ArbitrageResult {
   transactionHash: string;
   ledgerSequence: number;
   ledgerCloseTime: Date;
-  path: string[];            // token symbols/addresses along the cycle
-  contracts: string[];       // DEX contracts touched
+  path: string[]; // token symbols/addresses along the cycle
+  contracts: string[]; // DEX contracts touched
   amountIn: bigint;
   amountOut: bigint;
-  yieldCaptured: bigint;     // amountOut - amountIn
-  yieldBps: number;          // basis points profit
+  yieldCaptured: bigint; // amountOut - amountIn
+  yieldBps: number; // basis points profit
 }
 
 export interface MultiHopRoute {
   transactionHash: string;
   ledgerSequence: number;
   ledgerCloseTime: Date;
-  hops: Array<{ contract: string; tokenIn: string; tokenOut: string; amountIn: bigint; amountOut: bigint }>;
+  hops: Array<{
+    contract: string;
+    tokenIn: string;
+    tokenOut: string;
+    amountIn: bigint;
+    amountOut: bigint;
+  }>;
   tokenIn: string;
   tokenOut: string;
   totalAmountIn: bigint;
@@ -62,20 +68,24 @@ export interface MultiHopRoute {
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 /** Extract token flows from decoded event data. */
-function extractFlows(events: Array<{ contractAddress: string; eventType: string; decoded: unknown }>): TokenFlow[] {
+function extractFlows(
+  events: Array<{ contractAddress: string; eventType: string; decoded: unknown }>,
+): TokenFlow[] {
   const flows: TokenFlow[] = [];
   for (const ev of events) {
     const d = ev.decoded as Record<string, unknown> | null;
     if (!d) continue;
 
     if (ev.eventType === 'transfer' || ev.eventType === 'swap') {
-      const from   = String(d.from   ?? d.sender ?? '');
-      const to     = String(d.to     ?? d.recipient ?? '');
-      const token  = String(d.token  ?? d.asset ?? ev.contractAddress);
+      const from = String(d.from ?? d.sender ?? '');
+      const to = String(d.to ?? d.recipient ?? '');
+      const token = String(d.token ?? d.asset ?? ev.contractAddress);
       const rawAmt = d.amount ?? d.amount_in ?? d.amountIn ?? '0';
       try {
         flows.push({ token, from, to, amount: BigInt(String(rawAmt)) });
-      } catch { /* non-numeric amount — skip */ }
+      } catch {
+        /* non-numeric amount — skip */
+      }
     }
   }
   return flows;
@@ -104,12 +114,12 @@ export function detectFlashLoans(
   if (flows.length < 2) return [];
 
   // Aggregate gross inflows and outflows per token
-  const inflow  = new Map<string, bigint>();
+  const inflow = new Map<string, bigint>();
   const outflow = new Map<string, bigint>();
   const contracts = new Set<string>();
 
   for (const f of flows) {
-    inflow.set(f.token,  (inflow.get(f.token)  ?? 0n) + f.amount);
+    inflow.set(f.token, (inflow.get(f.token) ?? 0n) + f.amount);
     outflow.set(f.token, (outflow.get(f.token) ?? 0n) + f.amount);
     contracts.add(f.from);
     contracts.add(f.to);
@@ -122,7 +132,7 @@ export function detectFlashLoans(
     const grossOut = outflow.get(token) ?? 0n;
     if (grossIn === 0n || grossOut === 0n) continue;
 
-    const larger  = grossIn > grossOut ? grossIn : grossOut;
+    const larger = grossIn > grossOut ? grossIn : grossOut;
     const smaller = grossIn > grossOut ? grossOut : grossIn;
     const diffBps = ((larger - smaller) * 10_000n) / larger;
 
@@ -172,13 +182,15 @@ export function detectArbitrage(
     if (!d) continue;
     try {
       edges.push({
-        contract:  ev.contractAddress,
-        tokenIn:   String(d.token_in  ?? d.tokenIn  ?? d.from_asset ?? ''),
-        tokenOut:  String(d.token_out ?? d.tokenOut ?? d.to_asset   ?? ''),
-        amountIn:  BigInt(String(d.amount_in  ?? d.amountIn  ?? '0')),
+        contract: ev.contractAddress,
+        tokenIn: String(d.token_in ?? d.tokenIn ?? d.from_asset ?? ''),
+        tokenOut: String(d.token_out ?? d.tokenOut ?? d.to_asset ?? ''),
+        amountIn: BigInt(String(d.amount_in ?? d.amountIn ?? '0')),
         amountOut: BigInt(String(d.amount_out ?? d.amountOut ?? '0')),
       });
-    } catch { /* skip */ }
+    } catch {
+      /* skip */
+    }
   }
 
   const results: ArbitrageResult[] = [];
@@ -193,7 +205,7 @@ export function detectArbitrage(
     const dfs = (current: SwapEdge) => {
       if (current.tokenOut === start.tokenIn && path.length >= 2) {
         // Cycle found
-        const amountIn  = start.amountIn;
+        const amountIn = start.amountIn;
         const amountOut = current.amountOut;
         if (amountOut > amountIn) {
           const yieldCaptured = amountOut - amountIn;
@@ -267,13 +279,15 @@ export function detectMultiHopRoutes(
     if (!d) continue;
     try {
       hops.push({
-        contract:  ev.contractAddress,
-        tokenIn:   String(d.token_in  ?? d.tokenIn  ?? d.from_asset ?? ''),
-        tokenOut:  String(d.token_out ?? d.tokenOut ?? d.to_asset   ?? ''),
-        amountIn:  BigInt(String(d.amount_in  ?? d.amountIn  ?? '0')),
+        contract: ev.contractAddress,
+        tokenIn: String(d.token_in ?? d.tokenIn ?? d.from_asset ?? ''),
+        tokenOut: String(d.token_out ?? d.tokenOut ?? d.to_asset ?? ''),
+        amountIn: BigInt(String(d.amount_in ?? d.amountIn ?? '0')),
         amountOut: BigInt(String(d.amount_out ?? d.amountOut ?? '0')),
       });
-    } catch { /* skip */ }
+    } catch {
+      /* skip */
+    }
   }
 
   const routes: MultiHopRoute[] = [];
@@ -299,7 +313,7 @@ export function detectMultiHopRoutes(
     }
 
     if (chain.length >= 2) {
-      const totalIn  = chain[0].amountIn;
+      const totalIn = chain[0].amountIn;
       const totalOut = chain[chain.length - 1].amountOut;
       const slippage = totalIn > 0n ? bps(totalIn - totalOut, totalIn) : 0;
 
@@ -308,9 +322,9 @@ export function detectMultiHopRoutes(
         ledgerSequence,
         ledgerCloseTime,
         hops: chain,
-        tokenIn:       chain[0].tokenIn,
-        tokenOut:      chain[chain.length - 1].tokenOut,
-        totalAmountIn:  totalIn,
+        tokenIn: chain[0].tokenIn,
+        tokenOut: chain[chain.length - 1].tokenOut,
+        totalAmountIn: totalIn,
         totalAmountOut: totalOut,
         netSlippageBps: slippage,
       });
@@ -333,9 +347,7 @@ export function detectMultiHopRoutes(
 
 /** Serialize bigint fields for JSON transport. */
 function serializeBigInts<T>(obj: T): T {
-  return JSON.parse(JSON.stringify(obj, (_k, v) =>
-    typeof v === 'bigint' ? v.toString() : v
-  ));
+  return JSON.parse(JSON.stringify(obj, (_k, v) => (typeof v === 'bigint' ? v.toString() : v)));
 }
 
 /** Analyze a single transaction by hash. */
@@ -356,8 +368,8 @@ export async function analyzeTransaction(txHash: string) {
     transactionHash: txHash,
     ledgerSequence: tx.ledgerSequence,
     ledgerCloseTime: tx.ledgerCloseTime,
-    flashLoans:    detectFlashLoans(txHash, tx.ledgerSequence, tx.ledgerCloseTime, events),
-    arbitrage:     detectArbitrage(txHash, tx.ledgerSequence, tx.ledgerCloseTime, events),
+    flashLoans: detectFlashLoans(txHash, tx.ledgerSequence, tx.ledgerCloseTime, events),
+    arbitrage: detectArbitrage(txHash, tx.ledgerSequence, tx.ledgerCloseTime, events),
     multiHopRoutes: detectMultiHopRoutes(txHash, tx.ledgerSequence, tx.ledgerCloseTime, events),
   });
 }
@@ -381,8 +393,8 @@ export async function analyzeRange(ledgerMin: number, ledgerMax: number, limit =
       transactionHash: tx.hash,
       ledgerSequence: tx.ledgerSequence,
       ledgerCloseTime: tx.ledgerCloseTime,
-      flashLoans:     detectFlashLoans(tx.hash, tx.ledgerSequence, tx.ledgerCloseTime, events),
-      arbitrage:      detectArbitrage(tx.hash, tx.ledgerSequence, tx.ledgerCloseTime, events),
+      flashLoans: detectFlashLoans(tx.hash, tx.ledgerSequence, tx.ledgerCloseTime, events),
+      arbitrage: detectArbitrage(tx.hash, tx.ledgerSequence, tx.ledgerCloseTime, events),
       multiHopRoutes: detectMultiHopRoutes(tx.hash, tx.ledgerSequence, tx.ledgerCloseTime, events),
     };
   });

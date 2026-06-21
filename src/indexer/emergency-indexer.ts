@@ -42,15 +42,20 @@ function computeDecentralizationScore(
   timelockDays?: number,
 ): number {
   switch (type) {
-    case 'single_admin': return 10;
+    case 'single_admin':
+      return 10;
     case 'multi_sig': {
       const ratio = threshold && total ? threshold / total : 0.5;
       return Math.round(21 + ratio * 39); // 21–60
     }
-    case 'timelock': return Math.min(100, 50 + (timelockDays ?? 0) * 10);
-    case 'dao': return 75;
-    case 'automatic': return 90;
-    default: return 0;
+    case 'timelock':
+      return Math.min(100, 50 + (timelockDays ?? 0) * 10);
+    case 'dao':
+      return 75;
+    case 'automatic':
+      return 90;
+    default:
+      return 0;
   }
 }
 
@@ -85,10 +90,10 @@ export async function analyzeContract(contractAddress: string): Promise<void> {
     const pauserType = fns.some((f) => f.includes('vote') || f.includes('proposal'))
       ? 'dao'
       : fns.some((f) => f.includes('timelock') || f.includes('delay'))
-      ? 'timelock'
-      : fns.some((f) => f.includes('multisig') || f.includes('multi_sig'))
-      ? 'multi_sig'
-      : 'single_admin';
+        ? 'timelock'
+        : fns.some((f) => f.includes('multisig') || f.includes('multi_sig'))
+          ? 'multi_sig'
+          : 'single_admin';
 
     const score = computeDecentralizationScore(pauserType);
 
@@ -230,9 +235,7 @@ export async function processEventForPause(event: {
       data: {
         isPaused: false,
         currentPauseId: null,
-        totalPausedSeconds: durationSeconds
-          ? { increment: durationSeconds }
-          : undefined,
+        totalPausedSeconds: durationSeconds ? { increment: durationSeconds } : undefined,
         lastPauseDurationSeconds: durationSeconds,
         updatedAt: new Date(),
       },
@@ -245,8 +248,8 @@ export async function processEventForPause(event: {
       ? Number(state.decentralizationScore) <= 20
         ? 'critical'
         : Number(state.decentralizationScore) <= 40
-        ? 'high'
-        : 'medium'
+          ? 'high'
+          : 'medium'
       : 'high';
 
     const contract = await prismaRead.contract.findUnique({
@@ -330,7 +333,11 @@ export async function startEmergencyIndexer(): Promise<void> {
       // Also analyse any new contracts not yet analysed
       const unanalysed = await prismaRead.contract.findMany({
         where: {
-          address: { notIn: (await prismaRead.recoveryAnalysis.findMany({ select: { contractAddress: true } })).map((r) => r.contractAddress) },
+          address: {
+            notIn: (
+              await prismaRead.recoveryAnalysis.findMany({ select: { contractAddress: true } })
+            ).map((r) => r.contractAddress),
+          },
           functionSignatures: { not: undefined },
         },
         select: { address: true },

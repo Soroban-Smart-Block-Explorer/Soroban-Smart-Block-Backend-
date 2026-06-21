@@ -1,5 +1,6 @@
 import { Router, Request, Response } from 'express';
 import { computeAssetMetrics } from '../indexer/assetTracker';
+import { asyncHandler } from '../middleware/asyncHandler';
 
 /**
  * @swagger
@@ -45,7 +46,10 @@ export const assetsRouter = Router();
  *                       priceUsd: { type: number, nullable: true }
  *                       lastActivityAt: { type: string, format: date-time, nullable: true }
  */
-assetsRouter.get('/metrics', async (_req: Request, res: Response) => {
-  const assets = await computeAssetMetrics();
-  res.json({ assets });
-});
+assetsRouter.get(
+  '/metrics',
+  asyncHandler(async (_req: Request, res: Response) => {
+    const assets = await computeAssetMetrics();
+    res.json({ assets });
+  }),
+);

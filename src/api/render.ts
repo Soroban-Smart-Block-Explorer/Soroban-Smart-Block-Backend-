@@ -5,11 +5,11 @@ import { renderTemplate, renderBuiltIn, BUILT_IN_TEMPLATES } from '../indexer/te
 export const renderRouter = Router();
 
 const renderSchema = z.object({
-  template:     z.string().optional(),   // custom template string
-  fnName:       z.string().optional(),   // use a built-in template by function name
-  args:         z.record(z.unknown()),
-  tokenSymbol:  z.string().optional(),
-  decimals:     z.coerce.number().int().min(0).max(18).optional(),
+  template: z.string().optional(), // custom template string
+  fnName: z.string().optional(), // use a built-in template by function name
+  args: z.record(z.unknown()),
+  tokenSymbol: z.string().optional(),
+  decimals: z.coerce.number().int().min(0).max(18).optional(),
   contractName: z.string().optional(),
 });
 
@@ -26,9 +26,7 @@ renderRouter.post('/', (req: Request, res: Response) => {
     return res.status(400).json({ error: 'Provide either `template` or `fnName`' });
   }
 
-  const result = template
-    ? renderTemplate(template, ctx)
-    : renderBuiltIn(fnName!, ctx);
+  const result = template ? renderTemplate(template, ctx) : renderBuiltIn(fnName!, ctx);
 
   res.json({ result });
 });
