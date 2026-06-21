@@ -102,4 +102,4 @@ router.post('/predict/models/:model_id/retrain', async (req, res) => {
 });
 
 // DELETE /api/v1/predict/models/{model_id}
-router.delete('/predict/models/:model_id', async (
+export const forecastRouter = router;

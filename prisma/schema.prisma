@@ -1544,19 +1544,6 @@ model SettlementBatchSummary {
   @@index([windowKey])
 }
 
-// CAP-0077: Consensus-frozen ledger key registry
-model FrozenLedgerKey {
-  ledgerKey       String   @id
-  contractAddress String?
-  frozenAtLedger  Int
-  frozenAtTime    DateTime
-  active          Boolean  @default(true)
-  reason          String?
-  createdAt       DateTime @default(now())
-
-  @@index([active])
-}
-
 // ── Performance Benchmarking Suite Models ─────────────────────────────────────
 
 // Pre-computed operation microbenchmarks aggregated across all transactions
@@ -1618,19 +1605,6 @@ model GasGolfingTip {
   updatedAt    DateTime @updatedAt
 
   @@index([functionName])
-}
-
-// CAP-0077: Freeze violation records
-model FreezeViolation {
-  id              String   @id @default(cuid())
-  transactionHash String   @unique
-  contractAddress String?
-  ledgerSequence  Int
-  ledgerCloseTime DateTime
-  frozenKeys      Json
-  createdAt       DateTime @default(now())
-
-  @@index([transactionHash])
 }
 
 // ── Soroban Network Observatory ──────────────────────────────────────────────
@@ -2554,6 +2528,243 @@ model TimerAlert {
   @@index([scheduledOpId])
   @@index([triggerTime])
   @@map("timer_alerts")
+}
+
+// ─── Soroban Liquidation Command Center (Issue #308) ───────────────────────────
+
+enum PositionStatus {
+  ACTIVE
+  LIQUIDATED
+  REPAID
+  CLOSED
+}
+
+enum RiskLevel {
+  SAFE
+  MODERATE
+  ELEVATED
+  HIGH
+  CRITICAL
+  LIQUIDATED
+}
+
+model LendingPosition {
+  id              String         @id @default(cuid())
+  protocolAddress String         @map("protocol_address")
+  userAddress     String         @map("user_address")
+  collateralToken String         @map("collateral_token")
+  debtToken       String         @map("debt_token")
+  collateralAmount Decimal       @map("collateral_amount")
+  debtAmount      Decimal        @map("debt_amount")
+  collateralUsd   Float?         @map("collateral_usd")
+  debtUsd         Float?         @map("debt_usd")
+  healthFactor    Float          @map("health_factor")
+  ltv             Float          @map("ltv")
+  liquidationPrice Float?        @map("liquidation_price")
+  liquidationThreshold Float     @map("liquidation_threshold")
+  riskLevel       RiskLevel      @map("risk_level")
+  openedAt        DateTime       @map("opened_at")
+  lastUpdatedAt   DateTime       @map("last_updated_at") @updatedAt
+  status          PositionStatus
+  totalBorrowed   Decimal?       @map("total_borrowed")
+  totalRepaid     Decimal?       @map("total_repaid")
+  totalLiquidated Decimal?       @map("total_liquidated")
+  liquidationCount Int           @default(0) @map("liquidation_count")
+
+  events          PositionEvent[]
+  liquidationEvents LiquidationEvent[]
+  alerts          LiquidationAlert[]
+
+  @@index([userAddress])
+  @@index([protocolAddress, status])
+  @@index([healthFactor])
+  @@index([riskLevel])
+  @@unique([protocolAddress, userAddress, collateralToken, debtToken])
+  @@map("lending_positions")
+}
+
+model PositionEvent {
+  id                   String   @id @default(cuid())
+  positionId           String   @map("position_id")
+  eventType            String   @map("event_type")
+  txHash               String   @map("tx_hash")
+  token                String
+  amount               Decimal
+  usdValue             Float?   @map("usd_value")
+  healthFactorBefore   Float?   @map("health_factor_before")
+  healthFactorAfter    Float?   @map("health_factor_after")
+  timestamp            DateTime
+
+  position LendingPosition @relation(fields: [positionId], references: [id])
+
+  @@index([positionId, timestamp(sort: Desc)])
+  @@index([txHash])
+  @@map("position_events")
+}
+
+model ProtocolRiskMetrics {
+  id                      String   @id @default(cuid())
+  protocolAddress         String   @unique @map("protocol_address")
+  totalValueLocked        Decimal  @map("total_value_locked")
+  totalBorrowed           Decimal  @map("total_borrowed")
+  availableLiquidity      Decimal  @map("available_liquidity")
+  utilizationRate         Float    @map("utilization_rate")
+  avgHealthFactor         Float    @map("avg_health_factor")
+  weightedAvgHealthFactor Float?   @map("weighted_avg_health_factor")
+  positionsAtRisk         Int      @map("positions_at_risk")
+  positionsCritical       Int      @map("positions_critical")
+  badDebt                 Decimal  @map("bad_debt")
+  liquidation24h          Int      @map("liquidation_24h")
+  liquidationVolume24h    Decimal  @map("liquidation_volume_24h")
+  updatedAt               DateTime @updatedAt @map("updated_at")
+
+  @@map("protocol_risk_metrics")
+}
+
+model LiquidationEvent {
+  id                   String   @id @default(cuid())
+  txHash               String   @map("tx_hash")
+  protocolAddress      String   @map("protocol_address")
+  positionId           String   @map("position_id")
+  userAddress          String   @map("user_address")
+  liquidator           String
+  collateralToken      String   @map("collateral_token")
+  debtToken            String   @map("debt_token")
+  collateralSeized     Decimal  @map("collateral_seized")
+  debtCovered          Decimal  @map("debt_covered")
+  collateralUsd        Float?   @map("collateral_usd")
+  debtUsd              Float?   @map("debt_usd")
+  bonus                Float?
+  healthFactorAtEvent  Float?   @map("health_factor_at_event")
+  timestamp            DateTime
+
+  position LendingPosition @relation(fields: [positionId], references: [id])
+
+  @@index([protocolAddress, timestamp(sort: Desc)])
+  @@index([userAddress])
+  @@index([liquidator])
+  @@index([timestamp])
+  @@map("liquidation_events")
+}
+
+model SimulationRun {
+  id          String   @id @default(cuid())
+  name        String?
+  scenario    Json
+  result      Json
+  triggeredBy String   @map("triggered_by")
+  createdAt   DateTime @map("created_at") @default(now())
+  completedAt DateTime? @map("completed_at")
+  duration    Int?
+
+  @@map("simulation_runs")
+}
+
+model LiquidationAlert {
+  id           String   @id @default(cuid())
+  positionId   String   @map("position_id")
+  alertType    String   @map("alert_type")
+  severity     String
+  message      String
+  healthFactor Float    @map("health_factor")
+  metadata     Json?
+  createdAt    DateTime @map("created_at") @default(now())
+  delivered    Boolean  @default(false)
+  acknowledged Boolean  @default(false)
+
+  position LendingPosition @relation(fields: [positionId], references: [id])
+
+  @@index([positionId, createdAt(sort: Desc)])
+  @@map("liquidation_alerts")
+}
+
+model PriceOracle {
+  id                String   @id @default(cuid())
+  oracleAddress     String   @unique @map("oracle_address")
+  oracleType        String   @map("oracle_type")
+  tokenAddress      String   @map("token_address")
+  tokenSymbol       String?  @map("token_symbol")
+  lastPrice         Float    @map("last_price")
+  lastUpdateTime    DateTime @map("last_update_time")
+  deviationSinceLastUpdate Float? @map("deviation_since_last_update")
+  protocolCount     Int      @default(0) @map("protocol_count")
+  healthScore       Float?   @map("health_score")
+  stale             Boolean  @default(false)
+  createdAt         DateTime @default(now()) @map("created_at")
+  updatedAt         DateTime @updatedAt @map("updated_at")
+
+  @@index([tokenAddress])
+  @@index([oracleType])
+  @@index([stale])
+  @@map("price_oracles")
+}
+
+model LiquidatorRegistration {
+  id                String   @id @default(cuid())
+  liquidatorAddress String   @unique @map("liquidator_address")
+  displayName       String?  @map("display_name")
+  protocolAddresses String[] @map("protocol_addresses")
+  minProfitUsd      Float    @default(0) @map("min_profit_usd")
+  maxGasFeeUsd      Float    @default(100) @map("max_gas_fee_usd")
+  active            Boolean  @default(true)
+  totalLiquidations Int      @default(0) @map("total_liquidations")
+  totalProfitUsd    Float    @default(0) @map("total_profit_usd")
+  registeredAt      DateTime @default(now()) @map("registered_at")
+  lastActiveAt      DateTime @updatedAt @map("last_active_at")
+
+  @@index([liquidatorAddress])
+  @@index([active])
+  @@map("liquidator_registrations")
+}
+
+model InsuranceCoverage {
+  id                String   @id @default(cuid())
+  positionId        String   @unique @map("position_id")
+  insuranceProtocol String   @map("insurance_protocol")
+  policyId          String?  @map("policy_id")
+  coverageAmountUsd Float    @map("coverage_amount_usd")
+  premiumPaidUsd    Float    @map("premium_paid_usd")
+  expiryDate        DateTime @map("expiry_date")
+  active            Boolean  @default(true)
+  createdAt         DateTime @default(now()) @map("created_at")
+  updatedAt         DateTime @updatedAt @map("updated_at")
+
+  @@index([positionId])
+  @@index([active])
+  @@map("insurance_coverages")
+}
+
+model LendingPositionHistory {
+  id              String   @id @default(cuid())
+  positionId      String   @map("position_id")
+  healthFactor    Float    @map("health_factor")
+  collateralUsd   Float?   @map("collateral_usd")
+  debtUsd         Float?   @map("debt_usd")
+  snapshotTime    DateTime @map("snapshot_time")
+  createdAt       DateTime @default(now()) @map("created_at")
+
+  @@index([positionId, snapshotTime(sort: Desc)])
+  @@index([snapshotTime])
+  @@map("lending_position_history")
+}
+
+model CrossChainPosition {
+  id                String   @id @default(cuid())
+  userAddress       String   @map("user_address")
+  sourceChain       String   @map("source_chain")
+  sourcePositionId  String   @map("source_position_id")
+  bridgeProtocol    String   @map("bridge_protocol")
+  collateralToken   String   @map("collateral_token")
+  debtToken         String   @map("debt_token")
+  collateralAmount  Decimal  @map("collateral_amount")
+  debtAmount        Decimal  @map("debt_amount")
+  healthFactor      Float    @map("health_factor")
+  lastSyncedAt      DateTime @map("last_synced_at")
+  createdAt         DateTime @default(now()) @map("created_at")
+
+  @@index([userAddress])
+  @@index([sourceChain])
+  @@map("cross_chain_positions")
 }
 
 // ─── End Soroban Temporal Orchestrator ────────────────────────────────────────

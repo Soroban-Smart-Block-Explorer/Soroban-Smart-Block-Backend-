@@ -145,6 +145,13 @@ async function main() {
     );
   }
 
+  // Start Liquidation Command Center Health Monitor
+  try {
+    startHealthMonitor();
+  } catch (err) {
+    logger.warn('Liquidation health monitor failed to start', { error: String(err) });
+  }
+
   // Initialize Feed Orchestrator with WebSocket support
   await feedOrchestrator.initialize(httpServer);
 
