@@ -86,6 +86,9 @@ import { storageRouter } from './storage';
 import { storageTrapRouter } from './storage-trap';
 import { bn254Router } from './bn254';
 import { compilerRouter } from './compiler-router';
+import { dexAnalyticsRouter } from './dex-analytics';
+import { predictRouter } from './predict';
+import { aggregatorRouter } from './aggregator';
 
 export const router = Router();
 
@@ -184,4 +187,8 @@ router.use('/feed', feedRouter);
 router.use('/feed/backfill', backfillRouter);
 router.use('/feed/sse', feedSSERouter);
 router.use('/market', marketRouter);
+
+// ── Cross-Protocol Liquidity Aggregation Engine (Issue #334) ─────────────────
+router.use('/aggregator', aggregatorRouter);
+
 router.use('/predict', predictRouter);

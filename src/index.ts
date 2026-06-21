@@ -37,6 +37,8 @@ import { startPoolPriceMonitor } from './indexer/pool-price-monitor';
 import { errorHandler } from './middleware/errorHandler';
 import { logger } from './logger';
 import { feedOrchestrator } from './feed/orchestrator';
+import { refreshPoolRegistry, getAllPools } from './indexer/aggregator/pool-indexer';
+import { processDcaStrategies } from './indexer/aggregator/dca';
 
 const app = express();
 
@@ -132,6 +134,28 @@ async function main() {
 
   // Initialize Feed Orchestrator with WebSocket support
   await feedOrchestrator.initialize(httpServer);
+
+  // Initialize Cross-Protocol Liquidity Aggregation Engine (Issue #334)
+  if (!process.env.DISABLE_INDEXER) {
+    try {
+      await refreshPoolRegistry();
+      logger.info('[aggregator] Pool registry initialized', { poolCount: getAllPools().length });
+    } catch (err) {
+      logger.warn('[aggregator] Pool registry initialization failed', { error: String(err) });
+    }
+
+    // Schedule DCA execution every 5 minutes
+    setInterval(async () => {
+      try {
+        const executed = await processDcaStrategies();
+        if (executed > 0) {
+          logger.info(`[aggregator] Executed ${executed} DCA intervals`);
+        }
+      } catch (err) {
+        logger.warn('[aggregator] DCA execution failed', { error: String(err) });
+      }
+    }, 300_000); // 5 minutes
+  }
 
   httpServer.listen(config.port, () => {
     logger.info('Soroban Explorer API started', { port: config.port });
