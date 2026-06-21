@@ -1,3 +1,9 @@
+// BigInt serialization polyfill — BigInt values are not serializable by JSON.stringify
+// This converts them to strings in all API responses.
+(BigInt.prototype as any).toJSON = function () {
+  return this.toString();
+};
+
 import express from 'express';
 import { createServer } from 'http';
 import cors from 'cors';
@@ -36,8 +42,10 @@ import { startArbitrageScanner } from './indexer/arbitrage-scanner';
 import { startPoolPriceMonitor } from './indexer/pool-price-monitor';
 import { errorHandler } from './middleware/errorHandler';
 import { logger } from './logger';
+import { startDiscoverIndexer } from './indexer/discover-runner';
 import { feedOrchestrator } from './feed/orchestrator';
-import { startHealthMonitor } from './lending/backgroundMonitor';
+import { refreshPoolRegistry, getAllPools } from './indexer/aggregator/pool-indexer';
+import { processDcaStrategies } from './indexer/aggregator/dca';
 
 const app = express();
 
@@ -130,6 +138,12 @@ async function main() {
       logger.warn('Arbitrage scanner failed to start', { error: String(err) });
     }
   }
+  // Start Token Discovery Indexer (Issue #335)
+  if (!process.env.DISABLE_INDEXER) {
+    startDiscoverIndexer().catch((err) =>
+      logger.warn('Discover indexer failed to start', { error: String(err) }),
+    );
+  }
 
   // Start Liquidation Command Center Health Monitor
   try {
@@ -140,6 +154,28 @@ async function main() {
 
   // Initialize Feed Orchestrator with WebSocket support
   await feedOrchestrator.initialize(httpServer);
+
+  // Initialize Cross-Protocol Liquidity Aggregation Engine (Issue #334)
+  if (!process.env.DISABLE_INDEXER) {
+    try {
+      await refreshPoolRegistry();
+      logger.info('[aggregator] Pool registry initialized', { poolCount: getAllPools().length });
+    } catch (err) {
+      logger.warn('[aggregator] Pool registry initialization failed', { error: String(err) });
+    }
+
+    // Schedule DCA execution every 5 minutes
+    setInterval(async () => {
+      try {
+        const executed = await processDcaStrategies();
+        if (executed > 0) {
+          logger.info(`[aggregator] Executed ${executed} DCA intervals`);
+        }
+      } catch (err) {
+        logger.warn('[aggregator] DCA execution failed', { error: String(err) });
+      }
+    }, 300_000); // 5 minutes
+  }
 
   httpServer.listen(config.port, () => {
     logger.info('Soroban Explorer API started', { port: config.port });

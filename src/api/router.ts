@@ -86,9 +86,7 @@ import { storageRouter } from './storage';
 import { storageTrapRouter } from './storage-trap';
 import { bn254Router } from './bn254';
 import { compilerRouter } from './compiler-router';
-import { dexAnalyticsRouter } from './dex-analytics';
-import { predictRouter } from './predict';
-import { lendingRouter } from './lending';
+import { discoverRouter } from './discover';
 
 export const router = Router();
 
@@ -175,8 +173,8 @@ router.use('/storage-trap', storageTrapRouter);
 router.use('/bn254', bn254Router);
 router.use('/compiler', compilerRouter);
 
-// ── Lending & Liquidation Command Center ─────────────────────────────────────
-router.use('/lending', lendingRouter);
+// ── Token Discovery & Launch Detection (Issue #335) ────────────────────────
+router.use('/discover', discoverRouter);
 
 // ── Developer Portal ─────────────────────────────────────────────────────────
 router.use('/developer', developerRouter);
@@ -190,4 +188,8 @@ router.use('/feed', feedRouter);
 router.use('/feed/backfill', backfillRouter);
 router.use('/feed/sse', feedSSERouter);
 router.use('/market', marketRouter);
+
+// ── Cross-Protocol Liquidity Aggregation Engine (Issue #334) ─────────────────
+router.use('/aggregator', aggregatorRouter);
+
 router.use('/predict', predictRouter);
