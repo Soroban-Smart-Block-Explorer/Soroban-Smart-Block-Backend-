@@ -9,6 +9,7 @@
 
 import { prismaRead, prismaWrite } from '../db';
 import { logger } from '../logger';
+import { updatePriceCache } from './healthFactorEngine';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -208,7 +209,6 @@ export async function recordPriceUpdate(
   });
 
   // Update price cache for health factor engine
-  const { updatePriceCache } = await import('./healthFactorEngine');
   updatePriceCache(oracle.tokenAddress, price);
 }
 
