@@ -2813,44 +2813,6 @@ model PredictiveApiKey {
   @@map("predictive_api_keys")
 }
 
-// ─── CAP-0077: Consensus Asset-Freeze ─────────────────────────────────────────
-
-model FrozenLedgerKey {
-  id              String   @id @default(cuid())
-  ledgerKey       String   @unique
-  contractAddress String?
-  frozenAtLedger  Int
-  frozenAtTime    DateTime
-  reason          String?
-  active          Boolean  @default(true)
-  frozenBy        String?  // account that triggered the freeze
-  metadata        Json?    // extensible metadata
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
-
-  @@index([contractAddress])
-  @@index([active])
-  @@index([frozenAtLedger(sort: Desc)])
-}
-
-model FreezeViolation {
-  id              String   @id @default(cuid())
-  transactionHash String   @unique
-  contractAddress String?
-  ledgerSequence  Int
-  ledgerCloseTime DateTime
-  frozenKeys      Json
-  severity        String   // "low" | "medium" | "high" | "critical"
-  resolution      String?  // "pending" | "resolved" | "false_positive"
-  resolvedBy      String?
-  resolvedAt      DateTime?
-  createdAt       DateTime @default(now())
-
-  @@index([transactionHash])
-  @@index([severity])
-  @@index([resolvedAt])
-}
-
 model AuditLog {
   id            String   @id @default(cuid())
   actor         String
@@ -2864,4 +2826,274 @@ model AuditLog {
   @@index([actor])
   @@index([action])
   @@index([target])
+}
+
+// ── Token Discovery & Launch Detection Platform (Issue #335) ─────────────────
+
+model DetectedToken {
+  id                 BigInt   @id @default(autoincrement())
+  contractAddress    String   @unique @db.VarChar(56)
+  deployerAddress    String   @db.VarChar(56)
+  deployTxHash       String   @db.VarChar(64)
+  deployBlock        BigInt
+  detectedAt         DateTime
+  name               String?  @db.VarChar(255)
+  symbol             String?  @db.VarChar(50)
+  decimals           Int?
+  totalSupply        Decimal? @db.Decimal(40, 0)
+  tokenStandard      String?  @db.VarChar(50) // sep41, custom
+  contractCodeHash   String?  @db.VarChar(64)
+  isVerified         Boolean  @default(false)
+  verificationData   Json?
+  initialHolderCount Int      @default(0)
+  status             String   @default("pending") @db.VarChar(20) // pending, active, flagged, blacklisted
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  analyses           TokenContractAnalysis[]
+  holders            TokenHolder[]
+  liquidityEvents    LiquidityEvent[]
+  airdrops           Airdrop[]
+  rugRiskScores      RugPullRiskScore[]
+  socialSignals      SocialSignal[]
+  alertEvents        AlertEvent[]
+
+  @@map("detected_tokens")
+}
+
+model TokenContractAnalysis {
+  id              BigInt   @id @default(autoincrement())
+  tokenId         BigInt
+  analysisType    String   @db.VarChar(50) // security, similarity, ownership, dependencies
+  riskScore        Decimal? @db.Decimal(5, 2) // 0-100
+  findings         Json?
+  analyzedAt      DateTime @default(now())
+
+  token DetectedToken @relation(fields: [tokenId], references: [id])
+
+  @@unique([tokenId, analysisType])
+  @@map("token_contract_analyses")
+}
+
+model TokenHolder {
+  id              BigInt   @id @default(autoincrement())
+  tokenId         BigInt
+  holderAddress   String   @db.VarChar(56)
+  balance         Decimal  @db.Decimal(40, 0)
+  percentage      Decimal? @db.Decimal(10, 6)
+  firstAcquisition DateTime
+  lastUpdated     DateTime @default(now())
+
+  token DetectedToken @relation(fields: [tokenId], references: [id])
+
+  @@unique([tokenId, holderAddress])
+  @@index([tokenId])
+  @@map("token_holders")
+}
+
+model LiquidityEvent {
+  id              BigInt   @id @default(autoincrement())
+  tokenId         BigInt
+  poolAddress     String   @db.VarChar(56)
+  dexName         String   @db.VarChar(100)
+  quoteToken      String   @db.VarChar(56)
+  liquidityAdded  Decimal  @db.Decimal(40, 0)
+  liquidityUsdValue Decimal? @db.Decimal(20, 2)
+  isLocked        Boolean  @default(false)
+  lockInfo        Json?
+  txHash          String   @db.VarChar(64)
+  blockNumber     BigInt
+  timestamp       DateTime
+  createdAt       DateTime @default(now())
+
+  token DetectedToken @relation(fields: [tokenId], references: [id])
+
+  @@index([tokenId])
+  @@index([poolAddress])
+  @@map("liquidity_events")
+}
+
+model Airdrop {
+  id                BigInt   @id @default(autoincrement())
+  tokenId           BigInt
+  airdropType       String   @db.VarChar(50) // mass_transfer, merkle, claim, nft
+  totalRecipients   Int?
+  totalAmount       Decimal? @db.Decimal(40, 0)
+  amountPerRecipient Decimal? @db.Decimal(40, 0)
+  isClaimed         Boolean  @default(false)
+  claimDeadline     DateTime?
+  eligibilityRules  Json?
+  txHash            String   @db.VarChar(64)
+  blockNumber       BigInt
+  timestamp         DateTime
+  detectedAt        DateTime @default(now())
+
+  token    DetectedToken @relation(fields: [tokenId], references: [id])
+  claims   AirdropClaim[]
+
+  @@index([tokenId])
+  @@map("airdrops")
+}
+
+model AirdropClaim {
+  id              BigInt   @id @default(autoincrement())
+  airdropId       BigInt
+  claimerAddress  String   @db.VarChar(56)
+  amountClaimed   Decimal  @db.Decimal(40, 0)
+  txHash          String   @db.VarChar(64)
+  blockNumber     BigInt
+  timestamp       DateTime
+
+  airdrop Airdrop @relation(fields: [airdropId], references: [id])
+
+  @@index([airdropId])
+  @@index([claimerAddress])
+  @@map("airdrop_claims")
+}
+
+model RugPullRiskScore {
+  id                    BigInt   @id @default(autoincrement())
+  tokenId               BigInt
+  overallScore          Decimal  @db.Decimal(5, 2) // 0-100
+  liquidityScore        Decimal? @db.Decimal(5, 2)
+  ownershipScore        Decimal? @db.Decimal(5, 2)
+  mintScore             Decimal? @db.Decimal(5, 2)
+  honeypotScore         Decimal? @db.Decimal(5, 2)
+  concentrationScore    Decimal? @db.Decimal(5, 2)
+  externalDependencyScore Decimal? @db.Decimal(5, 2)
+  codeSimilarityScore   Decimal? @db.Decimal(5, 2)
+  overallRiskLabel      String?  @db.VarChar(20) // low, medium, high, critical
+  findings              String[]
+  analyzedAt            DateTime @default(now())
+
+  token DetectedToken @relation(fields: [tokenId], references: [id])
+
+  @@unique([tokenId])
+  @@map("rug_pull_risk_scores")
+}
+
+model AlertRule {
+  id              String   @id @default(uuid())
+  userAddress     String   @db.VarChar(56)
+  alertType       String   @db.VarChar(50)
+  conditions      Json
+  channels        Json
+  cooldownMinutes Int      @default(15)
+  enabled         Boolean  @default(true)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  events AlertEvent[]
+
+  @@index([userAddress])
+  @@index([alertType])
+  @@index([enabled])
+  @@map("alert_rules")
+}
+
+model AlertEvent {
+  id              BigInt   @id @default(autoincrement())
+  ruleId          String?
+  alertType       String   @db.VarChar(50)
+  tokenId         BigInt?
+  severity        String   @db.VarChar(20) // info, warning, critical
+  title           String
+  message         String
+  data            Json?
+  deliveredTo     Json?
+  deliveredAt     DateTime?
+  createdAt       DateTime @default(now())
+
+  rule  AlertRule?    @relation(fields: [ruleId], references: [id])
+  token DetectedToken? @relation(fields: [tokenId], references: [id])
+
+  @@index([ruleId])
+  @@index([alertType])
+  @@index([severity])
+  @@index([createdAt])
+  @@map("alert_events")
+}
+
+model TokenCategory {
+  id              BigInt   @id @default(autoincrement())
+  tokenId         BigInt
+  category        String   @db.VarChar(50) // defi, meme, infrastructure, gaming, rwa, social
+  probability     Float    @default(0)
+  classifiedAt    DateTime @default(now())
+
+  @@unique([tokenId, category])
+  @@index([tokenId])
+  @@map("token_categories")
+}
+
+model SocialSignal {
+  id              BigInt   @id @default(autoincrement())
+  tokenId         BigInt
+  source          String   @db.VarChar(50) // twitter, discord, telegram, github
+  metric          String   @db.VarChar(100)
+  value           Float
+  timestamp       DateTime
+  metadata        Json?
+
+  token DetectedToken @relation(fields: [tokenId], references: [id])
+
+  @@unique([tokenId, source, metric, timestamp])
+  @@index([tokenId])
+  @@index([source])
+  @@map("social_signals")
+}
+
+model InsiderWallet {
+  id              BigInt   @id @default(autoincrement())
+  walletAddress   String   @unique @db.VarChar(56)
+  riskScore       Decimal? @db.Decimal(5, 2)
+  detectionMethod String?  @db.VarChar(100)
+  firstDetectedAt DateTime @default(now())
+  lastUpdatedAt   DateTime @updatedAt
+
+  @@index([walletAddress])
+  @@index([riskScore])
+  @@map("insider_wallets")
+}
+
+model InsiderActivity {
+  id              BigInt   @id @default(autoincrement())
+  tokenId         BigInt
+  walletId        BigInt
+  relationship    String   @db.VarChar(100) // funder, deployer_cluster, pre_launch_buyer
+  confidence      Float
+  evidence        Json?
+  detectedAt      DateTime @default(now())
+
+  @@index([tokenId])
+  @@index([walletId])
+  @@map("insider_activities")
+}
+
+model PortfolioStrategy {
+  id              String   @id @default(uuid())
+  name            String
+  strategyType    String   @db.VarChar(50) // equal_weight, risk_weighted, volume_weighted, custom
+  config          Json
+  userId          String?  @db.VarChar(56)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  allocations     PortfolioAllocation[]
+
+  @@index([userId])
+  @@map("portfolio_strategies")
+}
+
+model PortfolioAllocation {
+  id              BigInt   @id @default(autoincrement())
+  strategyId      String
+  tokenId         BigInt
+  weight          Decimal  @db.Decimal(10, 6)
+  strategy PortfolioStrategy @relation(fields: [strategyId], references: [id])
+  allocatedAt     DateTime @default(now())
+
+  @@index([strategyId])
+  @@index([tokenId])
+  @@map("portfolio_allocations")
 }
