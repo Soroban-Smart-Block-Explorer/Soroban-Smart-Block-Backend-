@@ -24,14 +24,23 @@
     "archive": "ts-node src/archival/run.ts",
     "seed": "ts-node prisma/seed.ts",
     "test": "vitest run",
+    "prepare": "husky",
     "postinstall": "prisma generate",
-    "lint": "eslint 'src/**/*.ts' --max-warnings 200",
-    "lint:fix": "eslint 'src/**/*.ts' --fix",
+    "lint": "eslint \"src/**/*.ts\" --max-warnings 0",
+    "lint:fix": "eslint \"src/**/*.ts\" --fix",
+    "lint:errors": "eslint src/api",
     "format": "prettier --check \"src/**/*.ts\"",
     "format:fix": "prettier --write \"src/**/*.ts\"",
+    "typecheck": "tsc --noEmit",
+    "ci": "npm run typecheck && npm run lint && npm run format && npm run test",
     "validate-routes": "ts-node scripts/validate-routes.ts",
-    "test:routes": "vitest run tests/orphaned-routers-integration.test.ts",
-    "lint:errors": "eslint src/api"
+    "test:routes": "vitest run tests/orphaned-routers-integration.test.ts"
+  },
+  "lint-staged": {
+    "src/**/*.ts": [
+      "eslint --fix --max-warnings 0",
+      "prettier --write"
+    ]
   },
   "prisma": {
     "seed": "ts-node prisma/seed.ts"
@@ -73,6 +82,8 @@
     "eslint": "^8.57.0",
     "eslint-plugin-error-handling": "file:./eslint-plugin-error-handling",
     "eslint-plugin-unused-imports": "^4.4.1",
+    "husky": "^9.1.7",
+    "lint-staged": "^15.2.10",
     "prettier": "^3.2.5",
     "prisma": "^5.10.0",
     "supertest": "^7.2.2",
