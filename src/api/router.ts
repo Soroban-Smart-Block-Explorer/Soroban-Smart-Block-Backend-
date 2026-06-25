@@ -85,3 +85,11 @@ router.use('/nft', nftRouter);
 // ── Bridge Tracker ─────────────────────────────────────────────────────────────
 import { bridgeTrackerRouter } from './bridge-tracker';
 router.use('/bridge-tracker', bridgeTrackerRouter);
+
+// ── Governance ─────────────────────────────────────────────────────────────────
+import { governanceRouter } from './governance';
+router.use('/governance', governanceRouter);
+
+// ── Reputation ─────────────────────────────────────────────────────────────────
+import { reputationRouter } from './reputation';
+router.use('/reputation', reputationRouter);

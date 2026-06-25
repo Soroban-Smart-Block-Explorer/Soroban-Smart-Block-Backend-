@@ -1,4 +1,5 @@
 import { Router, Request, Response } from 'express';
+import { requireAuth } from '../auth/middleware';
 import { prismaRead, prismaWrite } from '../db';
 import {
   assessSybilRisk,
@@ -510,6 +511,7 @@ reputationRouter.get(
 // POST /api/v1/reputation/:address/attest
 reputationRouter.post(
   '/:address/attest',
+  requireAuth,
   handleAsync(async (req, res) => {
     const address = canonicalAddress(req.params.address);
     const attestationInput = req.body;
@@ -739,6 +741,7 @@ reputationRouter.get(
 // POST /api/v1/reputation/:address/credentials
 reputationRouter.post(
   '/:address/credentials',
+  requireAuth,
   handleAsync(async (req, res) => {
     const address = canonicalAddress(req.params.address);
     const vc = req.body;
@@ -958,6 +961,7 @@ reputationRouter.get(
 // POST /api/v1/reputation/verify-cross-chain
 reputationRouter.post(
   '/verify-cross-chain',
+  requireAuth,
   handleAsync(async (req, res) => {
     const { address, chain, signalType, value, source, metadata } = req.body;
     if (!address || !chain || !signalType) {
@@ -1035,6 +1039,7 @@ reputationRouter.post(
 // POST /api/v1/reputation/link
 reputationRouter.post(
   '/link',
+  requireAuth,
   handleAsync(async (req, res) => {
     const {
       canonicalAddress: canonicalVal,
@@ -1172,6 +1177,7 @@ reputationRouter.get(
 // DELETE /api/v1/reputation/link/:id
 reputationRouter.delete(
   '/link/:id',
+  requireAuth,
   handleAsync(async (req, res) => {
     const link = await prismaWrite.linkedIdentity.delete({
       where: { id: req.params.id },
@@ -1358,6 +1364,7 @@ reputationRouter.get(
 // POST /api/v1/reputation/endorse
 reputationRouter.post(
   '/endorse',
+  requireAuth,
   handleAsync(async (req, res) => {
     const { chainId, endorser, subject, weight } = req.body;
     if (!chainId || !endorser || !subject) {
@@ -1464,6 +1471,7 @@ reputationRouter.get(
 // POST /api/v1/reputation/disputes
 reputationRouter.post(
   '/disputes',
+  requireAuth,
   handleAsync(async (req, res) => {
     const { challenger, respondent, challenge, evidenceHash, quorumVotes } = req.body;
     if (!challenger || !respondent || !challenge || !evidenceHash) {
@@ -1600,6 +1608,7 @@ reputationRouter.get(
 // POST /api/v1/reputation/disputes/:id/vote
 reputationRouter.post(
   '/disputes/:id/vote',
+  requireAuth,
   handleAsync(async (req, res) => {
     const { voter, vote, weight, signature, transactionHash } = req.body;
     if (!voter || !vote) {
@@ -1669,6 +1678,7 @@ reputationRouter.post(
 // POST /api/v1/reputation/disputes/:id/resolve
 reputationRouter.post(
   '/disputes/:id/resolve',
+  requireAuth,
   handleAsync(async (req, res) => {
     const dispute = await prismaRead.reputationDispute.findUnique({
       where: { id: req.params.id },
@@ -1843,6 +1853,7 @@ reputationRouter.get(
 // POST /api/v1/reputation/governance/delegate
 reputationRouter.post(
   '/governance/delegate',
+  requireAuth,
   handleAsync(async (req, res) => {
     const { delegator, delegatee, amount } = req.body;
     if (!delegator || !delegatee) {
@@ -1974,6 +1985,7 @@ reputationRouter.get(
 // POST /api/v1/reputation/governance/vote
 reputationRouter.post(
   '/governance/vote',
+  requireAuth,
   handleAsync(async (req, res) => {
     const { proposalId, voter, weight, support } = req.body;
     if (!proposalId || !voter || !support) {
@@ -2041,6 +2053,7 @@ reputationRouter.post(
 // POST /api/v1/reputation/nfts/mint/:badgeType
 reputationRouter.post(
   '/nfts/mint/:badgeType',
+  requireAuth,
   handleAsync(async (req, res) => {
     const { address } = req.body;
     if (!address) return res.status(400).json({ error: 'address is required' });
@@ -2219,6 +2232,7 @@ export class ReputationClient {
 // POST /api/v1/reputation/sdk/register
 reputationRouter.post(
   '/sdk/register',
+  requireAuth,
   handleAsync(async (req, res) => {
     const { name } = req.body;
     if (!name) return res.status(400).json({ error: 'name is required' });
