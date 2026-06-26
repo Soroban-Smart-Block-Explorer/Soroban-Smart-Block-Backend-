@@ -31,8 +31,32 @@ import { startPrivacyDetector } from './indexer/privacy-background-detector';
 import { attachPrivacyWebSocket } from './ws/privacyBroadcaster';
 import { errorHandler } from './middleware/errorHandler';
 import { logger } from './logger';
+import { setIndexerFailed, getIndexerStatus } from './indexer-state';
 
 const app = express();
+
+// Module-scoped server reference so gracefulShutdown can close it (#439)
+let httpServer: ReturnType<typeof createServer> | null = null;
+
+async function gracefulShutdown(signal: string): Promise<void> {
+  logger.info('Graceful shutdown initiated', { signal });
+
+  await new Promise<void>((resolve) => {
+    if (!httpServer) { resolve(); return; }
+    httpServer.close((err) => {
+      if (err) logger.error('HTTP server close error', { error: String(err) });
+      resolve();
+    });
+  });
+
+  try { await prisma.$disconnect(); } catch { /* ignore */ }
+
+  logger.info('Graceful shutdown complete');
+  process.exit(0);
+}
+
+process.on('SIGTERM', () => { gracefulShutdown('SIGTERM').catch(() => process.exit(1)); });
+process.on('SIGINT',  () => { gracefulShutdown('SIGINT').catch(() => process.exit(1)); });
 
 app.use(helmet({ contentSecurityPolicy: false })); // CSP off so Swagger UI loads
 app.use(cors());
@@ -62,6 +86,16 @@ app.get('/metrics', async (_req, res) => {
 
 app.get('/health', (_req, res) => res.json({ status: 'ok', network: config.stellarNetwork }));
 
+// Readiness probe — returns 503 when the indexer has suffered a fatal failure (#440)
+app.get('/ready', (_req, res) => {
+  const { healthy, failureReason } = getIndexerStatus();
+  if (!healthy) {
+    res.status(503).json({ status: 'unavailable', reason: failureReason });
+    return;
+  }
+  res.json({ status: 'ready' });
+});
+
 app.use(errorHandler);
 app.use((_req, res) => res.status(404).json({ error: 'Not found' }));
 
@@ -71,7 +105,10 @@ async function main() {
   await prisma.$connect();
   dbConnectionStatus.set(1);
   if (!process.env.DISABLE_INDEXER) {
-    startIndexerService().catch((err) => logger.error('Indexer service failed', { error: String(err) }));
+    startIndexerService().catch((err) => {
+      logger.error('Indexer service failed', { error: String(err) });
+      setIndexerFailed(String(err));
+    });
   }
 
   if (!process.env.DISABLE_INDEXER) {
@@ -98,7 +135,7 @@ async function main() {
     }
   }
 
-  const httpServer = createServer(app);
+  httpServer = createServer(app);
   attachWebSocketServer(httpServer);
   attachPrivacyWebSocket(httpServer);
 
