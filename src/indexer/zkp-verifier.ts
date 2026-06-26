@@ -14,7 +14,7 @@ interface ZkpProofData {
  */
 export function decodeZkpVerification(
   functionName: string,
-  args: xdr.ScVal[]
+  args: xdr.ScVal[],
 ): ZkpProofData | null {
   // Detect ZKP verifier patterns
   const zkpPatterns = ['verify_proof', 'verify_snark', 'verify_stark', 'verify_groth16'];
@@ -86,7 +86,7 @@ export async function recordZkpVerification(
   contractAddress: string,
   zkpData: ZkpProofData,
   ledgerSequence: number,
-  ledgerCloseTime: Date
+  ledgerCloseTime: Date,
 ): Promise<void> {
   await prisma.zkpVerificationEvent.create({
     data: {
@@ -115,10 +115,7 @@ export function formatZkpVerification(zkpData: ZkpProofData): string {
 /**
  * Retrieve ZKP verification history for a contract.
  */
-export async function getZkpVerificationHistory(
-  contractAddress: string,
-  limit: number = 50
-) {
+export async function getZkpVerificationHistory(contractAddress: string, limit: number = 50) {
   const events = await prisma.zkpVerificationEvent.findMany({
     where: { contractAddress },
     orderBy: { ledgerSequence: 'desc' },

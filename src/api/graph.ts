@@ -1,4 +1,5 @@
 import { Router, Request, Response } from 'express';
+import { asyncHandler } from '../middleware/asyncHandler';
 import {
   buildContractDependencyGraph,
   generateDependencyGraphSVG,
@@ -54,10 +55,13 @@ export const graphRouter = Router();
  *                     maxDepth: { type: integer }
  *                     generatedAt: { type: string, format: date-time }
  */
-graphRouter.get('/dependencies', async (_req: Request, res: Response) => {
-  const graph = await buildContractDependencyGraph();
-  res.json(graph);
-});
+graphRouter.get(
+  '/dependencies',
+  asyncHandler(async (_req: Request, res: Response) => {
+    const graph = await buildContractDependencyGraph();
+    res.json(graph);
+  }),
+);
 
 /**
  * @swagger
@@ -74,9 +78,12 @@ graphRouter.get('/dependencies', async (_req: Request, res: Response) => {
  *             schema:
  *               type: string
  */
-graphRouter.get('/dependencies/svg', async (_req: Request, res: Response) => {
-  const graph = await buildContractDependencyGraph();
-  const svg = generateDependencyGraphSVG(graph);
-  res.setHeader('Content-Type', 'image/svg+xml');
-  res.send(svg);
-});
+graphRouter.get(
+  '/dependencies/svg',
+  asyncHandler(async (_req: Request, res: Response) => {
+    const graph = await buildContractDependencyGraph();
+    const svg = generateDependencyGraphSVG(graph);
+    res.setHeader('Content-Type', 'image/svg+xml');
+    res.send(svg);
+  }),
+);

@@ -1,5 +1,4 @@
 import { PrismaClient } from '@prisma/client';
-import { SEP41_ABI } from '../src/indexer/registry';
 
 const prisma = new PrismaClient();
 

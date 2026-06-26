@@ -11,7 +11,7 @@ import { scValToJson } from './xdr-parser';
 export async function inspectCustomAccount(
   txHash: string,
   ledgerSequence: number,
-  rawXdr: string
+  rawXdr: string,
 ): Promise<void> {
   if (!rawXdr) return;
 
@@ -109,6 +109,9 @@ export async function inspectCustomAccount(
     }
   } catch (err) {
     // Non-fatal — do not block indexing
-    console.warn(`[custom-account-inspector] parse failed for ${txHash}:`, err instanceof Error ? err.message : String(err));
+    console.warn(
+      `[custom-account-inspector] parse failed for ${txHash}:`,
+      err instanceof Error ? err.message : String(err),
+    );
   }
 }

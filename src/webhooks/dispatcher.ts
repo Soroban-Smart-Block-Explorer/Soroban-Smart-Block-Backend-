@@ -59,7 +59,14 @@ export async function retryPendingDeliveries(): Promise<void> {
 
   await Promise.all(
     due.map((d) =>
-      deliverOnce(d.subscriptionId, d.subscription.url, d.subscription.secret, null, d.attempt, d.id),
+      deliverOnce(
+        d.subscriptionId,
+        d.subscription.url,
+        d.subscription.secret,
+        null,
+        d.attempt,
+        d.id,
+      ),
     ),
   );
 }
@@ -132,12 +139,23 @@ async function deliverOnce(
     if (success) {
       await prisma.webhookDelivery.update({
         where: { id: delivery.id },
-        data: { status: 'success', httpStatus: response.status, responseBody, deliveredAt: new Date() },
+        data: {
+          status: 'success',
+          httpStatus: response.status,
+          responseBody,
+          deliveredAt: new Date(),
+        },
       });
       return;
     }
 
-    await scheduleRetryOrFail(delivery.id, attempt, `HTTP ${response.status}`, response.status, responseBody);
+    await scheduleRetryOrFail(
+      delivery.id,
+      attempt,
+      `HTTP ${response.status}`,
+      response.status,
+      responseBody,
+    );
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err);
     await scheduleRetryOrFail(delivery.id, attempt, msg, undefined, undefined);
@@ -164,6 +182,13 @@ async function scheduleRetryOrFail(
   const nextRetryAt = new Date(Date.now() + backoffMs(nextAttempt));
   await prisma.webhookDelivery.update({
     where: { id: deliveryId },
-    data: { status: 'pending', errorMsg, httpStatus, responseBody, nextRetryAt, attempt: nextAttempt },
+    data: {
+      status: 'pending',
+      errorMsg,
+      httpStatus,
+      responseBody,
+      nextRetryAt,
+      attempt: nextAttempt,
+    },
   });
 }

@@ -35,7 +35,12 @@ function normalizeString(value: unknown): string | undefined {
 }
 
 function normalizeSupport(value: unknown): 'for' | 'against' | 'abstain' | 'unknown' {
-  const raw = typeof value === 'string' ? value.toLowerCase() : typeof value === 'number' ? String(value) : undefined;
+  const raw =
+    typeof value === 'string'
+      ? value.toLowerCase()
+      : typeof value === 'number'
+        ? String(value)
+        : undefined;
   if (!raw) return 'unknown';
   if (['for', 'yes', 'aye', '1', 'true', 'supported'].includes(raw)) return 'for';
   if (['against', 'no', 'nay', '0', 'false', 'opposed'].includes(raw)) return 'against';
@@ -44,40 +49,80 @@ function normalizeSupport(value: unknown): 'for' | 'against' | 'abstain' | 'unkn
 }
 
 function parseProposalId(decoded: Record<string, unknown>): string | undefined {
-  return normalizeString(decoded.proposalId)
-    ?? normalizeString(decoded.proposal_id)
-    ?? normalizeString(decoded.id)
-    ?? normalizeString(decoded.proposal)
-    ?? normalizeString(decoded.proposal_index);
+  return (
+    normalizeString(decoded.proposalId) ??
+    normalizeString(decoded.proposal_id) ??
+    normalizeString(decoded.id) ??
+    normalizeString(decoded.proposal) ??
+    normalizeString(decoded.proposal_index)
+  );
 }
 
 function parseProposalFields(decoded: Record<string, unknown>) {
   return {
     proposalId: parseProposalId(decoded),
-    proposer: normalizeString(decoded.proposer) ?? normalizeString(decoded.initiator) ?? normalizeString(decoded.creator) ?? 'unknown',
+    proposer:
+      normalizeString(decoded.proposer) ??
+      normalizeString(decoded.initiator) ??
+      normalizeString(decoded.creator) ??
+      'unknown',
     title: normalizeString(decoded.title) ?? normalizeString(decoded.name),
     description: normalizeString(decoded.description) ?? normalizeString(decoded.body),
-    targets: decoded.targets ?? decoded.actions ?? decoded.targets_list ?? decoded.targets ?? undefined,
-    startBlock: typeof decoded.startBlock === 'number' ? decoded.startBlock : typeof decoded.startBlock === 'string' ? Number(decoded.startBlock) : undefined,
-    endBlock: typeof decoded.endBlock === 'number' ? decoded.endBlock : typeof decoded.endBlock === 'string' ? Number(decoded.endBlock) : undefined,
-    quorum: normalizeString(decoded.quorum) ?? normalizeString(decoded.quorumThreshold) ?? normalizeString(decoded.quorum_required),
+    targets:
+      decoded.targets ?? decoded.actions ?? decoded.targets_list ?? decoded.targets ?? undefined,
+    startBlock:
+      typeof decoded.startBlock === 'number'
+        ? decoded.startBlock
+        : typeof decoded.startBlock === 'string'
+          ? Number(decoded.startBlock)
+          : undefined,
+    endBlock:
+      typeof decoded.endBlock === 'number'
+        ? decoded.endBlock
+        : typeof decoded.endBlock === 'string'
+          ? Number(decoded.endBlock)
+          : undefined,
+    quorum:
+      normalizeString(decoded.quorum) ??
+      normalizeString(decoded.quorumThreshold) ??
+      normalizeString(decoded.quorum_required),
   };
 }
 
 function parseVoteFields(decoded: Record<string, unknown>) {
   return {
     proposalId: parseProposalId(decoded),
-    voter: normalizeString(decoded.voter) ?? normalizeString(decoded.voterAddress) ?? normalizeString(decoded.caller) ?? 'unknown',
-    support: normalizeSupport(decoded.support ?? decoded.supported ?? decoded.choice ?? decoded.side),
-    weight: normalizeString(decoded.weight) ?? normalizeString(decoded.votingPower) ?? normalizeString(decoded.votes) ?? '0',
-    reason: normalizeString(decoded.reason) ?? normalizeString(decoded.comment) ?? normalizeString(decoded.note),
-    delegatee: normalizeString(decoded.delegatee) ?? normalizeString(decoded.delegate) ?? normalizeString(decoded.delegate_address),
+    voter:
+      normalizeString(decoded.voter) ??
+      normalizeString(decoded.voterAddress) ??
+      normalizeString(decoded.caller) ??
+      'unknown',
+    support: normalizeSupport(
+      decoded.support ?? decoded.supported ?? decoded.choice ?? decoded.side,
+    ),
+    weight:
+      normalizeString(decoded.weight) ??
+      normalizeString(decoded.votingPower) ??
+      normalizeString(decoded.votes) ??
+      '0',
+    reason:
+      normalizeString(decoded.reason) ??
+      normalizeString(decoded.comment) ??
+      normalizeString(decoded.note),
+    delegatee:
+      normalizeString(decoded.delegatee) ??
+      normalizeString(decoded.delegate) ??
+      normalizeString(decoded.delegate_address),
   };
 }
 
 function parseTargets(value: unknown) {
   if (Array.isArray(value)) return value;
-  if (typeof value === 'string') return value.split(',').map((item) => item.trim()).filter(Boolean);
+  if (typeof value === 'string')
+    return value
+      .split(',')
+      .map((item) => item.trim())
+      .filter(Boolean);
   return value ? [value] : undefined;
 }
 
@@ -107,14 +152,29 @@ function subtractIntegerStrings(a: string, b: string): string {
   }
 }
 
-function normalizeEventSymbol(eventType: string | null, topicSymbol: string | null, decoded: Record<string, unknown>) {
-  const symbol = normalizeString(topicSymbol) ?? normalizeString(decoded.event) ?? normalizeString(eventType);
+function normalizeEventSymbol(
+  eventType: string | null,
+  topicSymbol: string | null,
+  decoded: Record<string, unknown>,
+) {
+  const symbol =
+    normalizeString(topicSymbol) ?? normalizeString(decoded.event) ?? normalizeString(eventType);
   return symbol ? symbol.toLowerCase() : undefined;
 }
 
-function isGovernanceEvent(eventType: string | null, topicSymbol: string | null, decoded: Record<string, unknown>) {
+function isGovernanceEvent(
+  eventType: string | null,
+  topicSymbol: string | null,
+  decoded: Record<string, unknown>,
+) {
   const symbol = normalizeEventSymbol(eventType, topicSymbol, decoded);
-  return !!symbol && (GOVERNANCE_EVENT_TOPICS.has(symbol) || symbol.includes('proposal') || symbol.includes('vote') || symbol.includes('delegate'));
+  return (
+    !!symbol &&
+    (GOVERNANCE_EVENT_TOPICS.has(symbol) ||
+      symbol.includes('proposal') ||
+      symbol.includes('vote') ||
+      symbol.includes('delegate'))
+  );
 }
 
 export async function processGovernanceEvent(
@@ -157,7 +217,9 @@ export async function processGovernanceEvent(
     if (proposalFields.endBlock !== undefined) updateData.endBlock = proposalFields.endBlock;
 
     await prisma.governanceProposal.upsert({
-      where: { contractAddress_proposalId: { contractAddress, proposalId: proposalFields.proposalId } },
+      where: {
+        contractAddress_proposalId: { contractAddress, proposalId: proposalFields.proposalId },
+      },
       update: updateData,
       create: {
         contractAddress,
@@ -165,7 +227,7 @@ export async function processGovernanceEvent(
         proposer: proposalFields.proposer,
         title: proposalFields.title,
         description: proposalFields.description,
-        targets: targets as object ?? undefined,
+        targets: (targets as object) ?? undefined,
         startBlock: proposalFields.startBlock ?? 0,
         endBlock: proposalFields.endBlock ?? 0,
         quorum: proposalFields.quorum ?? undefined,
@@ -194,7 +256,8 @@ export async function processGovernanceEvent(
       },
     });
 
-    const voteColumn = support === 'against' ? 'votesAgainst' : support === 'abstain' ? 'votesAbstain' : 'votesFor';
+    const voteColumn =
+      support === 'against' ? 'votesAgainst' : support === 'abstain' ? 'votesAbstain' : 'votesFor';
 
     if (!existingVote) {
       await prisma.governanceVote.create({
@@ -240,9 +303,20 @@ export async function processGovernanceEvent(
       });
       if (!proposal) return;
 
-      const oldColumn = existingVote.support === 'against' ? 'votesAgainst' : existingVote.support === 'abstain' ? 'votesAbstain' : 'votesFor';
-      const oldValue = subtractIntegerStrings(proposal[oldColumn as keyof typeof proposal] ?? '0', existingVote.weight);
-      const newValue = addIntegerStrings(proposal[voteColumn as keyof typeof proposal] ?? '0', weight);
+      const oldColumn =
+        existingVote.support === 'against'
+          ? 'votesAgainst'
+          : existingVote.support === 'abstain'
+            ? 'votesAbstain'
+            : 'votesFor';
+      const oldValue = subtractIntegerStrings(
+        proposal[oldColumn as keyof typeof proposal] ?? '0',
+        existingVote.weight,
+      );
+      const newValue = addIntegerStrings(
+        proposal[voteColumn as keyof typeof proposal] ?? '0',
+        weight,
+      );
 
       const updatePayload: Record<string, string> = {
         [oldColumn]: oldValue,
@@ -250,8 +324,20 @@ export async function processGovernanceEvent(
       };
 
       await prisma.governanceVote.update({
-        where: { contractAddress_proposalId_voter: { contractAddress, proposalId, voter: voteFields.voter } },
-        data: { weight, support, reason: voteFields.reason, transactionHash, ledgerSequence: event.ledgerSequence },
+        where: {
+          contractAddress_proposalId_voter: {
+            contractAddress,
+            proposalId,
+            voter: voteFields.voter,
+          },
+        },
+        data: {
+          weight,
+          support,
+          reason: voteFields.reason,
+          transactionHash,
+          ledgerSequence: event.ledgerSequence,
+        },
       });
       await prisma.governanceProposal.update({
         where: { contractAddress_proposalId: { contractAddress, proposalId } },
@@ -267,7 +353,10 @@ export async function processGovernanceEvent(
     await prisma.governanceDelegate.upsert({
       where: { contractAddress_delegatee: { contractAddress, delegatee: voteFields.delegatee } },
       update: {
-        delegatedVotes: addIntegerStrings('0', normalizeString(decoded.delegatedVotes) ?? weightFromEvent(decoded) ?? '0'),
+        delegatedVotes: addIntegerStrings(
+          '0',
+          normalizeString(decoded.delegatedVotes) ?? weightFromEvent(decoded) ?? '0',
+        ),
         delegators: { increment: 1 },
         updatedAt: new Date(),
       },
@@ -283,5 +372,10 @@ export async function processGovernanceEvent(
 }
 
 function weightFromEvent(decoded: Record<string, unknown>): string | undefined {
-  return normalizeString(decoded.weight) ?? normalizeString(decoded.votingPower) ?? normalizeString(decoded.delegatedVotes) ?? normalizeString(decoded.votes);
+  return (
+    normalizeString(decoded.weight) ??
+    normalizeString(decoded.votingPower) ??
+    normalizeString(decoded.delegatedVotes) ??
+    normalizeString(decoded.votes)
+  );
 }

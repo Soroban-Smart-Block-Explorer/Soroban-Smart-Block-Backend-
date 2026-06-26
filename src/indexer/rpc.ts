@@ -77,7 +77,9 @@ export async function fetchEvents(startLedger: number, endLedger: number): Promi
     }
 
     const mapped = page
-      .filter((e) => typeof e.ledger === 'number' && e.ledger >= startLedger && e.ledger <= endLedger)
+      .filter(
+        (e) => typeof e.ledger === 'number' && e.ledger >= startLedger && e.ledger <= endLedger,
+      )
       .map((e) => ({
         contractId: String(e.contractId ?? ''),
         transactionHash: String(e.txHash ?? ''),
@@ -145,11 +147,59 @@ export async function getTransactionFromHorizon(hash: string) {
     sourceAccount: data.source_account as string,
     feeCharged: String(data.fee_charged ?? ''),
     envelopeXdr: {
-      toXDR: (enc: string) => enc === 'base64' ? data.envelope_xdr : data.envelope_xdr,
+      toXDR: (enc: string) => (enc === 'base64' ? data.envelope_xdr : data.envelope_xdr),
     },
   };
 }
 
 export function getRpcWebsocketUrl(): string {
   return config.stellarRpcWsUrl;
+}
+
+export async function fetchLedgerMetadata(
+  sequence: number,
+): Promise<{
+  sequence: number;
+  hash: string;
+  previousLedgerHash: string;
+  closeTime: Date;
+  txCount: number;
+}> {
+  // First attempt: try Horizon because it has stable, standardized JSON structure
+  try {
+    const axios = (await import('axios')).default;
+    const { data } = await axios.get(`${config.horizonUrl}/ledgers/${sequence}`);
+    if (data && data.hash) {
+      return {
+        sequence: Number(data.sequence),
+        hash: String(data.hash),
+        previousLedgerHash: String(data.prev_hash ?? data.previous_ledger_hash ?? ''),
+        closeTime: new Date(data.closed_at),
+        txCount:
+          Number(data.successful_transaction_count ?? 0) +
+          Number(data.failed_transaction_count ?? 0),
+      };
+    }
+  } catch (err) {
+    // ignore and fallback to RPC
+  }
+
+  // Second attempt: try RPC getLedger
+  const ledgerResult = (await getLedger(sequence)) as any;
+  if (ledgerResult) {
+    const hash = ledgerResult.id ?? ledgerResult.hash ?? '';
+    const previousLedgerHash =
+      ledgerResult.prevHash ?? ledgerResult.prev_hash ?? ledgerResult.previousLedgerHash ?? '';
+    const closeTime = ledgerResult.closedAt ?? ledgerResult.closed_at ?? new Date();
+    const txCount = ledgerResult.transactionCount ?? ledgerResult.transaction_count ?? 0;
+    return {
+      sequence,
+      hash: String(hash),
+      previousLedgerHash: String(previousLedgerHash),
+      closeTime: new Date(closeTime),
+      txCount: Number(txCount),
+    };
+  }
+
+  throw new Error(`Failed to fetch ledger ${sequence}`);
 }

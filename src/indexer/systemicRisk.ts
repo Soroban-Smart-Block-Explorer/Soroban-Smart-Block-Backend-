@@ -2,7 +2,14 @@ import { prismaRead as prisma } from '../db';
 
 export type CriticalityLevel = 'critical' | 'high' | 'medium' | 'low';
 export type FailureType = 'hack' | 'oracle_failure' | 'governance_attack' | 'bank_run';
-export type DependencyType = 'token' | 'oracle' | 'bridge' | 'liquidity' | 'admin' | 'code' | 'call';
+export type DependencyType =
+  | 'token'
+  | 'oracle'
+  | 'bridge'
+  | 'liquidity'
+  | 'admin'
+  | 'code'
+  | 'call';
 
 export interface DependencyEdge {
   from: string;
@@ -484,10 +491,7 @@ export function computeSystemicFragility(graph: SystemDependencyGraph): Systemic
 
   const totalProtocols = graph.protocols.size;
   const results: SystemicFragility[] = [];
-  const maxWeight = Math.max(
-    ...Array.from(dependencyCount.values()).map((d) => d.total),
-    1,
-  );
+  const maxWeight = Math.max(...Array.from(dependencyCount.values()).map((d) => d.total), 1);
 
   for (const [address, protocol] of Array.from(graph.protocols)) {
     const deps = dependencyCount.get(address);
@@ -558,9 +562,7 @@ export async function simulateCascade(
 
   for (const addr of uniqueAffected) {
     // Check if there's a direct edge
-    const hasDirect = graph.edges.some(
-      (e) => e.to === failedProtocol && e.from === addr,
-    );
+    const hasDirect = graph.edges.some((e) => e.to === failedProtocol && e.from === addr);
     if (hasDirect) {
       directAffected.push(addr);
     } else {
@@ -606,7 +608,7 @@ export async function simulateCascade(
       return {
         address: addr,
         distance: minDist,
-        impact: minDist <= 1 ? 'high' : minDist <= 2 ? 'medium' : 'low' as string,
+        impact: minDist <= 1 ? 'high' : minDist <= 2 ? 'medium' : ('low' as string),
         valueAtRisk: formatUsd(tvl),
         expectedLoss: formatUsd(tvl * lossRatio),
         name: node?.name ?? addr.slice(0, 8),
@@ -614,14 +616,16 @@ export async function simulateCascade(
     })
     .sort((a, b) => b.distance - a.distance);
 
-  const systemicScore = totalEcosystemTvl > 0
-    ? Math.round((totalValueAtRisk / totalEcosystemTvl) * 100) / 100
-    : 0;
+  const systemicScore =
+    totalEcosystemTvl > 0 ? Math.round((totalValueAtRisk / totalEcosystemTvl) * 100) / 100 : 0;
 
   const recoveryDays =
-    failureType === 'hack' ? 14
-      : failureType === 'oracle_failure' ? 3
-        : failureType === 'governance_attack' ? 21
+    failureType === 'hack'
+      ? 14
+      : failureType === 'oracle_failure'
+        ? 3
+        : failureType === 'governance_attack'
+          ? 21
           : 7;
 
   return {
@@ -658,9 +662,7 @@ export async function getProtocolRiskProfile(address: string): Promise<ProtocolR
 
   // Cascade impact
   const cascade = await simulateCascade(address, 'hack');
-  const protocolsAffected = cascade
-    ? cascade.directlyAffected + cascade.transitivelyAffected
-    : 0;
+  const protocolsAffected = cascade ? cascade.directlyAffected + cascade.transitivelyAffected : 0;
   const tvlAtRisk = cascade?.totalValueAtRisk ?? '0';
 
   return {
@@ -695,15 +697,14 @@ export function computeSystemicRiskIndex(graph: SystemDependencyGraph): number {
     cumulative += sorted[i].importance;
     giniNumerator += cumulative;
   }
-  const gini = totalImportance > 0
-    ? 1 - (2 * giniNumerator) / (totalImportance * sorted.length) + 1 / sorted.length
-    : 0;
+  const gini =
+    totalImportance > 0
+      ? 1 - (2 * giniNumerator) / (totalImportance * sorted.length) + 1 / sorted.length
+      : 0;
 
   // 2. Interconnectedness: edge density
   const maxPossibleEdges = totalProtocols * (totalProtocols - 1);
-  const density = maxPossibleEdges > 0
-    ? graph.edges.length / maxPossibleEdges
-    : 0;
+  const density = maxPossibleEdges > 0 ? graph.edges.length / maxPossibleEdges : 0;
 
   // 3. Average fragility
   const fragilities = computeSystemicFragility(graph);
@@ -714,11 +715,7 @@ export function computeSystemicRiskIndex(graph: SystemDependencyGraph): number {
   const criticalConcentration = criticalEdges.length / Math.max(graph.edges.length, 1);
 
   // Weighted composite
-  const index =
-    gini * 0.3 +
-    density * 0.25 +
-    avgFragility * 0.25 +
-    criticalConcentration * 0.2;
+  const index = gini * 0.3 + density * 0.25 + avgFragility * 0.25 + criticalConcentration * 0.2;
 
   return Math.round(Math.min(index, 1) * 100) / 100;
 }
@@ -730,19 +727,17 @@ export function computeConcentrationMetrics(graph: SystemDependencyGraph): Conce
   const importance = computeSystemicImportance(graph);
 
   // TVL concentration (top 3)
-  const sortedByTvl = Array.from(graph.protocols.values()).sort(
-    (a, b) => b.tvlUsd - a.tvlUsd,
-  );
+  const sortedByTvl = Array.from(graph.protocols.values()).sort((a, b) => b.tvlUsd - a.tvlUsd);
   const totalTvl = sortedByTvl.reduce((s, p) => s + p.tvlUsd, 0);
-  const tvlTop3 = totalTvl > 0
-    ? sortedByTvl.slice(0, 3).reduce((s, p) => s + p.tvlUsd, 0) / totalTvl
-    : 0;
+  const tvlTop3 =
+    totalTvl > 0 ? sortedByTvl.slice(0, 3).reduce((s, p) => s + p.tvlUsd, 0) / totalTvl : 0;
 
   // Dependency concentration (top 3 most depended-upon)
-  const depTop3 = importance.length > 0
-    ? importance.slice(0, 3).reduce((s, i) => s + i.importance, 0) /
-      importance.reduce((s, i) => s + i.importance, 0) || 0
-    : 0;
+  const depTop3 =
+    importance.length > 0
+      ? importance.slice(0, 3).reduce((s, i) => s + i.importance, 0) /
+          importance.reduce((s, i) => s + i.importance, 0) || 0
+      : 0;
 
   // Ecosystem diversity = 1 - gini coefficient
   const totalImportance = importance.reduce((s, i) => s + i.importance, 0);
@@ -753,9 +748,10 @@ export function computeConcentrationMetrics(graph: SystemDependencyGraph): Conce
     cumulative += sorted[i].importance;
     giniNumerator += cumulative;
   }
-  const gini = totalImportance > 0
-    ? 1 - (2 * giniNumerator) / (totalImportance * sorted.length) + 1 / sorted.length
-    : 0;
+  const gini =
+    totalImportance > 0
+      ? 1 - (2 * giniNumerator) / (totalImportance * sorted.length) + 1 / sorted.length
+      : 0;
 
   return {
     tvlTop3: Math.round(tvlTop3 * 100) / 100,

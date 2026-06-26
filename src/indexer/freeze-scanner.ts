@@ -46,10 +46,7 @@ export function invalidateFreezeCache(): void {
 export function extractFootprintKeys(envelopeXdrBase64: string): string[] {
   try {
     const envelope = xdr.TransactionEnvelope.fromXDR(envelopeXdrBase64, 'base64');
-    const tx =
-      envelope.switch().name === 'envelopeTypeTx'
-        ? envelope.v1().tx()
-        : null;
+    const tx = envelope.switch().name === 'envelopeTypeTx' ? envelope.v1().tx() : null;
     if (!tx) return [];
 
     const ops = tx.operations();
@@ -108,23 +105,48 @@ export async function recordFreezeViolation(
   ledgerCloseTime: Date,
   frozenKeys: string[],
 ): Promise<void> {
+  const numKeys = frozenKeys.length;
+  const severity =
+    numKeys > 10 ? 'critical' : numKeys > 5 ? 'high' : numKeys > 2 ? 'medium' : 'low';
+
   await Promise.all([
     prisma.freezeViolation.upsert({
       where: { transactionHash },
-      update: { frozenKeys },
+      update: { frozenKeys, severity },
       create: {
         transactionHash,
-        contractAddress,
+        contractAddress: contractAddress ?? '',
         ledgerSequence,
         ledgerCloseTime,
         frozenKeys,
+        severity,
+        resolution: 'pending',
       },
     }),
     prisma.transaction.updateMany({
       where: { hash: transactionHash },
-      data: { freezeViolation: true },
+      data: { status: 'freeze_flagged' },
     }),
   ]);
+
+  if (severity === 'critical') {
+    const webhookUrl = process.env.FREEZE_ALERT_WEBHOOK_URL;
+    if (webhookUrl) {
+      fetch(webhookUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          alert: 'CRITICAL_FREEZE_VIOLATION',
+          transactionHash,
+          contractAddress,
+          frozenKeys,
+          ledgerSequence,
+        }),
+      }).catch((err) => console.error('[freeze-scanner] Failed to send alert webhook', err));
+    } else {
+      console.warn(`[freeze-scanner] CRITICAL VIOLATION DETECTED for tx ${transactionHash}`);
+    }
+  }
 }
 
 // ── Frozen key registry management ──────────────────────────────────────────
@@ -143,10 +165,19 @@ export async function registerFrozenKey(
   await prisma.frozenLedgerKey.upsert({
     where: { ledgerKey },
     update: { active: true, reason: reason ?? null },
-    create: { ledgerKey, contractAddress, frozenAtLedger, frozenAtTime, reason: reason ?? null },
+    create: {
+      ledgerKey,
+      contractAddress: contractAddress ?? '',
+      frozenAtLedger,
+      frozenAtTime,
+      reason: reason ?? null,
+      active: true,
+    },
   });
   invalidateFreezeCache();
-  console.log(`[freeze-scanner] Registered frozen key for contract ${contractAddress ?? 'unknown'} at ledger ${frozenAtLedger}`);
+  console.log(
+    `[freeze-scanner] Registered frozen key for contract ${contractAddress ?? 'unknown'} at ledger ${frozenAtLedger}`,
+  );
 }
 
 /**

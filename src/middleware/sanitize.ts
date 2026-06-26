@@ -1,5 +1,4 @@
 import { Request, Response, NextFunction } from 'express';
-import { StrKey } from '@stellar/stellar-sdk';
 import { translateAddress, isValidAnyAddress } from '../indexer/strkey-translator';
 
 // ── Stellar address validation ───────────────────────────────────────────────
@@ -25,7 +24,9 @@ export function resolveAddress(addr: string): string {
 /** Throws a 400-compatible error if the address is invalid. */
 export function assertValidStellarAddress(addr: string, field = 'address'): void {
   if (!isValidStellarAddress(addr)) {
-    throw Object.assign(new Error(`Invalid Stellar address for field '${field}': ${addr}`), { statusCode: 400 });
+    throw Object.assign(new Error(`Invalid Stellar address for field '${field}': ${addr}`), {
+      statusCode: 400,
+    });
   }
 }
 

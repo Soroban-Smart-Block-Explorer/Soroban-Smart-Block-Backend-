@@ -5,5 +5,4 @@ dist
 *.md
 .env
 .env.*
-docs
 tests

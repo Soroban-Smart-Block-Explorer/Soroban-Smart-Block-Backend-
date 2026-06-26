@@ -24,7 +24,7 @@ const PASSKEY_LABEL = 'Signed via Apple iCloud Keychain / Google Passkey';
 export async function inspectSignature(
   txHash: string,
   ledgerSequence: number,
-  rawXdr: string
+  rawXdr: string,
 ): Promise<void> {
   if (!rawXdr) return;
 
@@ -76,7 +76,15 @@ export async function inspectSignature(
   await prisma.signatureInspection.upsert({
     where: { transactionHash: txHash },
     update: { curveType, isPasskey, pubKeyX, pubKeyY, label },
-    create: { transactionHash: txHash, ledgerSequence, curveType, isPasskey, pubKeyX, pubKeyY, label },
+    create: {
+      transactionHash: txHash,
+      ledgerSequence,
+      curveType,
+      isPasskey,
+      pubKeyX,
+      pubKeyY,
+      label,
+    },
   });
 }
 

@@ -57,7 +57,7 @@ export async function buildContractDependencyGraph(): Promise<DependencyGraph> {
     if (!tx.contractAddress || !tx.functionArgs) continue;
 
     const calledAddresses = new Set(
-      extractCalledAddresses(tx.functionArgs as Record<string, unknown>)
+      extractCalledAddresses(tx.functionArgs as Record<string, unknown>),
     );
 
     for (const called of calledAddresses) {
@@ -244,7 +244,11 @@ interface Position {
   y: number;
 }
 
-function layoutNodesByDepth(nodes: ContractNode[], width: number, height: number): Map<string, Position> {
+function layoutNodesByDepth(
+  nodes: ContractNode[],
+  width: number,
+  height: number,
+): Map<string, Position> {
   const positions = new Map<string, Position>();
   const padding = 120;
   const usableWidth = width - 2 * padding;

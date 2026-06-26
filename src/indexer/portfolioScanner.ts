@@ -22,13 +22,13 @@ export async function runPortfolioScan(): Promise<void> {
   await prismaWrite.portfolioSnapshot.createMany({
     data: metrics.map((m) => ({
       contractAddress: m.contractAddress,
-      assetCode:       m.assetCode ?? null,
-      assetIssuer:     m.assetIssuer ?? null,
+      assetCode: m.assetCode ?? null,
+      assetIssuer: m.assetIssuer ?? null,
       estimatedVolume: m.estimatedVolume,
-      priceXlm:        m.priceXlm ?? null,
-      priceUsd:        m.priceUsd ?? null,
-      valueXlm:        m.volumeXlm ?? null,
-      valueUsd:        m.volumeUsd ?? null,
+      priceXlm: m.priceXlm ?? null,
+      priceUsd: m.priceUsd ?? null,
+      valueXlm: m.volumeXlm ?? null,
+      valueUsd: m.volumeUsd ?? null,
       snapshotAt,
     })),
   });
@@ -41,6 +41,8 @@ export async function runPortfolioScan(): Promise<void> {
 export function startPortfolioScanner(intervalMs = 15 * 60 * 1000): NodeJS.Timeout {
   runPortfolioScan().catch((err) => console.error('[portfolioScanner] initial run failed:', err));
   return setInterval(() => {
-    runPortfolioScan().catch((err) => console.error('[portfolioScanner] scheduled run failed:', err));
+    runPortfolioScan().catch((err) =>
+      console.error('[portfolioScanner] scheduled run failed:', err),
+    );
   }, intervalMs);
 }

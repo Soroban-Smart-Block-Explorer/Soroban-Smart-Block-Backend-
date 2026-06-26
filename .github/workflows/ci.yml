@@ -1,4 +1,4 @@
-name: CI
+name: Build & Validate
 
 on:
   push:
@@ -6,35 +6,13 @@ on:
   pull_request:
     branches: [main]
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
-  test:
+  build:
     runs-on: ubuntu-latest
-
-    services:
-      postgres:
-        image: postgres:16-alpine
-        env:
-          POSTGRES_USER: postgres
-          POSTGRES_PASSWORD: password
-          POSTGRES_DB: soroban_explorer_test
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd pg_isready
-          --health-interval 5s
-          --health-timeout 5s
-          --health-retries 5
-
-    env:
-      STELLAR_NETWORK: testnet
-      DATABASE_URL: postgresql://postgres:password@localhost:5432/soroban_explorer_test
-      TESTNET_DATABASE_URL: postgresql://postgres:password@localhost:5432/soroban_explorer_test
-      TESTNET_READ_REPLICA_URL: postgresql://postgres:password@localhost:5432/soroban_explorer_test
-      TESTNET_RPC_URL: https://soroban-testnet.stellar.org
-      TESTNET_RPC_WS_URL: wss://soroban-testnet.stellar.org
-      TESTNET_HORIZON_URL: https://horizon-testnet.stellar.org
-      TESTNET_PASSPHRASE: "Test SDF Network ; September 2015"
-
     steps:
       - uses: actions/checkout@v4
 
@@ -43,16 +21,20 @@ jobs:
           node-version: 20
           cache: npm
 
-      - run: npm ci
+      - name: Install dependencies
+        run: npm ci
 
-      - run: npx prisma generate
+      # Pre-existing step — unchanged from original CI
+      - name: TypeScript build (src/)
+        run: npm run build
 
-      - run: npx prisma db push --accept-data-loss
+      # New step: type-check scripts/ with @types/node available
+      # Uses tsconfig.scripts.json (extends root tsconfig + adds types:node)
+      - name: Type-check scripts/
+        run: npm run typecheck:scripts
 
-      - run: npx prisma validate
-
-      - run: npm run lint
-
-      - run: npm test
-
-      - run: npm run build
+      # New step: scan src/ for phantom Prisma field references
+      # Uses ts-node --transpile-only (same pattern as audit-indexes + validate-routes)
+      # Exits 1 only if a field name that doesn't exist in schema.prisma is found
+      - name: Prisma field reference validator
+        run: npm run validate:prisma

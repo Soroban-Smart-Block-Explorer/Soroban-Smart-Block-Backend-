@@ -1,10 +1,8 @@
 import { prismaWrite as prisma } from '../db';
-import { config } from '../config';
 import { archiveRawXdr } from '../archival/archiver';
 
 const PRUNE_INTERVAL_MS = parseInt(process.env.PRUNE_INTERVAL_MS ?? '86400000'); // 24h default
 const FAILED_ITEM_RETENTION_DAYS = parseInt(process.env.FAILED_ITEM_RETENTION_DAYS ?? '7');
-const EXPORT_JOB_RETENTION_DAYS = parseInt(process.env.EXPORT_JOB_RETENTION_DAYS ?? '30');
 
 export async function schedulePruner() {
   setInterval(async () => {
@@ -30,7 +28,9 @@ async function pruneExpiredData() {
     }
 
     // Prune dead failed items older than retention period
-    const failedItemCutoff = new Date(Date.now() - FAILED_ITEM_RETENTION_DAYS * 24 * 60 * 60 * 1000);
+    const failedItemCutoff = new Date(
+      Date.now() - FAILED_ITEM_RETENTION_DAYS * 24 * 60 * 60 * 1000,
+    );
     const deletedFailedItems = await prisma.failedItem.deleteMany({
       where: {
         dead: true,
@@ -38,16 +38,6 @@ async function pruneExpiredData() {
       },
     });
     console.log(`[Pruner] Deleted ${deletedFailedItems.count} expired failed items`);
-
-    // Prune completed export jobs older than retention period
-    const exportJobCutoff = new Date(Date.now() - EXPORT_JOB_RETENTION_DAYS * 24 * 60 * 60 * 1000);
-    const deletedExportJobs = await prisma.exportJob.deleteMany({
-      where: {
-        status: { in: ['done', 'failed'] },
-        createdAt: { lt: exportJobCutoff },
-      },
-    });
-    console.log(`[Pruner] Deleted ${deletedExportJobs.count} expired export jobs`);
 
     // Prune verification jobs older than 90 days
     const verificationJobCutoff = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000);

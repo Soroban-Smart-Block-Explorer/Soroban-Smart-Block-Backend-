@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 
 // ── Unit tests for pause detection, pauser classification, recovery analysis ──
 
@@ -10,10 +10,7 @@ vi.mock('../src/db', () => ({
 vi.mock('../src/logger', () => ({ logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn() } }));
 vi.mock('../src/ws/eventBroadcaster', () => ({ broadcastEmergencyEvent: vi.fn() }));
 
-import {
-  computeDecentralizationScore,
-  classifyRisk,
-} from '../src/indexer/emergency-indexer';
+import { computeDecentralizationScore, classifyRisk } from '../src/indexer/emergency-indexer';
 
 // ── computeDecentralizationScore ────────────────────────────────────────────
 
@@ -35,8 +32,8 @@ describe('computeDecentralizationScore', () => {
   });
 
   it('scales multi_sig by threshold/total ratio', () => {
-    const low = computeDecentralizationScore('multi_sig', 1, 5);   // ratio 0.2 → 21 + 0.2*39 = 28.8 → 28
-    const high = computeDecentralizationScore('multi_sig', 4, 5);  // ratio 0.8 → 21 + 0.8*39 = 52.2 → 52
+    const low = computeDecentralizationScore('multi_sig', 1, 5); // ratio 0.2 → 21 + 0.2*39 = 28.8 → 28
+    const high = computeDecentralizationScore('multi_sig', 4, 5); // ratio 0.8 → 21 + 0.8*39 = 52.2 → 52
     expect(low).toBeLessThan(high);
     expect(low).toBeGreaterThanOrEqual(21);
     expect(high).toBeLessThanOrEqual(60);
@@ -46,7 +43,7 @@ describe('computeDecentralizationScore', () => {
     const score1 = computeDecentralizationScore('timelock', undefined, undefined, 1);
     const score5 = computeDecentralizationScore('timelock', undefined, undefined, 5);
     expect(score5).toBeGreaterThan(score1);
-    expect(score1).toBe(60);  // 50 + 1*10
+    expect(score1).toBe(60); // 50 + 1*10
     expect(score5).toBe(100); // 50 + 5*10 = 100 capped
   });
 });
@@ -143,13 +140,12 @@ describe('recovery function classification', () => {
   });
 
   it('computes correct robustness score', () => {
-    const score = (
-      (true ? 30 : 0) +  // fund recovery
-      (true ? 25 : 0) +  // upgrade
-      (false ? 20 : 0) + // migration
-      (false ? 15 : 0) + // rollback
-      (true ? 10 : 0)    // admin
-    );
+    const score =
+      30 + // fund recovery
+      25 + // upgrade
+      0 + // migration
+      0 + // rollback
+      10; // admin
     expect(score).toBe(65);
   });
 

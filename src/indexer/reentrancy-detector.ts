@@ -6,12 +6,11 @@ const WITHDRAW_TOPICS = new Set(['withdraw', 'transfer', 'burn', 'redeem', 'clai
 
 // Thresholds
 const REPEATED_CALL_THRESHOLD = 2; // same withdraw target seen ≥ this many times
-const DEPTH_THRESHOLD = 4;         // call chain depth ≥ this is suspicious
-const HIGH_SEVERITY_REPEATS = 4;   // repeated calls ≥ this → high severity
+const DEPTH_THRESHOLD = 4; // call chain depth ≥ this is suspicious
+const HIGH_SEVERITY_REPEATS = 4; // repeated calls ≥ this → high severity
 
 /** Warning label applied to every detected drain/re-entrancy signal. */
-export const DRAIN_EXPLOIT_WARNING =
-  'Potential Smart Contract Drain Exploit Pattern Detected';
+export const DRAIN_EXPLOIT_WARNING = 'Potential Smart Contract Drain Exploit Pattern Detected';
 
 export interface ReentrancySignal {
   transactionHash: string;

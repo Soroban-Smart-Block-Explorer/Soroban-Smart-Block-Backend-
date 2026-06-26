@@ -133,8 +133,10 @@ const OPCODE_NAMES: Record<number, string> = {
   0xaf: 'i64.trunc_f32_u',
   0xb0: 'i64.trunc_f64_s',
   0xb1: 'i64.trunc_f64_u',
-  0xfc: 'misc',  // prefix for bulk-memory / saturating-trunc instructions
+  0xfc: 'misc', // prefix for bulk-memory / saturating-trunc instructions
 };
+
+import { createHash } from 'crypto';
 
 // ── Vulnerable pattern templates ──────────────────────────────────────────────
 
@@ -153,6 +155,141 @@ export interface VulnerableTemplate {
    * Defaults to 0 (strict consecutive match).
    */
   maxGap?: number;
+}
+
+export interface WasmSectionSummary {
+  id: number;
+  name?: string;
+  type: string;
+  size: number;
+  details?: Record<string, unknown>;
+}
+
+export interface WasmImportEntry {
+  module: string;
+  name: string;
+  kind: 'func' | 'table' | 'memory' | 'global' | 'unknown';
+  typeIndex?: number;
+  type?: string;
+  host?: boolean;
+  metadata?: Record<string, unknown>;
+  mutable?: boolean;
+}
+
+export interface WasmExportEntry {
+  name: string;
+  kind: 'func' | 'table' | 'memory' | 'global' | 'unknown';
+  index: number;
+}
+
+export interface WasmGlobalEntry {
+  index: number;
+  type: string;
+  mutable: boolean;
+}
+
+export interface WasmMemoryEntry {
+  min: number;
+  max?: number;
+  shared?: boolean;
+}
+
+export interface WasmTypeEntry {
+  params: string[];
+  results: string[];
+}
+
+export interface WasmInstruction {
+  offset: number;
+  mnemonic: string;
+  immediates: number[];
+  raw: string;
+}
+
+export interface FunctionBasicBlock {
+  id: string;
+  instructions: string[];
+  successors: string[];
+}
+
+export interface FunctionCFG {
+  entryBlock: string;
+  blocks: FunctionBasicBlock[];
+  loops: string[];
+}
+
+export interface FunctionCallInfo {
+  targetIndex: number;
+  targetName: string;
+  kind: 'internal' | 'imported' | 'indirect';
+  instructionOffset: number;
+}
+
+export interface StorageOperation {
+  type: 'read' | 'write';
+  instruction: string;
+  offset: number;
+}
+
+export interface HostCallInfo {
+  module: string;
+  name: string;
+  instructionOffset: number;
+}
+
+export interface FunctionAnalysis {
+  index: number;
+  globalIndex: number;
+  name: string;
+  exportName?: string;
+  selector?: string;
+  signature: WasmTypeEntry;
+  params: string[];
+  returns: string[];
+  localTypes: string[];
+  bytecode: string[];
+  instructions: WasmInstruction[];
+  pseudoCode: string;
+  cfg: FunctionCFG;
+  complexity: 'low' | 'medium' | 'high';
+  linesOfCode: number;
+  cyclomaticComplexity: number;
+  calls: FunctionCallInfo[];
+  storageOperations: StorageOperation[];
+  hostCalls: HostCallInfo[];
+  sourceMap: unknown[];
+}
+
+export interface CallGraphEdge {
+  from: string;
+  to: string;
+  type: 'call' | 'delegate' | 'import';
+}
+
+export interface ContractSourceAnalysis {
+  sourceType: 'wasm';
+  language: 'wasm';
+  compilerVersion: string | null;
+  wasmHash: string;
+  bytecodeSize: number;
+  sections: WasmSectionSummary[];
+  imports: WasmImportEntry[];
+  exports: WasmExportEntry[];
+  memory: WasmMemoryEntry[];
+  globals: WasmGlobalEntry[];
+  functions: FunctionAnalysis[];
+  callGraph: {
+    nodes: string[];
+    edges: CallGraphEdge[];
+  };
+  storageVariables: unknown[];
+  events: unknown[];
+  errors: unknown[];
+  metadata: Record<string, unknown>;
+  pseudoCode: string;
+  decompiledAt: string;
+  verifiedAt?: string | null;
+  updatedAt: string;
 }
 
 /**
@@ -174,8 +311,7 @@ export const VULNERABLE_TEMPLATES: VulnerableTemplate[] = [
   },
   {
     id: 'backdoor-init',
-    description:
-      'Backdoor initialisation: indirect call with no preceding auth/guard check',
+    description: 'Backdoor initialisation: indirect call with no preceding auth/guard check',
     opcodeSequence: ['call_indirect'],
     maxGap: 0,
   },
@@ -195,8 +331,7 @@ export const VULNERABLE_TEMPLATES: VulnerableTemplate[] = [
   },
   {
     id: 'unchecked-division-u',
-    description:
-      'Unchecked unsigned integer division: divisor is not guarded before i64.div_u',
+    description: 'Unchecked unsigned integer division: divisor is not guarded before i64.div_u',
     opcodeSequence: ['i64.div_u'],
     maxGap: 0,
   },
@@ -346,7 +481,11 @@ export function matchVulnerableTemplates(
       if ((index.frequency[pattern[0]] ?? 0) > 0) {
         // Find first occurrence offset
         const firstIdx = seq.indexOf(pattern[0]);
-        matches.push({ templateId: template.id, description: template.description, matchOffset: firstIdx });
+        matches.push({
+          templateId: template.id,
+          description: template.description,
+          matchOffset: firstIdx,
+        });
       }
       continue;
     }
@@ -360,7 +499,11 @@ export function matchVulnerableTemplates(
         if (patternIdx === 0) windowStart = i;
         patternIdx++;
         if (patternIdx === pattern.length) {
-          matches.push({ templateId: template.id, description: template.description, matchOffset: windowStart });
+          matches.push({
+            templateId: template.id,
+            description: template.description,
+            matchOffset: windowStart,
+          });
           break; // report first match only per template
         }
       } else if (patternIdx > 0) {
@@ -405,6 +548,732 @@ export function decompileWasm(
   return { opcodeIndex, vulnerabilities, hasVulnerabilities, warningMessage };
 }
 
+export function analyzeWasmContract(wasm: Buffer): ContractSourceAnalysis {
+  if (wasm.length < 8) throw new Error('Invalid Wasm: binary too short');
+
+  const sections = parseWasmSections(wasm);
+  const moduleInfo = parseWasmModule(wasm);
+  const now = new Date().toISOString();
+
+  const functions = analyzeFunctionBodies(wasm, moduleInfo);
+  const callGraph = buildCallGraph(functions);
+  const pseudoCode = functions.map((fn) => fn.pseudoCode).join('\n\n');
+
+  return {
+    sourceType: 'wasm',
+    language: 'wasm',
+    compilerVersion: null,
+    wasmHash: createHash('sha256').update(wasm).digest('hex'),
+    bytecodeSize: wasm.length,
+    sections,
+    imports: moduleInfo.imports,
+    exports: moduleInfo.exports,
+    memory: moduleInfo.memories,
+    globals: moduleInfo.globals,
+    functions,
+    callGraph,
+    storageVariables: [],
+    events: [],
+    errors: [],
+    metadata: {
+      typeCount: moduleInfo.types.length,
+      importCount: moduleInfo.imports.length,
+      definedFunctionCount: functions.length,
+    },
+    pseudoCode,
+    decompiledAt: now,
+    verifiedAt: null,
+    updatedAt: now,
+  };
+}
+
+interface ParsedWasmModule {
+  types: WasmTypeEntry[];
+  imports: WasmImportEntry[];
+  exports: WasmExportEntry[];
+  memories: WasmMemoryEntry[];
+  globals: WasmGlobalEntry[];
+  functionTypeIndices: number[];
+  importedFunctionCount: number;
+  functionNameMap: Map<number, string>;
+}
+
+function parseWasmSections(wasm: Buffer): WasmSectionSummary[] {
+  const sections: WasmSectionSummary[] = [];
+  let offset = 8;
+
+  while (offset < wasm.length) {
+    const sectionId = wasm[offset++];
+    const [sectionSize, sizeLen] = readUleb128(wasm, offset);
+    offset += sizeLen;
+    const sectionStart = offset;
+    const sectionEnd = offset + sectionSize;
+    const sectionName = sectionNameFromId(sectionId);
+    const summary: WasmSectionSummary = {
+      id: sectionId,
+      name: sectionName,
+      type: sectionName,
+      size: sectionSize,
+    };
+
+    if (sectionId === 0) {
+      const [name] = readString(wasm, offset);
+      summary.details = { customName: name };
+    }
+
+    sections.push(summary);
+    offset = sectionEnd;
+  }
+
+  return sections;
+}
+
+function parseWasmModule(wasm: Buffer): ParsedWasmModule {
+  const types: WasmTypeEntry[] = [];
+  const imports: WasmImportEntry[] = [];
+  const exports: WasmExportEntry[] = [];
+  const memories: WasmMemoryEntry[] = [];
+  const globals: WasmGlobalEntry[] = [];
+  const functionTypeIndices: number[] = [];
+  const functionNameMap = new Map<number, string>();
+
+  let offset = 8;
+  let importedFunctionCount = 0;
+
+  while (offset < wasm.length) {
+    const sectionId = wasm[offset++];
+    const [sectionSize, sizeLen] = readUleb128(wasm, offset);
+    offset += sizeLen;
+    const sectionEnd = offset + sectionSize;
+
+    switch (sectionId) {
+      case 1: {
+        const [count, countLen] = readUleb128(wasm, offset);
+        let pos = offset + countLen;
+        for (let i = 0; i < count; i++) {
+          const form = wasm[pos++];
+          if (form !== 0x60) throw new Error('Unsupported Wasm type form');
+          const [paramCount, paramLen] = readUleb128(wasm, pos);
+          pos += paramLen;
+          const params: string[] = [];
+          for (let j = 0; j < paramCount; j++) {
+            params.push(valTypeName(wasm[pos++]));
+          }
+          const [resultCount, resultLen] = readUleb128(wasm, pos);
+          pos += resultLen;
+          const results: string[] = [];
+          for (let j = 0; j < resultCount; j++) {
+            results.push(valTypeName(wasm[pos++]));
+          }
+          types.push({ params, results });
+        }
+        break;
+      }
+      case 2: {
+        const [count, countLen] = readUleb128(wasm, offset);
+        let pos = offset + countLen;
+        for (let i = 0; i < count; i++) {
+          const [module, moduleLen] = readString(wasm, pos);
+          pos += moduleLen;
+          const [name, nameLen] = readString(wasm, pos);
+          pos += nameLen;
+          const kind = wasm[pos++];
+          const entry: WasmImportEntry = {
+            module,
+            name,
+            kind: 'unknown',
+          };
+          if (kind === 0x00) {
+            entry.kind = 'func';
+            const [typeIndex, typeLen] = readUleb128(wasm, pos);
+            pos += typeLen;
+            entry.typeIndex = typeIndex;
+            entry.type = typeIndex < types.length ? typeSignature(types[typeIndex]) : undefined;
+            entry.host = module.startsWith('soroban_') || module === 'env';
+            importedFunctionCount += 1;
+          } else if (kind === 0x01) {
+            entry.kind = 'table';
+            const elemType = wasm[pos++];
+            const [flags, flagsLen] = readUleb128(wasm, pos);
+            pos += flagsLen;
+            const [min, minLen] = readUleb128(wasm, pos);
+            pos += minLen;
+            let max;
+            if (flags & 0x01) {
+              const [value, valueLen] = readUleb128(wasm, pos);
+              pos += valueLen;
+              max = value;
+            }
+            entry.metadata = { elemType, min, max };
+          } else if (kind === 0x02) {
+            entry.kind = 'memory';
+            const [flags, flagsLen] = readUleb128(wasm, pos);
+            pos += flagsLen;
+            const [min, minLen] = readUleb128(wasm, pos);
+            pos += minLen;
+            let max;
+            if (flags & 0x01) {
+              const [value, valueLen] = readUleb128(wasm, pos);
+              pos += valueLen;
+              max = value;
+            }
+            entry.metadata = { min, max, shared: Boolean(flags & 0x02) };
+          } else if (kind === 0x03) {
+            entry.kind = 'global';
+            const typeName = valTypeName(wasm[pos++]);
+            const mutable = wasm[pos++] === 1;
+            entry.type = typeName;
+            entry.mutable = mutable;
+          }
+          imports.push(entry);
+        }
+        break;
+      }
+      case 3: {
+        const [count, countLen] = readUleb128(wasm, offset);
+        let pos = offset + countLen;
+        for (let i = 0; i < count; i++) {
+          const [typeIndex, typeLen] = readUleb128(wasm, pos);
+          pos += typeLen;
+          functionTypeIndices.push(typeIndex);
+        }
+        break;
+      }
+      case 5: {
+        const [count, countLen] = readUleb128(wasm, offset);
+        let pos = offset + countLen;
+        for (let i = 0; i < count; i++) {
+          const [flags, flagsLen] = readUleb128(wasm, pos);
+          pos += flagsLen;
+          const [min, minLen] = readUleb128(wasm, pos);
+          pos += minLen;
+          let max;
+          if (flags & 0x01) {
+            const [value, valueLen] = readUleb128(wasm, pos);
+            pos += valueLen;
+            max = value;
+          }
+          memories.push({ min, max, shared: Boolean(flags & 0x02) });
+        }
+        break;
+      }
+      case 6: {
+        const [count, countLen] = readUleb128(wasm, offset);
+        let pos = offset + countLen;
+        for (let i = 0; i < count; i++) {
+          const typeName = valTypeName(wasm[pos++]);
+          const mutable = wasm[pos++] === 1;
+          globals.push({ index: globals.length, type: typeName, mutable });
+          while (wasm[pos++] !== 0x0b && pos < sectionEnd) {
+            // skip init expr
+          }
+        }
+        break;
+      }
+      case 7: {
+        const [count, countLen] = readUleb128(wasm, offset);
+        let pos = offset + countLen;
+        for (let i = 0; i < count; i++) {
+          const [name, nameLen] = readString(wasm, pos);
+          pos += nameLen;
+          const kind = wasm[pos++];
+          const [index, idxLen] = readUleb128(wasm, pos);
+          pos += idxLen;
+          exports.push({ name, kind: exportKindName(kind), index });
+          if (kind === 0x00) {
+            functionNameMap.set(index, name);
+          }
+        }
+        break;
+      }
+      case 0: {
+        const [customName, customNameLen] = readString(wasm, offset);
+        let pos = offset + customNameLen;
+        if (customName === 'name') {
+          while (pos < sectionEnd) {
+            const subsectionId = wasm[pos++];
+            const [subSize, subSizeLen] = readUleb128(wasm, pos);
+            pos += subSizeLen;
+            const subEnd = pos + subSize;
+            if (subsectionId === 1) {
+              const [nameCount, nameCountLen] = readUleb128(wasm, pos);
+              pos += nameCountLen;
+              for (let i = 0; i < nameCount; i++) {
+                const [idx, idxLen] = readUleb128(wasm, pos);
+                pos += idxLen;
+                const [name, nameLen] = readString(wasm, pos);
+                pos += nameLen;
+                functionNameMap.set(idx, name);
+              }
+            } else {
+              pos = subEnd;
+            }
+          }
+        }
+        break;
+      }
+      default:
+        break;
+    }
+
+    offset = sectionEnd;
+  }
+
+  return {
+    types,
+    imports,
+    exports,
+    memories,
+    globals,
+    functionTypeIndices,
+    importedFunctionCount,
+    functionNameMap,
+  };
+}
+
+function analyzeFunctionBodies(wasm: Buffer, moduleInfo: ParsedWasmModule): FunctionAnalysis[] {
+  let offset = 8;
+  const functions: FunctionAnalysis[] = [];
+  const importedCount = moduleInfo.importedFunctionCount;
+  let functionBodyIndex = 0;
+
+  while (offset < wasm.length) {
+    const sectionId = wasm[offset++];
+    const [sectionSize, sizeLen] = readUleb128(wasm, offset);
+    offset += sizeLen;
+    const sectionEnd = offset + sectionSize;
+
+    if (sectionId === 10) {
+      const [funcCount, funcCountLen] = readUleb128(wasm, offset);
+      let pos = offset + funcCountLen;
+      for (let i = 0; i < funcCount && pos < sectionEnd; i++) {
+        const [bodySize, bodySizeLen] = readUleb128(wasm, pos);
+        pos += bodySizeLen;
+        const bodyStart = pos;
+        const bodyEnd = bodyStart + bodySize;
+
+        const [localCount, localCountLen] = readUleb128(wasm, pos);
+        pos += localCountLen;
+        const localTypes: string[] = [];
+        for (let j = 0; j < localCount; j++) {
+          const [count, countLen] = readUleb128(wasm, pos);
+          pos += countLen;
+          const typeName = valTypeName(wasm[pos++]);
+          for (let k = 0; k < count; k++) {
+            localTypes.push(typeName);
+          }
+        }
+
+        const instructions: WasmInstruction[] = [];
+        let instructionOffset = pos;
+        while (instructionOffset < bodyEnd) {
+          const instruction = readInstruction(wasm, instructionOffset);
+          instructions.push(instruction);
+          instructionOffset = instruction.nextOffset;
+        }
+
+        const functionIndex = importedCount + functionBodyIndex;
+        const exportName = moduleInfo.exports.find(
+          (entry) => entry.kind === 'func' && entry.index === functionIndex,
+        )?.name;
+        const explicitName =
+          moduleInfo.functionNameMap.get(functionIndex) ?? exportName ?? `func_${functionIndex}`;
+        const signature = moduleInfo.types[moduleInfo.functionTypeIndices[functionBodyIndex]] ?? {
+          params: [],
+          results: [],
+        };
+        const params = signature.params.map((_, idx) => `arg${idx}`);
+        const returns = signature.results.map((_, idx) => `ret${idx}`);
+
+        const calls: FunctionCallInfo[] = [];
+        const hostCalls: HostCallInfo[] = [];
+        const storageOperations: StorageOperation[] = [];
+        const pseudoLines: string[] = [];
+        let branchCount = 0;
+
+        for (const insn of instructions) {
+          const args = insn.immediates.join(', ');
+          let line = '';
+          switch (insn.mnemonic) {
+            case 'local.get':
+              line = `stack.push(local_${insn.immediates[0] ?? 0})`;
+              break;
+            case 'local.set':
+              line = `local_${insn.immediates[0] ?? 0} = stack.pop()`;
+              break;
+            case 'local.tee':
+              line = `local_${insn.immediates[0] ?? 0} = stack.top()`;
+              break;
+            case 'global.get':
+              line = `stack.push(global_${insn.immediates[0] ?? 0})`;
+              break;
+            case 'global.set':
+              line = `global_${insn.immediates[0] ?? 0} = stack.pop()`;
+              break;
+            case 'call': {
+              const targetIndex = insn.immediates[0] ?? 0;
+              const targetName =
+                moduleInfo.functionNameMap.get(targetIndex) ?? `func_${targetIndex}`;
+              const kind = targetIndex < importedCount ? 'imported' : 'internal';
+              calls.push({ targetIndex, targetName, kind, instructionOffset: insn.offset });
+              if (kind === 'imported') {
+                const imported = moduleInfo.imports.find(
+                  (imp) =>
+                    imp.kind === 'func' &&
+                    imp.typeIndex === moduleInfo.functionTypeIndices[targetIndex - importedCount],
+                );
+                hostCalls.push({
+                  module: imported?.module ?? 'unknown',
+                  name: imported?.name ?? targetName,
+                  instructionOffset: insn.offset,
+                });
+              }
+              line = `${targetName}(${args})`;
+              break;
+            }
+            case 'call_indirect': {
+              const typeIndex = insn.immediates[0] ?? 0;
+              branchCount += 1;
+              line = `call_indirect(type=${typeIndex})`;
+              break;
+            }
+            case 'br_if':
+              branchCount += 1;
+              line = `if (stack.pop()) goto label_${insn.immediates[0] ?? 0}`;
+              break;
+            case 'br':
+              line = `goto label_${insn.immediates[0] ?? 0}`;
+              break;
+            case 'loop':
+              line = `loop`;
+              branchCount += 1;
+              break;
+            case 'if':
+              line = `if (stack.pop()) {`;
+              branchCount += 1;
+              break;
+            case 'else':
+              line = `} else {`;
+              break;
+            case 'end':
+              line = `}`;
+              break;
+            case 'return':
+              line = `return`;
+              break;
+            case 'i32.const':
+            case 'i64.const':
+            case 'f32.const':
+            case 'f64.const':
+              line = `stack.push(${insn.immediates.join(', ')})`;
+              break;
+            case 'i32.load':
+            case 'i64.load':
+            case 'i32.store':
+            case 'i64.store':
+              storageOperations.push({
+                type: insn.mnemonic.endsWith('.load') ? 'read' : 'write',
+                instruction: insn.mnemonic,
+                offset: insn.offset,
+              });
+              line = `${insn.mnemonic} [${insn.immediates.join(', ')}]`;
+              break;
+            default:
+              line = `${insn.mnemonic}${args ? ` ${args}` : ''}`;
+              break;
+          }
+          pseudoLines.push(line);
+        }
+
+        const cyclomaticComplexity = Math.max(1, branchCount + 1);
+        const complexity =
+          cyclomaticComplexity <= 2 ? 'low' : cyclomaticComplexity <= 5 ? 'medium' : 'high';
+
+        const cfg = buildFunctionCFG(instructions);
+
+        functions.push({
+          index: functionIndex,
+          globalIndex: functionIndex,
+          name: explicitName,
+          exportName,
+          selector: exportName
+            ? createHash('sha256').update(exportName).digest('hex').slice(0, 10)
+            : undefined,
+          signature,
+          params,
+          returns,
+          localTypes,
+          bytecode: instructions.map((insn) => insn.raw),
+          instructions,
+          pseudoCode: pseudoLines.join('\n'),
+          cfg,
+          complexity,
+          linesOfCode: pseudoLines.length,
+          cyclomaticComplexity,
+          calls,
+          storageOperations,
+          hostCalls,
+          sourceMap: instructions.map((insn, idx) => ({
+            instructionIndex: idx,
+            wasmOffset: insn.offset,
+            pseudoLine: idx,
+          })),
+        });
+
+        functionBodyIndex += 1;
+        pos = bodyEnd;
+      }
+    }
+
+    offset = sectionEnd;
+  }
+
+  return functions;
+}
+
+function buildCallGraph(functions: FunctionAnalysis[]): {
+  nodes: string[];
+  edges: CallGraphEdge[];
+} {
+  const nodes = functions.map((fn) => fn.name);
+  const edges: CallGraphEdge[] = [];
+  for (const fn of functions) {
+    for (const call of fn.calls) {
+      edges.push({
+        from: fn.name,
+        to: call.targetName,
+        type: call.kind === 'imported' ? 'import' : 'call',
+      });
+    }
+  }
+  return { nodes, edges };
+}
+
+function buildFunctionCFG(instructions: WasmInstruction[]): FunctionCFG {
+  const blocks: FunctionBasicBlock[] = [];
+  let currentId = 0;
+  let currentBlock: FunctionBasicBlock = {
+    id: `block_${currentId}`,
+    instructions: [],
+    successors: [],
+  };
+  const loops: string[] = [];
+
+  for (const insn of instructions) {
+    currentBlock.instructions.push(insn.raw);
+    if (insn.mnemonic === 'loop') {
+      loops.push(currentBlock.id);
+    }
+    if (['br', 'br_if', 'br_table', 'return', 'end', 'else'].includes(insn.mnemonic)) {
+      blocks.push(currentBlock);
+      currentId += 1;
+      currentBlock = { id: `block_${currentId}`, instructions: [], successors: [] };
+    }
+  }
+  if (currentBlock.instructions.length > 0) {
+    blocks.push(currentBlock);
+  }
+
+  for (let i = 0; i < blocks.length; i++) {
+    const block = blocks[i];
+    const last = block.instructions[block.instructions.length - 1] ?? '';
+    if (
+      !last.startsWith('br') &&
+      !last.startsWith('return') &&
+      block.id !== blocks[blocks.length - 1]?.id
+    ) {
+      block.successors.push(blocks[i + 1].id);
+    }
+  }
+
+  return { entryBlock: 'block_0', blocks, loops };
+}
+
+function readInstruction(wasm: Buffer, offset: number): WasmInstruction & { nextOffset: number } {
+  const start = offset;
+  const opcode = wasm[offset++];
+  const mnemonic = OPCODE_NAMES[opcode] ?? `0x${opcode.toString(16).padStart(2, '0')}`;
+  const immediates: number[] = [];
+
+  switch (opcode) {
+    case 0x02:
+    case 0x03:
+    case 0x04: {
+      const [value, len] = readSleb128(wasm, offset);
+      immediates.push(value);
+      offset += len;
+      break;
+    }
+    case 0x0c:
+    case 0x0d:
+    case 0x10:
+    case 0x12: {
+      const [value, len] = readUleb128(wasm, offset);
+      immediates.push(value);
+      offset += len;
+      break;
+    }
+    case 0x11:
+    case 0x13: {
+      const [value1, len1] = readUleb128(wasm, offset);
+      offset += len1;
+      const [value2, len2] = readUleb128(wasm, offset);
+      offset += len2;
+      immediates.push(value1, value2);
+      break;
+    }
+    case 0x20:
+    case 0x21:
+    case 0x22:
+    case 0x23:
+    case 0x24:
+    case 0x25:
+    case 0x26: {
+      const [value, len] = readUleb128(wasm, offset);
+      immediates.push(value);
+      offset += len;
+      break;
+    }
+    case 0x0e: {
+      const [count, countLen] = readUleb128(wasm, offset);
+      offset += countLen;
+      immediates.push(count);
+      for (let i = 0; i <= count; i++) {
+        const [value, len] = readUleb128(wasm, offset);
+        immediates.push(value);
+        offset += len;
+      }
+      break;
+    }
+    case 0x3f:
+    case 0x40: {
+      const [value, len] = readUleb128(wasm, offset);
+      immediates.push(value);
+      offset += len;
+      break;
+    }
+    case 0x41:
+    case 0x42: {
+      const [value, len] = readSleb128(wasm, offset);
+      immediates.push(value);
+      offset += len;
+      break;
+    }
+    case 0x43:
+      immediates.push(wasm.readUInt32LE(offset));
+      offset += 4;
+      break;
+    case 0x44:
+      immediates.push(Number(wasm.readBigUInt64LE(offset)));
+      offset += 8;
+      break;
+    case 0xfc: {
+      const [subOpcode, subLen] = readUleb128(wasm, offset);
+      immediates.push(subOpcode);
+      offset += subLen;
+      break;
+    }
+    default:
+      break;
+  }
+
+  return {
+    offset: start,
+    mnemonic,
+    immediates,
+    raw: Buffer.from(wasm.slice(start, offset)).toString('hex'),
+    nextOffset: offset,
+  };
+}
+
+function readString(buf: Buffer, offset: number): [string, number] {
+  const [length, lenBytes] = readUleb128(buf, offset);
+  const start = offset + lenBytes;
+  const value = buf.toString('utf8', start, start + length);
+  return [value, lenBytes + length];
+}
+
+function readSleb128(buf: Buffer, offset: number): [number, number] {
+  let result = 0;
+  let shift = 0;
+  let bytesRead = 0;
+  let byte = 0;
+  do {
+    byte = buf[offset + bytesRead++];
+    result |= (byte & 0x7f) << shift;
+    shift += 7;
+  } while ((byte & 0x80) !== 0);
+  if (shift < 32 && (byte & 0x40) !== 0) {
+    result |= -1 << shift;
+  }
+  return [result, bytesRead];
+}
+
+function sectionNameFromId(sectionId: number): string {
+  switch (sectionId) {
+    case 0:
+      return 'custom';
+    case 1:
+      return 'type';
+    case 2:
+      return 'import';
+    case 3:
+      return 'function';
+    case 4:
+      return 'table';
+    case 5:
+      return 'memory';
+    case 6:
+      return 'global';
+    case 7:
+      return 'export';
+    case 8:
+      return 'start';
+    case 9:
+      return 'element';
+    case 10:
+      return 'code';
+    case 11:
+      return 'data';
+    default:
+      return 'unknown';
+  }
+}
+
+function valTypeName(code: number): string {
+  switch (code) {
+    case 0x7f:
+      return 'i32';
+    case 0x7e:
+      return 'i64';
+    case 0x7d:
+      return 'f32';
+    case 0x7c:
+      return 'f64';
+    default:
+      return `unknown(0x${code.toString(16)})`;
+  }
+}
+
+function exportKindName(kind: number): WasmExportEntry['kind'] {
+  switch (kind) {
+    case 0x00:
+      return 'func';
+    case 0x01:
+      return 'table';
+    case 0x02:
+      return 'memory';
+    case 0x03:
+      return 'global';
+    default:
+      return 'unknown';
+  }
+}
+
+function typeSignature(type: WasmTypeEntry): string {
+  return `(${type.params.join(', ')}) -> (${type.results.join(', ')})`;
+}
+
 // ── Internal helpers ──────────────────────────────────────────────────────────
 
 /** Read an unsigned LEB128 integer; returns [value, bytesConsumed]. */
@@ -428,12 +1297,15 @@ function readUleb128(buf: Buffer, offset: number): [number, number] {
 function skipImmediates(opcode: number, buf: Buffer, offset: number, end: number): number {
   switch (opcode) {
     // block / loop / if — blocktype (sleb128 or single byte)
-    case 0x02: case 0x03: case 0x04: {
+    case 0x02:
+    case 0x03:
+    case 0x04: {
       const [, len] = readUleb128(buf, offset);
       return offset + len;
     }
     // br / br_if — label index (uleb128)
-    case 0x0c: case 0x0d: {
+    case 0x0c:
+    case 0x0d: {
       const [, len] = readUleb128(buf, offset);
       return offset + len;
     }
@@ -470,33 +1342,55 @@ function skipImmediates(opcode: number, buf: Buffer, offset: number, end: number
       return offset + l1 + l2;
     }
     // local.get / local.set / local.tee — local index
-    case 0x20: case 0x21: case 0x22: {
+    case 0x20:
+    case 0x21:
+    case 0x22: {
       const [, len] = readUleb128(buf, offset);
       return offset + len;
     }
     // global.get / global.set — global index
-    case 0x23: case 0x24: {
+    case 0x23:
+    case 0x24: {
       const [, len] = readUleb128(buf, offset);
       return offset + len;
     }
     // table.get / table.set — table index
-    case 0x25: case 0x26: {
+    case 0x25:
+    case 0x26: {
       const [, len] = readUleb128(buf, offset);
       return offset + len;
     }
     // memory load/store instructions — alignment + offset (two uleb128s)
-    case 0x28: case 0x29: case 0x2a: case 0x2b:
-    case 0x2c: case 0x2d: case 0x2e: case 0x2f:
-    case 0x30: case 0x31: case 0x32: case 0x33:
-    case 0x34: case 0x35: case 0x36: case 0x37:
-    case 0x38: case 0x39: case 0x3a: case 0x3b:
-    case 0x3c: case 0x3d: case 0x3e: {
+    case 0x28:
+    case 0x29:
+    case 0x2a:
+    case 0x2b:
+    case 0x2c:
+    case 0x2d:
+    case 0x2e:
+    case 0x2f:
+    case 0x30:
+    case 0x31:
+    case 0x32:
+    case 0x33:
+    case 0x34:
+    case 0x35:
+    case 0x36:
+    case 0x37:
+    case 0x38:
+    case 0x39:
+    case 0x3a:
+    case 0x3b:
+    case 0x3c:
+    case 0x3d:
+    case 0x3e: {
       const [, l1] = readUleb128(buf, offset);
       const [, l2] = readUleb128(buf, offset + l1);
       return offset + l1 + l2;
     }
     // memory.size / memory.grow — reserved byte
-    case 0x3f: case 0x40:
+    case 0x3f:
+    case 0x40:
       return offset + 1;
     // i32.const — sleb128
     case 0x41: {

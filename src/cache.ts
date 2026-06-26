@@ -1,9 +1,8 @@
 import { config } from './config';
+import type { RedisClientType } from 'redis';
 
 const CACHE_URL = config.cacheUrl ?? 'memory://';
 const USE_REDIS = CACHE_URL !== '' && !CACHE_URL.startsWith('memory://');
-
-type RedisClientType = any;
 
 interface MemoryEntry {
   payload: string;
@@ -102,7 +101,11 @@ export async function cacheGet<T>(key: string): Promise<T | null> {
   }
 }
 
-export async function cacheSet<T>(key: string, value: T, ttlSeconds?: number | null): Promise<void> {
+export async function cacheSet<T>(
+  key: string,
+  value: T,
+  ttlSeconds?: number | null,
+): Promise<void> {
   const normalizedKey = key;
   const payload = JSON.stringify(value);
   memoryStore.set(normalizedKey, {

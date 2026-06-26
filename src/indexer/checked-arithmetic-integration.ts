@@ -11,7 +11,6 @@ import {
   analyzeCheckedArithmetic,
   CheckedArithmeticAnalysis,
   didOverflow,
-  getOverflowedOperations,
 } from './checked-arithmetic-decoder';
 import { prismaRead as prisma } from '../db';
 
@@ -37,7 +36,7 @@ export interface CheckedArithmeticTransactionResult {
  * Called during transaction decoding to enrich the decoded output.
  */
 export async function analyzeTransactionForCheckedArithmetic(
-  context: CheckedArithmeticTransactionContext
+  context: CheckedArithmeticTransactionContext,
 ): Promise<CheckedArithmeticTransactionResult> {
   const { functionName, rawArgs, resultVal } = context;
 
@@ -81,7 +80,7 @@ export async function analyzeTransactionForCheckedArithmetic(
  */
 export async function storeCheckedArithmeticAnalysis(
   context: CheckedArithmeticTransactionContext,
-  analysis: CheckedArithmeticAnalysis
+  analysis: CheckedArithmeticAnalysis,
 ): Promise<void> {
   if (!analysis.isCheckedOperation || !analysis.operation) {
     return;
@@ -125,7 +124,7 @@ export async function storeCheckedArithmeticAnalysis(
  */
 async function createOverflowRecord(
   context: CheckedArithmeticTransactionContext,
-  operation: any
+  operation: any,
 ): Promise<void> {
   try {
     // Store in a dedicated table for overflow events
@@ -161,7 +160,7 @@ async function createOverflowRecord(
  */
 export async function analyzeCheckedArithmeticPatterns(
   ledgerRangeStart: number,
-  ledgerRangeEnd: number
+  ledgerRangeEnd: number,
 ): Promise<{
   totalCheckedOperations: number;
   overflowCount: number;
@@ -246,17 +245,17 @@ export async function analyzeCheckedArithmeticPatterns(
  * Identify contracts that handle arithmetic overflows safely.
  * These are contracts that use checked arithmetic and handle overflow gracefully.
  */
-export async function identifyOverflowSafeContracts(
-  minOverflowCount: number = 1
-): Promise<
+export async function identifyOverflowSafeContracts(minOverflowCount: number = 1): Promise<
   Array<{
     contractAddress: string;
     totalCheckedOperations: number;
     overflowCount: number;
     successCount: number;
     overflowRate: number;
+    durationMs?: number;
   }>
 > {
+  const startMs = Date.now();
   try {
     const transactions = await prisma.transaction.findMany({
       where: {
@@ -279,10 +278,8 @@ export async function identifyOverflowSafeContracts(
       },
     });
 
-    const contractStats: Record<
-      string,
-      { total: number; overflows: number; successes: number }
-    > = {};
+    const contractStats: Record<string, { total: number; overflows: number; successes: number }> =
+      {};
 
     for (const tx of transactions) {
       if (!tx.contractAddress) continue;
@@ -306,6 +303,7 @@ export async function identifyOverflowSafeContracts(
     }
 
     // Filter and format results
+    const durationMs = Date.now() - startMs;
     const results = Object.entries(contractStats)
       .filter(([, stats]) => stats.overflows >= minOverflowCount)
       .map(([address, stats]) => ({
@@ -314,12 +312,13 @@ export async function identifyOverflowSafeContracts(
         overflowCount: stats.overflows,
         successCount: stats.successes,
         overflowRate: stats.total > 0 ? stats.overflows / stats.total : 0,
+        durationMs,
       }))
       .sort((a, b) => b.overflowCount - a.overflowCount);
 
     return results;
   } catch (error) {
-    console.error('Failed to identify overflow-safe contracts:', error);
+    console.error('[identifyOverflowSafeContracts] error after %dms:', Date.now() - startMs, error);
     return [];
   }
 }
@@ -329,7 +328,7 @@ export async function identifyOverflowSafeContracts(
  */
 export async function generateCheckedArithmeticReport(
   ledgerRangeStart: number,
-  ledgerRangeEnd: number
+  ledgerRangeEnd: number,
 ): Promise<Record<string, unknown>> {
   const patterns = await analyzeCheckedArithmeticPatterns(ledgerRangeStart, ledgerRangeEnd);
   const safeContracts = await identifyOverflowSafeContracts(1);

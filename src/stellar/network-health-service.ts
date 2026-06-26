@@ -38,7 +38,8 @@ export async function getNetworkHealth() {
   }
 
   const validators = nodes.filter((n) => n.isValidator);
-  const avgUptime = nodes.reduce((sum, n) => sum + (n.uptime30d ?? 99), 0) / Math.max(nodes.length, 1);
+  const avgUptime =
+    nodes.reduce((sum, n) => sum + (n.uptime30d ?? 99), 0) / Math.max(nodes.length, 1);
 
   const alerts: Array<{ severity: string; message: string; timestamp: string }> = [];
   const nodeCount24hAgo = latestHealth?.nodeCount ?? nodes.length;
@@ -66,7 +67,9 @@ export async function getNetworkHealth() {
       ledgerCloseTimeMs: latestHealth?.ledgerCloseTimeMs ?? 5000,
       latestLedger: networkStats ? parseInt(networkStats.current_ledger, 10) : 0,
       protocolVersion: networkStats?.protocol_version ?? 20,
-      scpMessagesPerSecond: latestHealth?.scpMessagesPerSecond ? Number(latestHealth.scpMessagesPerSecond) : 250,
+      scpMessagesPerSecond: latestHealth?.scpMessagesPerSecond
+        ? Number(latestHealth.scpMessagesPerSecond)
+        : 250,
       quorumConfiguration: { threshold: 67, validators: validators.length },
     },
     alerts,

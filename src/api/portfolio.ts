@@ -1,38 +1,73 @@
-/**
- * GET  /api/v1/portfolio           — latest portfolio snapshot (all assets)
- * POST /api/v1/portfolio/scan      — trigger an on-demand portfolio scan
- */
-
 import { Router, Request, Response } from 'express';
-import { prismaRead as prisma } from '../db';
-import { runPortfolioScan } from '../indexer/portfolioScanner';
+import { z } from 'zod';
+import { asyncHandler } from '../middleware/asyncHandler';
+import { valuatePortfolio, computePortfolioHistory } from '../services/pricing/portfolio';
 
 export const portfolioRouter = Router();
 
-// GET /portfolio — latest snapshot per contract
-portfolioRouter.get('/', async (_req: Request, res: Response) => {
-  try {
-    // Return the most recent snapshot for each contract address
-    const latest = await prisma.portfolioSnapshot.findMany({
-      orderBy: { snapshotAt: 'desc' },
-      distinct: ['contractAddress'],
+const holdingSchema = z.object({
+  token: z.string().min(1),
+  balance: z.string().min(1),
+  costBasisUsd: z.number().optional(),
+});
+
+const valuateSchema = z.object({
+  holdings: z.array(holdingSchema).min(1).max(500),
+});
+
+const historySchema = z.object({
+  holdings: z.array(holdingSchema).min(1).max(500),
+  from: z.string().optional(),
+  to: z.string().optional(),
+  interval: z.string().optional(),
+});
+
+portfolioRouter.post(
+  '/valuate',
+  asyncHandler(async (req: Request, res: Response) => {
+    const { holdings } = valuateSchema.parse(req.body);
+
+    const valuation = await valuatePortfolio(holdings);
+
+    if (valuation.breakdown.length === 0) {
+      return res.status(400).json({ error: 'Could not valuate any holdings' });
+    }
+
+    res.json(valuation);
+  }),
+);
+
+portfolioRouter.post(
+  '/history',
+  asyncHandler(async (req: Request, res: Response) => {
+    const { holdings, from, to, interval } = historySchema.parse(req.body);
+
+    const fromDate = from ? new Date(from) : new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+    const toDate = to ? new Date(to) : new Date();
+    const intervalMs = interval ? parseInterval(interval) : 24 * 60 * 60 * 1000;
+
+    const history = await computePortfolioHistory(holdings, fromDate, toDate, intervalMs);
+
+    res.json({
+      holdings: holdings.map((h) => h.token),
+      from: fromDate.toISOString(),
+      to: toDate.toISOString(),
+      dataPoints: history.length,
+      history,
     });
+  }),
+);
 
-    const totalUsd = latest.reduce((sum, s) => sum + (s.valueUsd ?? 0), 0);
-    const totalXlm = latest.reduce((sum, s) => sum + (s.valueXlm ?? 0), 0);
-
-    res.json({ totalUsd, totalXlm, assets: latest });
-  } catch (e) {
-    res.status(500).json({ error: String(e) });
-  }
-});
-
-// POST /portfolio/scan — on-demand trigger
-portfolioRouter.post('/scan', async (_req: Request, res: Response) => {
-  try {
-    await runPortfolioScan();
-    res.json({ ok: true });
-  } catch (e) {
-    res.status(500).json({ error: String(e) });
-  }
-});
+function parseInterval(interval: string): number {
+  const match = interval.match(/^(\d+)([mhdw])$/);
+  if (!match) return 24 * 60 * 60 * 1000;
+  const value = parseInt(match[1]);
+  const unit = match[2];
+  const multipliers: Record<string, number> = {
+    m: 60 * 1000,
+    h: 60 * 60 * 1000,
+    d: 24 * 60 * 60 * 1000,
+    w: 7 * 24 * 60 * 60 * 1000,
+  };
+  return value * (multipliers[unit] ?? 24 * 60 * 60 * 1000);
+}

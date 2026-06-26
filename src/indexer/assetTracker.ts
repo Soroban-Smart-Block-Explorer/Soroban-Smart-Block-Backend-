@@ -32,17 +32,19 @@ async function fetchPrices(assetCodes: string[]): Promise<PriceMap> {
 
   try {
     // Stellar Expert aggregated ticker — returns price in XLM for each asset
-    const { data } = await axios.get<{ _embedded: { records: Array<{ asset: string; price: number }> } }>(
-      'https://api.stellar.expert/explorer/public/asset',
-      { params: { limit: 200 }, timeout: 5000 }
-    );
+    const { data } = await axios.get<{
+      _embedded: { records: Array<{ asset: string; price: number }> };
+    }>('https://api.stellar.expert/explorer/public/asset', {
+      params: { limit: 200 },
+      timeout: 5000,
+    });
 
     // Fetch XLM/USD price from CoinGecko (free, no key)
     let xlmUsd = 0;
     try {
       const cg = await axios.get<{ stellar: { usd: number } }>(
         'https://api.coingecko.com/api/v3/simple/price',
-        { params: { ids: 'stellar', vs_currencies: 'usd' }, timeout: 5000 }
+        { params: { ids: 'stellar', vs_currencies: 'usd' }, timeout: 5000 },
       );
       xlmUsd = cg.data?.stellar?.usd ?? 0;
     } catch {
@@ -130,5 +132,5 @@ export async function computeAssetMetrics(): Promise<AssetMetric[]> {
     });
   }
 
-  return metrics.sort((a, b) => (b.totalEvents - a.totalEvents));
+  return metrics.sort((a, b) => b.totalEvents - a.totalEvents);
 }

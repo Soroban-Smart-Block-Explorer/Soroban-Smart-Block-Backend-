@@ -78,10 +78,7 @@ export interface TransactionGraph {
 async function getTransactionsForAddress(address: string, limit = 100) {
   const txs = await prismaRead.transaction.findMany({
     where: {
-      OR: [
-        { sourceAccount: address },
-        { contractAddress: address },
-      ],
+      OR: [{ sourceAccount: address }, { contractAddress: address }],
     },
     orderBy: { ledgerSequence: 'desc' },
     take: limit,
@@ -157,8 +154,14 @@ export async function findCommonInputClusters(limit = 200): Promise<AddressClust
       clusters.push({
         addresses: cluster,
         txCount: allTxs.length,
-        firstSeen: allTxs.reduce((min, t) => t.ledgerCloseTime < min ? t.ledgerCloseTime : min, allTxs[0]?.ledgerCloseTime || new Date()),
-        lastSeen: allTxs.reduce((max, t) => t.ledgerCloseTime > max ? t.ledgerCloseTime : max, allTxs[0]?.ledgerCloseTime || new Date()),
+        firstSeen: allTxs.reduce(
+          (min, t) => (t.ledgerCloseTime < min ? t.ledgerCloseTime : min),
+          allTxs[0]?.ledgerCloseTime || new Date(),
+        ),
+        lastSeen: allTxs.reduce(
+          (max, t) => (t.ledgerCloseTime > max ? t.ledgerCloseTime : max),
+          allTxs[0]?.ledgerCloseTime || new Date(),
+        ),
       });
     }
   }
@@ -303,9 +306,8 @@ export async function buildTransactionGraph(
     const { txs, privacyTxs } = await getTransactionsForAddress(addr);
 
     const privScores = privacyTxs.map((p) => p.privacyScore || 0);
-    const avgScore = privScores.length > 0
-      ? privScores.reduce((a, b) => a + b, 0) / privScores.length
-      : undefined;
+    const avgScore =
+      privScores.length > 0 ? privScores.reduce((a, b) => a + b, 0) / privScores.length : undefined;
 
     if (!nodes.has(addr)) {
       nodes.set(addr, {
@@ -405,13 +407,15 @@ export async function analyzeCluster(addresses: string[]): Promise<{
   };
 }
 
-export async function getEffectiveAnonymitySets(): Promise<Array<{
-  protocol: string;
-  theoreticalSet: number;
-  effectiveSet: number;
-  reduction: number;
-  factors: string[];
-}>> {
+export async function getEffectiveAnonymitySets(): Promise<
+  Array<{
+    protocol: string;
+    theoreticalSet: number;
+    effectiveSet: number;
+    reduction: number;
+    factors: string[];
+  }>
+> {
   const snapshots = await prismaRead.anonymitySetSnapshot.findMany({
     orderBy: { timestamp: 'desc' },
     take: 50,

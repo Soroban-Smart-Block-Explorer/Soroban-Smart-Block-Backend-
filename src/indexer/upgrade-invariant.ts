@@ -62,8 +62,12 @@ const ENVELOPE_INVARIANTS: XdrInvariant[] = [
   {
     name: 'envelope:decodable',
     probe: (b64) => {
-      try { xdr.TransactionEnvelope.fromXDR(b64, 'base64'); return true; }
-      catch { return false; }
+      try {
+        xdr.TransactionEnvelope.fromXDR(b64, 'base64');
+        return true;
+      } catch {
+        return false;
+      }
     },
   },
   {
@@ -72,8 +76,14 @@ const ENVELOPE_INVARIANTS: XdrInvariant[] = [
       try {
         const env = xdr.TransactionEnvelope.fromXDR(b64, 'base64');
         const name = env.switch().name;
-        return name === 'envelopeTypeTx' || name === 'envelopeTypeTxV0' || name === 'envelopeTypeTxFeeBump';
-      } catch { return false; }
+        return (
+          name === 'envelopeTypeTx' ||
+          name === 'envelopeTypeTxV0' ||
+          name === 'envelopeTypeTxFeeBump'
+        );
+      } catch {
+        return false;
+      }
     },
   },
   {
@@ -81,13 +91,16 @@ const ENVELOPE_INVARIANTS: XdrInvariant[] = [
     probe: (b64) => {
       try {
         const env = xdr.TransactionEnvelope.fromXDR(b64, 'base64');
-        const ops = env.switch().name === 'envelopeTypeTx'
-          ? env.v1().tx().operations()
-          : env.switch().name === 'envelopeTypeTxV0'
-            ? env.v0().tx().operations()
-            : null;
+        const ops =
+          env.switch().name === 'envelopeTypeTx'
+            ? env.v1().tx().operations()
+            : env.switch().name === 'envelopeTypeTxV0'
+              ? env.v0().tx().operations()
+              : null;
         return ops !== null;
-      } catch { return false; }
+      } catch {
+        return false;
+      }
     },
   },
 ];
@@ -96,8 +109,12 @@ const RESULT_INVARIANTS: XdrInvariant[] = [
   {
     name: 'result:decodable',
     probe: (b64) => {
-      try { xdr.TransactionResult.fromXDR(b64, 'base64'); return true; }
-      catch { return false; }
+      try {
+        xdr.TransactionResult.fromXDR(b64, 'base64');
+        return true;
+      } catch {
+        return false;
+      }
     },
   },
   {
@@ -108,7 +125,9 @@ const RESULT_INVARIANTS: XdrInvariant[] = [
         // result() must return a union with a switch
         const res = r.result();
         return typeof res.switch === 'function';
-      } catch { return false; }
+      } catch {
+        return false;
+      }
     },
   },
 ];
@@ -117,8 +136,12 @@ const RESULT_META_INVARIANTS: XdrInvariant[] = [
   {
     name: 'resultMeta:decodable',
     probe: (b64) => {
-      try { xdr.TransactionResultMeta.fromXDR(b64, 'base64'); return true; }
-      catch { return false; }
+      try {
+        xdr.TransactionResultMeta.fromXDR(b64, 'base64');
+        return true;
+      } catch {
+        return false;
+      }
     },
   },
 ];
@@ -127,8 +150,12 @@ const LEDGER_ENTRY_INVARIANTS: XdrInvariant[] = [
   {
     name: 'ledgerEntry:decodable',
     probe: (b64) => {
-      try { xdr.LedgerEntry.fromXDR(b64, 'base64'); return true; }
-      catch { return false; }
+      try {
+        xdr.LedgerEntry.fromXDR(b64, 'base64');
+        return true;
+      } catch {
+        return false;
+      }
     },
   },
   {
@@ -137,9 +164,22 @@ const LEDGER_ENTRY_INVARIANTS: XdrInvariant[] = [
       try {
         const entry = xdr.LedgerEntry.fromXDR(b64, 'base64');
         const typeName = entry.data().switch().name;
-        const known = ['account', 'trustline', 'offer', 'data', 'claimableBalance', 'liquidityPool', 'contractData', 'contractCode', 'configSetting', 'ttl'];
+        const known = [
+          'account',
+          'trustline',
+          'offer',
+          'data',
+          'claimableBalance',
+          'liquidityPool',
+          'contractData',
+          'contractCode',
+          'configSetting',
+          'ttl',
+        ];
         return known.includes(typeName);
-      } catch { return false; }
+      } catch {
+        return false;
+      }
     },
   },
 ];
@@ -150,7 +190,11 @@ const LEDGER_ENTRY_INVARIANTS: XdrInvariant[] = [
  * Additional invariants that only apply at or above a given protocol version.
  * These encode "if we're on protocol N+, this structure MUST exist."
  */
-const VERSION_INVARIANTS: Array<{ minVersion: number; invariant: XdrInvariant; category: keyof CandidateXdrs }> = [
+const VERSION_INVARIANTS: Array<{
+  minVersion: number;
+  invariant: XdrInvariant;
+  category: keyof CandidateXdrs;
+}> = [
   {
     minVersion: 20,
     category: 'envelopeXdr',
@@ -168,7 +212,9 @@ const VERSION_INVARIANTS: Array<{ minVersion: number; invariant: XdrInvariant; c
             }
           }
           return true;
-        } catch { return false; }
+        } catch {
+          return false;
+        }
       },
     },
   },
@@ -183,7 +229,9 @@ const VERSION_INVARIANTS: Array<{ minVersion: number; invariant: XdrInvariant; c
           // v3 meta must have a txApplyProcessing field accessible without throwing
           const result = meta.result();
           return typeof result !== 'undefined';
-        } catch { return false; }
+        } catch {
+          return false;
+        }
       },
     },
   },
@@ -293,16 +341,13 @@ export function verifyUpgradeInvariants(
  * new protocol version. Logs a structured warning if any invariant fails and
  * returns false, signalling the caller to hold off or fall back to safe mode.
  */
-export function gateUpgrade(
-  candidates: CandidateXdrs,
-  nextVersion: number,
-): boolean {
+export function gateUpgrade(candidates: CandidateXdrs, nextVersion: number): boolean {
   const result = verifyUpgradeInvariants(candidates, nextVersion);
 
   if (!result.safe) {
     console.warn(
       `[upgrade-invariant] ⛔ Protocol ${nextVersion} failed pre-validation. ` +
-      `${result.violations.length} violation(s):`,
+        `${result.violations.length} violation(s):`,
       result.violations.map((v) => `${v.invariant}: ${v.reason}`).join(' | '),
     );
     return false;
@@ -310,7 +355,7 @@ export function gateUpgrade(
 
   console.log(
     `[upgrade-invariant] ✅ Protocol ${nextVersion} passed pre-validation. ` +
-    `${result.passed.length} invariant(s) checked, ${result.skipped.length} skipped.`,
+      `${result.passed.length} invariant(s) checked, ${result.skipped.length} skipped.`,
   );
   return true;
 }

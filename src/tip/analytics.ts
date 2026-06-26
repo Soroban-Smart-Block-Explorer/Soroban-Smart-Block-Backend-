@@ -22,7 +22,8 @@ export async function getTrendData(days = 30) {
   });
 
   // Bucket by date
-  const buckets: Record<string, { date: string; total: number; critical: number; high: number }> = {};
+  const buckets: Record<string, { date: string; total: number; critical: number; high: number }> =
+    {};
   for (const r of rows) {
     const date = r.createdAt.toISOString().slice(0, 10);
     buckets[date] ??= { date, total: 0, critical: 0, high: 0 };

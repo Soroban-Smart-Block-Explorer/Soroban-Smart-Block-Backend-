@@ -11,15 +11,16 @@ import { Router, Request, Response } from 'express';
 import { prismaRead as prisma } from '../db';
 import { runCompactor } from '../indexer/settlement-compactor';
 import { z } from 'zod';
+import { asyncHandler } from '../middleware/asyncHandler';
 
 export const settlementBatchRouter = Router();
 
 const listSchema = z.object({
   contractAddress: z.string().optional(),
-  ledgerMin:       z.coerce.number().int().min(0).optional(),
-  ledgerMax:       z.coerce.number().int().min(0).optional(),
-  page:            z.coerce.number().min(1).default(1),
-  limit:           z.coerce.number().min(1).max(100).default(20),
+  ledgerMin: z.coerce.number().int().min(0).optional(),
+  ledgerMax: z.coerce.number().int().min(0).optional(),
+  page: z.coerce.number().min(1).default(1),
+  limit: z.coerce.number().min(1).max(100).default(20),
 });
 
 // GET /settlement-batch
@@ -76,10 +77,13 @@ settlementBatchRouter.post('/compact', async (_req: Request, res: Response) => {
 });
 
 // GET /settlement-batch/:id
-settlementBatchRouter.get('/:id', async (req: Request, res: Response) => {
-  const record = await prisma.settlementBatchSummary.findUnique({
-    where: { id: req.params.id },
-  });
-  if (!record) return res.status(404).json({ error: 'Not found' });
-  res.json(record);
-});
+settlementBatchRouter.get(
+  '/:id',
+  asyncHandler(async (req: Request, res: Response) => {
+    const record = await prisma.settlementBatchSummary.findUnique({
+      where: { id: req.params.id },
+    });
+    if (!record) return res.status(404).json({ error: 'Not found' });
+    res.json(record);
+  }),
+);

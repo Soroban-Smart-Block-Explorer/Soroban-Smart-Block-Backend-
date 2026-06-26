@@ -59,7 +59,13 @@ export interface TranslatedAddress {
  */
 export function translateAddress(address: string): TranslatedAddress {
   if (!address || typeof address !== 'string') {
-    return { original: address, kind: 'unknown', masterKey: null, muxId: null, contractAddress: null };
+    return {
+      original: address,
+      kind: 'unknown',
+      masterKey: null,
+      muxId: null,
+      contractAddress: null,
+    };
   }
 
   const trimmed = address.trim();
@@ -68,7 +74,13 @@ export function translateAddress(address: string): TranslatedAddress {
   if (trimmed.startsWith('G')) {
     try {
       if (StrKey.isValidEd25519PublicKey(trimmed)) {
-        return { original: trimmed, kind: 'ed25519', masterKey: trimmed, muxId: null, contractAddress: null };
+        return {
+          original: trimmed,
+          kind: 'ed25519',
+          masterKey: trimmed,
+          muxId: null,
+          contractAddress: null,
+        };
       }
     } catch {
       // fall through to unknown
@@ -112,7 +124,13 @@ export function translateAddress(address: string): TranslatedAddress {
     }
   }
 
-  return { original: trimmed, kind: 'unknown', masterKey: null, muxId: null, contractAddress: null };
+  return {
+    original: trimmed,
+    kind: 'unknown',
+    masterKey: null,
+    muxId: null,
+    contractAddress: null,
+  };
 }
 
 /**

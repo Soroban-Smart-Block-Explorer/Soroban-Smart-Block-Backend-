@@ -16,7 +16,13 @@ function scAddressToString(addr: xdr.ScAddress): string {
     : StrKey.encodeContract(addr.contractId());
 }
 
-function buildJsSnippet(xdrStr: string, signer: string, nonce: string | null, contractId: string, fn: string): string {
+function buildJsSnippet(
+  xdrStr: string,
+  signer: string,
+  nonce: string | null,
+  contractId: string,
+  fn: string,
+): string {
   return `\
 // Auth snippet (JS / @stellar/stellar-sdk) — signer: ${signer}  contract: ${contractId}  fn: ${fn}
 import { xdr, Keypair, hash } from '@stellar/stellar-sdk';
@@ -39,7 +45,13 @@ entry.credentials().address().signature(xdr.ScVal.scvMap([
 op.body().invokeHostFunctionOp().auth([entry]);`;
 }
 
-function buildRustSnippet(xdrStr: string, signer: string, nonce: string | null, contractId: string, fn: string): string {
+function buildRustSnippet(
+  xdrStr: string,
+  signer: string,
+  nonce: string | null,
+  contractId: string,
+  fn: string,
+): string {
   return `\
 // Auth snippet (Rust / soroban-sdk) — signer: ${signer}  contract: ${contractId}  fn: ${fn}
 let mut entry = SorobanAuthorizationEntry::from_xdr_base64("${xdrStr}", Limits::none()).unwrap();
@@ -60,7 +72,9 @@ if let SorobanCredentials::Address(ref mut creds) = entry.credentials {
 }`;
 }
 
-export function generateAuthSnapshots(authEntries: xdr.SorobanAuthorizationEntry[]): AuthSnapshot[] {
+export function generateAuthSnapshots(
+  authEntries: xdr.SorobanAuthorizationEntry[],
+): AuthSnapshot[] {
   return authEntries.map((entry) => {
     const entryXdr = entry.toXDR('base64');
     const creds = entry.credentials();
@@ -71,13 +85,18 @@ export function generateAuthSnapshots(authEntries: xdr.SorobanAuthorizationEntry
       nonce = creds.address().nonce().toString();
     }
     const rootFn = entry.rootInvocation().function();
-    let contractId = 'unknown', functionName = 'unknown';
+    let contractId = 'unknown',
+      functionName = 'unknown';
     if (rootFn.switch().name === 'sorobanAuthorizedFunctionTypeContractFn') {
       contractId = StrKey.encodeContract(rootFn.contractFn().contractAddress().contractId());
       functionName = rootFn.contractFn().functionName().toString();
     }
     return {
-      entryXdr, signerAddress, nonce, contractId, functionName,
+      entryXdr,
+      signerAddress,
+      nonce,
+      contractId,
+      functionName,
       jsSnippet: buildJsSnippet(entryXdr, signerAddress, nonce, contractId, functionName),
       rustSnippet: buildRustSnippet(entryXdr, signerAddress, nonce, contractId, functionName),
     };

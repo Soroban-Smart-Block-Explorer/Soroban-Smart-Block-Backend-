@@ -29,7 +29,10 @@ export function saveBlockSnapshot(chunk: BlockChunk, snapshotDir = DEFAULT_SNAPS
  * Load a previously saved block chunk from disk.
  * Returns null if the snapshot does not exist.
  */
-export function loadBlockSnapshot(ledger: number, snapshotDir = DEFAULT_SNAPSHOT_DIR): BlockChunk | null {
+export function loadBlockSnapshot(
+  ledger: number,
+  snapshotDir = DEFAULT_SNAPSHOT_DIR,
+): BlockChunk | null {
   const filePath = path.join(snapshotDir, `${ledger}.json`);
   if (!fs.existsSync(filePath)) return null;
   return JSON.parse(fs.readFileSync(filePath, 'utf8')) as BlockChunk;

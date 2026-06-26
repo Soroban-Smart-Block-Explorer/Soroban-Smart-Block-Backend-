@@ -45,6 +45,15 @@ export function broadcastEvent(event: {
   }
 }
 
+export function shutdownWebSocketServer(): void {
+  for (const client of clients) {
+    if (client.ws.readyState === WebSocket.OPEN) {
+      client.ws.close(1001, 'Server shutting down');
+    }
+  }
+  clients.clear();
+}
+
 export function broadcastEmergencyEvent(payload: { event: string; data: Record<string, unknown> }) {
   const msg = JSON.stringify({ type: 'emergency', ...payload });
   for (const client of clients) {

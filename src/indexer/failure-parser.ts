@@ -80,7 +80,8 @@ const INVOKE_HOST_FUNCTION_CODES: Record<string, string> = {
   invokeHostFunctionSuccess: 'Success',
   invokeHostFunctionMalformed: 'Host function call is malformed',
   invokeHostFunctionTrapped: 'Host function execution trapped (contract panic)',
-  invokeHostFunctionResourceLimitExceeded: 'Resource limit exceeded (CPU, memory, or ledger entries)',
+  invokeHostFunctionResourceLimitExceeded:
+    'Resource limit exceeded (CPU, memory, or ledger entries)',
   invokeHostFunctionEntryArchived: 'A required ledger entry has been archived',
   invokeHostFunctionInsufficientRefundableFee: 'Insufficient refundable fee for resource usage',
 };
@@ -198,7 +199,9 @@ export function parseFailureReasonFromString(errorStr: string): string {
 
     if (errorType === 'Contract') {
       const msg = COMMON_CONTRACT_ERRORS[code];
-      return msg ? `${typeName}: ${msg} (code #${code})` : `${typeName}: Custom error code #${code}`;
+      return msg
+        ? `${typeName}: ${msg} (code #${code})`
+        : `${typeName}: Custom error code #${code}`;
     }
     return `${typeName} (code #${code})`;
   }

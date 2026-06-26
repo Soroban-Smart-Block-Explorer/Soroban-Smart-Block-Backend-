@@ -88,10 +88,7 @@ export function parseAcceptLanguage(header: string | undefined | null): Supporte
  * Replace {placeholder} tokens in a template string with values from the map.
  * Unknown placeholders are left as-is.
  */
-export function interpolate(
-  template: string,
-  values: Record<string, unknown> = {},
-): string {
+export function interpolate(template: string, values: Record<string, unknown> = {}): string {
   return template.replace(/\{(\w+)\}/g, (match, key: string) => {
     const val = values[key];
     return val !== undefined && val !== null ? String(val) : match;
@@ -118,9 +115,9 @@ export function t(
   const enDict = STATIC_DICTIONARIES['en']!;
 
   const template =
-    dict?.[key] ??           // requested language
-    enDict[key] ??           // English fallback
-    key;                     // last resort: return the key
+    dict?.[key] ?? // requested language
+    enDict[key] ?? // English fallback
+    key; // last resort: return the key
 
   return interpolate(template, values);
 }
@@ -164,9 +161,7 @@ export async function tAsync(
     });
 
     if (translationKey) {
-      const template =
-        translationKey.translations[0]?.translatedText ??
-        translationKey.defaultText;
+      const template = translationKey.translations[0]?.translatedText ?? translationKey.defaultText;
       return interpolate(template, values);
     }
   } catch {
@@ -194,9 +189,7 @@ export async function tAsync(
  *   ...
  * }
  */
-export function buildStaticMatrix(
-  keys: string[],
-): Record<string, Record<string, string>> {
+export function buildStaticMatrix(keys: string[]): Record<string, Record<string, string>> {
   const matrix: Record<string, Record<string, string>> = {};
 
   for (const key of keys) {
@@ -221,8 +214,6 @@ export function getAllStaticKeys(): string[] {
 /**
  * Return the static dictionary for a given language (read-only).
  */
-export function getStaticDictionary(
-  language: SupportedLanguage,
-): Record<string, string> {
+export function getStaticDictionary(language: SupportedLanguage): Record<string, string> {
   return { ...(STATIC_DICTIONARIES[language] ?? STATIC_DICTIONARIES['en']!) };
 }

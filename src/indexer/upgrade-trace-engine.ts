@@ -25,7 +25,7 @@ export interface UpgradeOrchestration {
  * Identifies upgrade logic followed by data migration in same transaction.
  */
 export async function analyzeUpgradeOrchestration(
-  transactionHash: string
+  transactionHash: string,
 ): Promise<UpgradeOrchestration | null> {
   const transaction = await prisma.transaction.findUnique({
     where: { hash: transactionHash },
@@ -77,11 +77,7 @@ export async function analyzeUpgradeOrchestration(
   if (transaction.functionArgs) {
     const args = transaction.functionArgs as Record<string, unknown>;
     for (const [key, value] of Object.entries(args)) {
-      if (
-        typeof value === 'string' &&
-        value.startsWith('C') &&
-        value.length === 56
-      ) {
+      if (typeof value === 'string' && value.startsWith('C') && value.length === 56) {
         auxiliaryContracts.add(value);
         steps.push({
           stepNumber: stepCounter++,
@@ -111,9 +107,7 @@ export async function analyzeUpgradeOrchestration(
 /**
  * Flatten combined execution path for a multi-call upgrade transaction.
  */
-export function flattenExecutionPath(
-  orchestration: UpgradeOrchestration
-): string {
+export function flattenExecutionPath(orchestration: UpgradeOrchestration): string {
   if (!orchestration.isMultiCallUpgrade) {
     return 'Single-call transaction (not a multi-call upgrade)';
   }
@@ -131,7 +125,7 @@ export function flattenExecutionPath(
       `Step ${step.stepNumber}: ${step.description}`,
       `  Contract: ${step.contractAddress}`,
       `  Function: ${step.functionName}`,
-      ''
+      '',
     );
   }
 
@@ -150,7 +144,7 @@ export function flattenExecutionPath(
  */
 export async function storeUpgradeOrchestration(
   transactionHash: string,
-  orchestration: UpgradeOrchestration
+  orchestration: UpgradeOrchestration,
 ): Promise<void> {
   const existingTx = await prisma.transaction.findUnique({
     where: { hash: transactionHash },
@@ -169,7 +163,7 @@ export async function storeUpgradeOrchestration(
         ...updateArgs,
         _upgradeOrchestration: {
           isMultiCall: orchestration.isMultiCallUpgrade,
-          steps: orchestration.steps.map(s => ({
+          steps: orchestration.steps.map((s) => ({
             number: s.stepNumber,
             type: s.type,
             description: s.description,

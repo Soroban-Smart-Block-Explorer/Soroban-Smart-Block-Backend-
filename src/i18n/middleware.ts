@@ -58,8 +58,7 @@ export function i18nMiddleware(req: Request, _res: Response, next: NextFunction)
   req.locale = locale;
 
   // Bind helpers so handlers can call req.t('key', { amount: 100 })
-  req.t = (key: string, values?: Record<string, unknown>) =>
-    translate(key, locale, values ?? {});
+  req.t = (key: string, values?: Record<string, unknown>) => translate(key, locale, values ?? {});
 
   req.tAsync = (key: string, values?: Record<string, unknown>) =>
     translateAsync(key, locale, values ?? {});

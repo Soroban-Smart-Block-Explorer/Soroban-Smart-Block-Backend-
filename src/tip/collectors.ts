@@ -12,7 +12,9 @@ const db = new PrismaClient();
 
 const NVD_BASE = 'https://services.nvd.nist.gov/rest/json/cves/2.0';
 
-export async function fetchCves(keywordSearch = 'soroban OR stellar smart contract'): Promise<number> {
+export async function fetchCves(
+  keywordSearch = 'soroban OR stellar smart contract',
+): Promise<number> {
   const src = await db.vulnerabilitySource.upsert({
     where: { name: 'NVD_CVE' },
     update: {},
@@ -29,8 +31,7 @@ export async function fetchCves(keywordSearch = 'soroban OR stellar smart contra
 
   for (const { cve } of items) {
     const cveId: string = cve.id;
-    const desc: string =
-      cve.descriptions?.find((d: any) => d.lang === 'en')?.value ?? cveId;
+    const desc: string = cve.descriptions?.find((d: any) => d.lang === 'en')?.value ?? cveId;
     const cvss: number | undefined =
       cve.metrics?.cvssMetricV31?.[0]?.cvssData?.baseScore ??
       cve.metrics?.cvssMetricV2?.[0]?.cvssData?.baseScore;

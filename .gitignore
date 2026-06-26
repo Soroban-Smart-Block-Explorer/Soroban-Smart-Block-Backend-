@@ -2,3 +2,8 @@ node_modules/
 dist/
 .env
 *.log
+node/
+*.bak
+tests/**/*.js
+tests/**/*.js.map
+tests/**/*.d.ts

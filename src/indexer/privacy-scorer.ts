@@ -91,10 +91,7 @@ function deAnonymizationVectorDeduction(vectorCount: number): number {
   return 0;
 }
 
-function historicalLinkageDeduction(
-  address: string | null,
-  nonPrivateTxCount: number,
-): number {
+function historicalLinkageDeduction(address: string | null, nonPrivateTxCount: number): number {
   if (!address || nonPrivateTxCount === 0) return 0;
   if (nonPrivateTxCount > 100) return -15;
   if (nonPrivateTxCount > 50) return -12;
@@ -117,10 +114,12 @@ export async function computePrivacyScore(
         where: {
           sourceAccount,
           hash: {
-            notIn: (await prisma.privacyTransaction.findMany({
-              where: { participants: { has: sourceAccount } },
-              select: { txHash: true },
-            })).map((p) => p.txHash),
+            notIn: (
+              await prisma.privacyTransaction.findMany({
+                where: { participants: { has: sourceAccount } },
+                select: { txHash: true },
+              })
+            ).map((p) => p.txHash),
           },
         },
       });
@@ -143,7 +142,8 @@ export async function computePrivacyScore(
 
   let riskScore = Math.max(0, Math.min(100, br + gr + cr));
 
-  const nonPrivateFactor = nonPrivateTxCount > 50 ? 20 : nonPrivateTxCount > 20 ? 12 : nonPrivateTxCount > 5 ? 6 : 0;
+  const nonPrivateFactor =
+    nonPrivateTxCount > 50 ? 20 : nonPrivateTxCount > 20 ? 12 : nonPrivateTxCount > 5 ? 6 : 0;
   riskScore = Math.min(100, riskScore + nonPrivateFactor);
 
   privacyScore = Math.max(0, 100 - riskScore * (1 - anonymitySetScore(anonymitySetSize) / 25));

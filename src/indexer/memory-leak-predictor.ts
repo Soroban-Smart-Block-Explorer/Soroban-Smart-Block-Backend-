@@ -13,7 +13,7 @@ export async function recordContractResources(
   ledgerCloseTime: Date,
   memoryUsageBytes: number,
   cpuInstructions: number,
-  storageFootprint: number
+  storageFootprint: number,
 ): Promise<void> {
   const { prismaWrite } = await import('../db');
   await prismaWrite.contractResourceMetric.upsert({

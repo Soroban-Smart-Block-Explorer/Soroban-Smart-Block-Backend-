@@ -36,52 +36,109 @@ export interface DetectionResult {
 }
 
 const ZK_SNARK_KEYWORDS = [
-  'verify_proof', 'verify_snark', 'verify_groth16', 'verify_plonk',
-  'groth16_verify', 'plonk_verify', 'snark_verify', 'zk_verify',
-  'verify_zkp', 'verify_shielded', 'prove', 'verify',
+  'verify_proof',
+  'verify_snark',
+  'verify_groth16',
+  'verify_plonk',
+  'groth16_verify',
+  'plonk_verify',
+  'snark_verify',
+  'zk_verify',
+  'verify_zkp',
+  'verify_shielded',
+  'prove',
+  'verify',
 ];
 
 const ZK_STARK_KEYWORDS = [
-  'verify_stark', 'stark_verify', 'stark_proof', 'verify_air',
-  'verify_fri', 'verify_stark_proof',
+  'verify_stark',
+  'stark_verify',
+  'stark_proof',
+  'verify_air',
+  'verify_fri',
+  'verify_stark_proof',
 ];
 
 const BULLETPROOF_KEYWORDS = [
-  'bulletproof', 'range_proof', 'verify_range', 'membership_proof',
-  'verify_membership', 'verify_bulletproof', 'range_proof_verify',
+  'bulletproof',
+  'range_proof',
+  'verify_range',
+  'membership_proof',
+  'verify_membership',
+  'verify_bulletproof',
+  'range_proof_verify',
 ];
 
 const STEALTH_ADDRESS_KEYWORDS = [
-  'stealth_address', 'ephemeral_key', 'stealth_meta', 'generate_stealth',
-  'stealth_transfer', 'private_transfer', 'blinded_key', 'stealth_key',
-  'meta_address', 'one_time_address',
+  'stealth_address',
+  'ephemeral_key',
+  'stealth_meta',
+  'generate_stealth',
+  'stealth_transfer',
+  'private_transfer',
+  'blinded_key',
+  'stealth_key',
+  'meta_address',
+  'one_time_address',
 ];
 
 const MIXER_KEYWORDS = [
-  'mixer', 'tornado', 'coinjoin', 'anonymity_pool', 'privacy_pool',
-  'mix', 'shuffle', 'anonymize', 'deposit_anonymized', 'withdraw_anonymized',
-  'pool_join', 'pool_exit',
+  'mixer',
+  'tornado',
+  'coinjoin',
+  'anonymity_pool',
+  'privacy_pool',
+  'mix',
+  'shuffle',
+  'anonymize',
+  'deposit_anonymized',
+  'withdraw_anonymized',
+  'pool_join',
+  'pool_exit',
 ];
 
 const PRIVATE_VOTING_KEYWORDS = [
-  'private_vote', 'encrypted_vote', 'commitment_vote', 'reveal_vote',
-  'quadratic_vote', 'zk_vote', 'blind_vote', 'vote_private',
-  'commit_vote', 'reveal_commitment',
+  'private_vote',
+  'encrypted_vote',
+  'commitment_vote',
+  'reveal_vote',
+  'quadratic_vote',
+  'zk_vote',
+  'blind_vote',
+  'vote_private',
+  'commit_vote',
+  'reveal_commitment',
 ];
 
 const OFF_CHAIN_KEYWORDS = [
-  'offchain_data', 'data_availability', 'off_chain_proof', 'data_feed',
-  'private_feed', 'oracle_proof', 'offchain_proof',
+  'offchain_data',
+  'data_availability',
+  'off_chain_proof',
+  'data_feed',
+  'private_feed',
+  'oracle_proof',
+  'offchain_proof',
 ];
 
 const ENCRYPTED_STATE_KEYWORDS = [
-  'encrypted_state', 'encrypted_storage', 'sealed_data', 'private_state',
-  'confidential_state', 'encrypted_balance', 'secret_store',
+  'encrypted_state',
+  'encrypted_storage',
+  'sealed_data',
+  'private_state',
+  'confidential_state',
+  'encrypted_balance',
+  'secret_store',
 ];
 
 const DIFFERENTIAL_PRIVACY_KEYWORDS = [
-  'differential_privacy', 'dp_aggregator', 'noise_add', 'private_aggregate',
-  'dp_query', 'epsilon_delta', 'laplace_noise', 'gaussian_noise',
+  'differential_privacy',
+  'dp_aggregator',
+  'noise_add',
+  'private_aggregate',
+  'dp_query',
+  'epsilon_delta',
+  'laplace_noise',
+  'gaussian_noise',
 ];
 
 function matchKeywords(functionName: string, keywords: string[]): boolean {
@@ -103,7 +160,8 @@ function estimateAnonymitySet(functionName: string, args: xdr.ScVal[]): number |
       if ('anonymitySet' in native) return Number(native.anonymitySet) || null;
       if ('poolSize' in native) return Number(native.poolSize) || null;
       if ('setSize' in native) return Number(native.setSize) || null;
-      if ('participants' in native && Array.isArray(native.participants)) return native.participants.length;
+      if ('participants' in native && Array.isArray(native.participants))
+        return native.participants.length;
     }
   } catch {
     return null;
@@ -145,7 +203,7 @@ function extractAssetType(args: xdr.ScVal[]): string | null {
 
 export function detectPrivacyTechniques(
   functionName: string | null,
-  functionArgs: xdr.ScVal[]
+  functionArgs: xdr.ScVal[],
 ): DetectionResult {
   const protocols: Set<PrivacyProtocol> = new Set();
   const guarantees: Set<PrivacyGuarantee> = new Set();
@@ -208,14 +266,16 @@ export function detectPrivacyTechniques(
       for (const arg of args) {
         const native = scValToNative(arg);
         if (typeof native === 'object' && native !== null) {
-          if ('ephemeralKey' in native) cryptoPrimitives['ephemeralKey'] = String(native.ephemeralKey);
-          if ('stealthAddress' in native) cryptoPrimitives['stealthAddress'] = String(native.stealthAddress);
+          if ('ephemeralKey' in native)
+            cryptoPrimitives['ephemeralKey'] = String(native.ephemeralKey);
+          if ('stealthAddress' in native)
+            cryptoPrimitives['stealthAddress'] = String(native.stealthAddress);
           if ('viewKey' in native) cryptoPrimitives['viewKey'] = true;
         }
       }
-      } catch {
-        // args may not be parseable
-      }
+    } catch {
+      // args may not be parseable
+    }
   }
 
   if (matchKeywords(functionName, MIXER_KEYWORDS)) {
@@ -289,8 +349,10 @@ export function detectPrivacyTechniques(
             if (typeof p === 'string') participants.push(p);
           }
         }
-        if ('sender' in native && typeof native.sender === 'string') participants.push(native.sender);
-        if ('receiver' in native && typeof native.receiver === 'string') participants.push(native.receiver);
+        if ('sender' in native && typeof native.sender === 'string')
+          participants.push(native.sender);
+        if ('receiver' in native && typeof native.receiver === 'string')
+          participants.push(native.receiver);
         if ('from' in native && typeof native.from === 'string') participants.push(native.from);
         if ('to' in native && typeof native.to === 'string') participants.push(native.to);
       }

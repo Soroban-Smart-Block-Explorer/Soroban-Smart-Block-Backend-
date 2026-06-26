@@ -37,17 +37,29 @@ export interface CallTrace {
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 function contractIdFromHash(hash: Buffer): string {
-  try { return StrKey.encodeContract(hash); } catch { return hash.toString('hex'); }
+  try {
+    return StrKey.encodeContract(hash);
+  } catch {
+    return hash.toString('hex');
+  }
 }
 
 function decodeTopics(topics: xdr.ScVal[]): string[] {
   return topics.map((t) => {
-    try { return String(scValToNative(t)); } catch { return t.toXDR('base64'); }
+    try {
+      return String(scValToNative(t));
+    } catch {
+      return t.toXDR('base64');
+    }
   });
 }
 
 function decodeData(val: xdr.ScVal): unknown {
-  try { return scValToNative(val); } catch { return val.toXDR('base64'); }
+  try {
+    return scValToNative(val);
+  } catch {
+    return val.toXDR('base64');
+  }
 }
 
 /**
@@ -67,11 +79,18 @@ function inferDepth(topic: string, depthStack: string[]): number {
   return depthStack.length;
 }
 
-function buildLabel(contractId: string, topic: string, topicArgs: unknown[], data: unknown): string {
+function buildLabel(
+  contractId: string,
+  topic: string,
+  topicArgs: unknown[],
+  data: unknown,
+): string {
   const short = contractId.slice(0, 8) + '…';
-  if (topic === 'fn_call') return `→ [${short}] call ${topicArgs[0] ?? ''}(${topicArgs.slice(1).join(', ')})`;
+  if (topic === 'fn_call')
+    return `→ [${short}] call ${topicArgs[0] ?? ''}(${topicArgs.slice(1).join(', ')})`;
   if (topic === 'fn_return') return `← [${short}] return ${JSON.stringify(data) ?? ''}`;
-  if (topic === 'transfer') return `[${short}] transfer ${topicArgs.join(' → ')} amount=${JSON.stringify(data)}`;
+  if (topic === 'transfer')
+    return `[${short}] transfer ${topicArgs.join(' → ')} amount=${JSON.stringify(data)}`;
   return `[${short}] ${topic}(${topicArgs.join(', ')})`;
 }
 

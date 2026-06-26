@@ -2,6 +2,7 @@ import { Router, Request, Response } from 'express';
 import { prismaRead as prisma } from '../db';
 import { z } from 'zod';
 import { validateAddressParam } from '../middleware/sanitize';
+import { asyncHandler } from '../middleware/asyncHandler';
 
 export const governanceRouter = Router();
 
@@ -18,18 +19,10 @@ const proposalQuerySchema = z.object({
   proposalId: z.string(),
 });
 
-const contractStatusSchema = z.object({
-  address: z.string(),
-});
-
-function summarizeParticipation(votes: Array<{ voter: string }>, totalProposals: number) {
-  const uniqueVoters = new Set(votes.map((vote) => vote.voter));
-  return uniqueVoters.size / Math.max(totalProposals, 1);
-}
-
 // GET /governance/proposals
-governanceRouter.get('/proposals', async (req: Request, res: Response) => {
-  try {
+governanceRouter.get(
+  '/proposals',
+  asyncHandler(async (req: Request, res: Response) => {
     const { contract, status, proposer, page, limit } = listProposalsSchema.parse(req.query);
     const skip = (page - 1) * limit;
     const where: any = {
@@ -65,14 +58,14 @@ governanceRouter.get('/proposals', async (req: Request, res: Response) => {
     ]);
 
     res.json({ data, total, page, limit });
-  } catch (e) {
-    res.status(400).json({ error: String(e) });
-  }
-});
+  }),
+);
 
 // GET /governance/proposals/:contract/:proposalId
-governanceRouter.get('/proposals/:contract/:proposalId', validateAddressParam('contract'), async (req: Request, res: Response) => {
-  try {
+governanceRouter.get(
+  '/proposals/:contract/:proposalId',
+  validateAddressParam('contract'),
+  asyncHandler(async (req: Request, res: Response) => {
     const { contract, proposalId } = proposalQuerySchema.parse(req.params);
     const proposal = await prisma.governanceProposal.findUnique({
       where: { contractAddress_proposalId: { contractAddress: contract, proposalId } },
@@ -97,37 +90,38 @@ governanceRouter.get('/proposals/:contract/:proposalId', validateAddressParam('c
         abstainCount: abstainVotes,
       },
     });
-  } catch (e) {
-    res.status(400).json({ error: String(e) });
-  }
-});
+  }),
+);
 
 // GET /governance/proposals/:contract/:proposalId/votes
-governanceRouter.get('/proposals/:contract/:proposalId/votes', validateAddressParam('contract'), async (req: Request, res: Response) => {
-  try {
+governanceRouter.get(
+  '/proposals/:contract/:proposalId/votes',
+  validateAddressParam('contract'),
+  asyncHandler(async (req: Request, res: Response) => {
     const { contract, proposalId } = proposalQuerySchema.parse(req.params);
     const votes = await prisma.governanceVote.findMany({
       where: { contractAddress: contract, proposalId },
       orderBy: { ledgerSequence: 'asc' },
       select: { voter: true, weight: true, support: true, reason: true },
     });
-    const proposerCount = votes.length;
+
     const uniqueVoters = new Set(votes.map((vote) => vote.voter));
-    const participation = uniqueVoters.size === 0 ? 0 : uniqueVoters.size / Math.max(1, votes.length);
+    const participation =
+      uniqueVoters.size === 0 ? 0 : uniqueVoters.size / Math.max(1, votes.length);
 
     res.json({
       votes,
       totalVoters: uniqueVoters.size,
       voterParticipation: participation,
     });
-  } catch (e) {
-    res.status(400).json({ error: String(e) });
-  }
-});
+  }),
+);
 
 // GET /governance/contracts/:address
-governanceRouter.get('/contracts/:address', validateAddressParam('address'), async (req: Request, res: Response) => {
-  try {
+governanceRouter.get(
+  '/contracts/:address',
+  validateAddressParam('address'),
+  asyncHandler(async (req: Request, res: Response) => {
     const address = req.params.address;
     const contract = await prisma.governanceContract.findUnique({
       where: { contractAddress: address },
@@ -170,17 +164,24 @@ governanceRouter.get('/contracts/:address', validateAddressParam('address'), asy
       activeProposals,
       averageParticipation: 0,
       averageQuorumReached: 0,
-      topProposers: topProposers.map((item) => ({ address: item.proposer, proposalsCreated: item._count.proposer })),
-      topVoters: topVoters.map((item) => ({ address: item.voter, votesCast: item._count.voter, votingPower: '0 TOKEN' })),
+      topProposers: topProposers.map((item) => ({
+        address: item.proposer,
+        proposalsCreated: item._count.proposer,
+      })),
+      topVoters: topVoters.map((item) => ({
+        address: item.voter,
+        votesCast: item._count.voter,
+        votingPower: '0 TOKEN',
+      })),
     });
-  } catch (e) {
-    res.status(400).json({ error: String(e) });
-  }
-});
+  }),
+);
 
 // GET /governance/contracts/:address/delegates
-governanceRouter.get('/contracts/:address/delegates', validateAddressParam('address'), async (req: Request, res: Response) => {
-  try {
+governanceRouter.get(
+  '/contracts/:address/delegates',
+  validateAddressParam('address'),
+  asyncHandler(async (req: Request, res: Response) => {
     const address = req.params.address;
     const delegates = await prisma.governanceDelegate.findMany({
       where: { contractAddress: address },
@@ -188,14 +189,13 @@ governanceRouter.get('/contracts/:address/delegates', validateAddressParam('addr
       take: 50,
     });
     res.json({ delegates });
-  } catch (e) {
-    res.status(400).json({ error: String(e) });
-  }
-});
+  }),
+);
 
 // GET /governance/stats
-governanceRouter.get('/stats', async (_req: Request, res: Response) => {
-  try {
+governanceRouter.get(
+  '/stats',
+  asyncHandler(async (_req: Request, res: Response) => {
     const totalGovernanceContracts = await prisma.governanceContract.count();
     const totalProposals = await prisma.governanceProposal.count();
     const totalVotesCast = await prisma.governanceVote.count();
@@ -212,32 +212,45 @@ governanceRouter.get('/stats', async (_req: Request, res: Response) => {
       totalVotesCast,
       avgParticipationRate: 0,
       mostActiveGovernance: mostActive[0]
-        ? { contract: mostActive[0].contractAddress, proposals: mostActive[0]._count.contractAddress }
+        ? {
+            contract: mostActive[0].contractAddress,
+            proposals: mostActive[0]._count.contractAddress,
+          }
         : null,
     });
-  } catch (e) {
-    res.status(500).json({ error: String(e) });
-  }
-});
+  }),
+);
 
 // GET /governance/calendar
-governanceRouter.get('/calendar', async (_req: Request, res: Response) => {
-  try {
+governanceRouter.get(
+  '/calendar',
+  asyncHandler(async (_req: Request, res: Response) => {
     const upcoming = await prisma.governanceProposal.findMany({
       where: { status: 'active' },
       orderBy: { endBlock: 'asc' },
       take: 50,
-      select: { contractAddress: true, proposalId: true, title: true, endBlock: true, status: true, startBlock: true },
+      select: {
+        contractAddress: true,
+        proposalId: true,
+        title: true,
+        endBlock: true,
+        status: true,
+        startBlock: true,
+      },
     });
     const queued = await prisma.governanceProposal.findMany({
       where: { status: 'queued' },
       orderBy: { updatedAt: 'desc' },
       take: 50,
-      select: { contractAddress: true, proposalId: true, title: true, status: true, executionTxHash: true },
+      select: {
+        contractAddress: true,
+        proposalId: true,
+        title: true,
+        status: true,
+        executionTxHash: true,
+      },
     });
 
     res.json({ upcoming, queued });
-  } catch (e) {
-    res.status(500).json({ error: String(e) });
-  }
-});
+  }),
+);

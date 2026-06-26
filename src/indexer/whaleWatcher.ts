@@ -53,7 +53,9 @@ export class WhaleWatcher extends EventEmitter {
           eventType: event.eventType,
           asset,
           amount,
-          usdValue: threshold.usdEquivalent ? (amount / 1e6) * (threshold.usdEquivalent / threshold.threshold) : undefined,
+          usdValue: threshold.usdEquivalent
+            ? (amount / 1e6) * (threshold.usdEquivalent / threshold.threshold)
+            : undefined,
           sourceAccount: event.sourceAccount,
           ledgerSequence: event.ledgerSequence,
           timestamp: new Date(event.ledgerCloseTime),
@@ -67,7 +69,9 @@ export class WhaleWatcher extends EventEmitter {
   }
 
   private async handleWhaleAlert(alert: WhaleAlert): Promise<void> {
-    console.log(`[WhaleWatcher] 🐋 WHALE ALERT: ${alert.amount} ${alert.asset} (${alert.usdValue?.toFixed(2)} USD) on tx ${alert.transactionHash}`);
+    console.log(
+      `[WhaleWatcher] 🐋 WHALE ALERT: ${alert.amount} ${alert.asset} (${alert.usdValue?.toFixed(2)} USD) on tx ${alert.transactionHash}`,
+    );
 
     // Emit for real-time push notifications
     this.emit('whale-alert', alert);
@@ -87,7 +91,9 @@ export class WhaleWatcher extends EventEmitter {
 
   setThreshold(asset: string, threshold: number, usdEquivalent?: number): void {
     this.thresholds.set(asset, { asset, threshold, usdEquivalent });
-    console.log(`[WhaleWatcher] Updated threshold for ${asset}: ${threshold} (${usdEquivalent} USD)`);
+    console.log(
+      `[WhaleWatcher] Updated threshold for ${asset}: ${threshold} (${usdEquivalent} USD)`,
+    );
   }
 
   getThresholds(): WhaleThreshold[] {

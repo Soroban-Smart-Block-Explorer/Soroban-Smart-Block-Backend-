@@ -1,8 +1,5 @@
 import { prismaRead as prisma } from '../db';
-import {
-  buildSystemDependencyGraph,
-  computeSystemicRiskIndex,
-} from './systemicRisk';
+import { buildSystemDependencyGraph, computeSystemicRiskIndex } from './systemicRisk';
 
 interface HealthSignal {
   type: 'oracle_deviation' | 'tvl_drop' | 'volume_spike' | 'pause_event' | 'governance_attack';
@@ -307,9 +304,7 @@ export function getAlerts(limit = 20): SystemicAlert[] {
 /**
  * Get risk index history.
  */
-export function getRiskIndexHistory(
-  since?: Date,
-): Array<{ timestamp: Date; value: number }> {
+export function getRiskIndexHistory(since?: Date): Array<{ timestamp: Date; value: number }> {
   if (since) {
     return RISK_INDEX_HISTORY.filter((h) => h.timestamp >= since);
   }

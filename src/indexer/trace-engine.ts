@@ -4,7 +4,7 @@
  * Converts raw DiagnosticEvents + simulation metadata into structured steps
  * that mirror Ethereum's debug_traceTransaction output.
  */
-import { xdr, SorobanRpc, scValToNative, StrKey } from '@stellar/stellar-sdk';
+import { xdr, SorobanRpc, StrKey } from '@stellar/stellar-sdk';
 import { scValToJson } from './xdr-parser';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -68,13 +68,19 @@ export interface TraceResult {
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 function encodeContractId(raw: Buffer | Uint8Array): string {
-  try { return StrKey.encodeContract(raw as Buffer); }
-  catch { return Buffer.from(raw).toString('hex'); }
+  try {
+    return StrKey.encodeContract(raw as Buffer);
+  } catch {
+    return Buffer.from(raw).toString('hex');
+  }
 }
 
 function decodeScVal(val: xdr.ScVal): TraceArg {
-  try { return scValToJson(val) as TraceArg; }
-  catch { return { type: 'unknown', value: val.toXDR('base64') }; }
+  try {
+    return scValToJson(val) as TraceArg;
+  } catch {
+    return { type: 'unknown', value: val.toXDR('base64') };
+  }
 }
 
 function decodeTopics(topics: xdr.ScVal[]): TraceArg[] {
@@ -123,9 +129,7 @@ export function buildTrace(
     const ev = de.event();
 
     const contractRaw = ev.contractId();
-    const contractId = contractRaw
-      ? encodeContractId(contractRaw as unknown as Buffer)
-      : 'system';
+    const contractId = contractRaw ? encodeContractId(contractRaw as unknown as Buffer) : 'system';
 
     const body = ev.body().value() as {
       topics: () => xdr.ScVal[];
@@ -137,7 +141,9 @@ export function buildTrace(
     const topicArgs = decodeTopics(rawTopics);
     const [firstTopicArg, ...restArgs] = topicArgs;
     const topic = firstTopicArg
-      ? typeof firstTopicArg.value === 'string' ? firstTopicArg.value : String(firstTopicArg.value)
+      ? typeof firstTopicArg.value === 'string'
+        ? firstTopicArg.value
+        : String(firstTopicArg.value)
       : ev.type().name;
 
     const fnName = inferFunctionName(topic, restArgs);
@@ -177,7 +183,11 @@ export function buildTrace(
     const step: TraceStep = {
       seq: i,
       depth,
-      type: isStateStep ? 'state_change' : topic === 'fn_call' || topic === 'fn_return' ? 'host_function' : 'event',
+      type: isStateStep
+        ? 'state_change'
+        : topic === 'fn_call' || topic === 'fn_return'
+          ? 'host_function'
+          : 'event',
       function: fnName,
       args,
       gasUsed: cpuPerStep * (i + 1),

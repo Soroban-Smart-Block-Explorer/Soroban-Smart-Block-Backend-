@@ -48,7 +48,7 @@ export async function enqueueFailure(item: FailedItemInput): Promise<void> {
   }
 
   console.error(
-    `[errorQueue] ${item.itemType} ${item.itemId} (ledger ${item.ledger}) failed: ${err.message}`
+    `[errorQueue] ${item.itemType} ${item.itemId} (ledger ${item.ledger}) failed: ${err.message}`,
   );
 }
 
@@ -57,7 +57,13 @@ export async function enqueueFailure(item: FailedItemInput): Promise<void> {
  * Items that succeed are deleted; items that fail again are re-enqueued.
  */
 export async function retryFailures(
-  handler: (item: { itemType: string; itemId: string; ledger: number; rawXdr: string | null; context: unknown }) => Promise<void>
+  handler: (item: {
+    itemType: string;
+    itemId: string;
+    ledger: number;
+    rawXdr: string | null;
+    context: unknown;
+  }) => Promise<void>,
 ): Promise<void> {
   const pending = await prisma.failedItem.findMany({
     where: { dead: false },
