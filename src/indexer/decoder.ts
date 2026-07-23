@@ -54,7 +54,7 @@ export async function decodeTransaction(rawXdr: string): Promise<DecodedTransact
 export function decodeEvent(
   topics: string[],
   data: string,
-  contractName?: string | null
+  _contractName?: string | null
 ): { eventType: string; decoded: Record<string, unknown> } {
   try {
     const topicVals = topics.map((t) => xdr.ScVal.fromXDR(t, 'base64'));

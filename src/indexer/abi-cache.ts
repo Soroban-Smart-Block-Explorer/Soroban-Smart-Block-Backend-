@@ -44,7 +44,11 @@ export async function setCachedAbi(address: string, abi: ContractAbi): Promise<v
   await prismaWrite.contract.upsert({
     where: { address },
     update: { abi: abi as object },
-    create: { address, abi: abi as object },
+    create: {
+      address,
+      name: `Unknown Contract (${address.slice(0, 8)}…)`,
+      abi: abi as object,
+    },
   });
   cache.delete(address); // remove stale entry
   evictIfFull();
