@@ -50,6 +50,14 @@ const s3 = new S3Client({
 
 export { coldStorageConfig };
 
+export function setCurrentLedger(seq: number): void {
+  currentLedger = seq;
+}
+
+export function getRecentLedgerThreshold(): number {
+  return currentLedger - coldStorageConfig.recentLedgerCount;
+}
+
 // ── Prometheus metrics ────────────────────────────────────────────────
 
 const coldStorageLatency = new Histogram({
@@ -666,7 +674,7 @@ export function coldStorageRouter(req: Request, res: Response, next: NextFunctio
     return next();
   }
 
-  const isDeepHistory = ledgerSeq < coldStorageConfig.recentThresholdSeconds;
+  const isDeepHistory = ledgerSeq < getRecentLedgerThreshold();
 
   if (isDeepHistory) {
     req.coldStorage = {
