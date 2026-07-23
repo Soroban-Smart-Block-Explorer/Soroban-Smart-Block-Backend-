@@ -15,6 +15,3 @@ export const prismaRead = new PrismaClient({
   log: logLevel,
   datasources: { db: { url: config.readReplicaUrl } },
 });
-
-/** @deprecated Use prismaWrite or prismaRead explicitly. */
-export const prisma = prismaWrite;

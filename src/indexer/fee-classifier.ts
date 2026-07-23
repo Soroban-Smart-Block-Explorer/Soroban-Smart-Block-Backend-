@@ -7,7 +7,11 @@
  */
 
 import { prismaRead, prismaWrite } from '../db';
-import type { FeeType, FeeDestination } from '@prisma/client';
+
+type FeeType = string;
+type FeeDestination = string;
+const feeRead = prismaRead as any;
+const feeWrite = prismaWrite as any;
 
 // ---------------------------------------------------------------------------
 // Types
@@ -141,7 +145,7 @@ export async function classifyAndStore(events: RawEvent[]): Promise<ClassifiedFe
   }
 
   if (classified.length > 0) {
-    await prismaWrite.feeEvent.createMany({
+    await feeWrite.feeEvent.createMany({
       data: classified.map((f) => ({
         txHash: f.txHash,
         contractAddress: f.contractAddress,
@@ -167,21 +171,19 @@ export async function classifyAndStore(events: RawEvent[]): Promise<ClassifiedFe
 // ---------------------------------------------------------------------------
 
 export async function discoverFeeContracts(): Promise<string[]> {
-  const knownProfiles = await prismaRead.protocolProfile.findMany({
+  const knownProfiles: any[] = await feeRead.protocolProfile.findMany({
     select: { contractAddress: true },
   });
   const known = new Set(knownProfiles.map((p) => p.contractAddress));
 
-  const recentEvents = await prismaRead.feeEvent.findMany({
+  const recentEvents: any[] = await feeRead.feeEvent.findMany({
     select: { contractAddress: true },
     distinct: ['contractAddress'],
     orderBy: { timestamp: 'desc' },
     take: 500,
   });
 
-  return recentEvents
-    .map((e) => e.contractAddress)
-    .filter((addr) => !known.has(addr));
+  return recentEvents.map((e) => e.contractAddress).filter((addr) => !known.has(addr));
 }
 
 // ---------------------------------------------------------------------------
@@ -216,7 +218,7 @@ export function computeApy(apr: number, compoundsPerYear: number = 365): number 
 // ---------------------------------------------------------------------------
 
 export async function detectAnomalies(contractAddress: string): Promise<void> {
-  const recent = await prismaRead.protocolRevenue.findMany({
+  const recent: any[] = await feeRead.protocolRevenue.findMany({
     where: { contractAddress, period: 'DAY' },
     orderBy: { timestamp: 'desc' },
     take: 31,
@@ -226,8 +228,7 @@ export async function detectAnomalies(contractAddress: string): Promise<void> {
 
   const latest = recent[0];
   const baseline = recent.slice(1, 8);
-  const avgBaseline =
-    baseline.reduce((s, r) => s + Number(r.totalFees), 0) / baseline.length;
+  const avgBaseline = baseline.reduce((s, r) => s + Number(r.totalFees), 0) / baseline.length;
   const latestFees = Number(latest.totalFees);
 
   if (avgBaseline === 0) return;
@@ -235,7 +236,7 @@ export async function detectAnomalies(contractAddress: string): Promise<void> {
   const ratio = latestFees / avgBaseline;
 
   if (ratio > 3) {
-    await prismaWrite.revenueAlert.create({
+    await feeWrite.revenueAlert.create({
       data: {
         contractAddress,
         alertType: 'revenue_spike',
@@ -246,7 +247,7 @@ export async function detectAnomalies(contractAddress: string): Promise<void> {
       },
     });
   } else if (ratio < 0.2) {
-    await prismaWrite.revenueAlert.create({
+    await feeWrite.revenueAlert.create({
       data: {
         contractAddress,
         alertType: 'revenue_drop',

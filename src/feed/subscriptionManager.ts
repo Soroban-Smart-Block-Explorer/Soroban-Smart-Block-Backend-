@@ -1,4 +1,4 @@
-import { prisma } from '../db';
+import { prismaWrite as prisma } from '../db';
 
 export interface SubscriptionConfig {
   userId?: string;

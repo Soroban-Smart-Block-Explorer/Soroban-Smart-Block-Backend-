@@ -1,5 +1,5 @@
 import { EventEmitter } from 'events';
-import { prisma } from '../db';
+import { prismaWrite as prisma } from '../db';
 
 export interface FeedMessage {
   channelName: string;

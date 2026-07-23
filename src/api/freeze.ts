@@ -18,22 +18,29 @@ const adminAuth = (req: Request, res: Response, next: any) => {
   if (!actor) {
     return res.status(401).json({ error: 'Unauthorized: admin token required' });
   }
-  (req as any).actor = actor;
+  req.actor = typeof actor === 'string' ? actor : String(actor);
   next();
 };
 
-const getActor = (req: Request) => (req as any).actor || 'unknown';
+const getActor = (req: Request) => req.actor ?? 'unknown';
 
-async function logAudit(actor: string, action: string, target: string, previousState: any, newState: any, reason?: string) {
+async function logAudit(
+  actor: string,
+  action: string,
+  target: string,
+  previousState: any,
+  newState: any,
+  reason?: string,
+) {
   await prisma.auditLog.create({
     data: {
       actor,
       action,
       target,
-      previousState: previousState ? JSON.stringify(previousState) : null,
-      newState: newState ? JSON.stringify(newState) : null,
+      previousState: previousState ? JSON.stringify(previousState) : undefined,
+      newState: newState ? JSON.stringify(newState) : undefined,
       reason,
-    }
+    },
   });
 }
 
@@ -53,9 +60,9 @@ freezeRouter.get('/keys', async (req: Request, res: Response) => {
       where,
       take: limit,
       skip: offset,
-      orderBy: { createdAt: 'desc' }
+      orderBy: { createdAt: 'desc' },
     });
-    
+
     const total = await prisma.frozenLedgerKey.count({ where });
 
     res.json({ data: keys, total, limit, offset });
@@ -68,7 +75,7 @@ freezeRouter.get('/keys', async (req: Request, res: Response) => {
 freezeRouter.get('/keys/:id', async (req: Request, res: Response) => {
   try {
     const key = await prisma.frozenLedgerKey.findUnique({
-      where: { id: req.params.id }
+      where: { id: req.params.id },
     });
     if (!key) return res.status(404).json({ error: 'Key not found' });
     res.json(key);
@@ -93,19 +100,18 @@ freezeRouter.post('/keys', adminAuth, async (req: Request, res: Response) => {
     const { ledgerKey, contractAddress, reason, metadata } = parsed.data;
 
     // Default frozenAtLedger to current max or 0, this should ideally come from network
-    const state = await prisma.indexerState.findUnique({ where: { id: 'singleton' }});
+    const state = await prisma.indexerState.findUnique({ where: { id: 'singleton' } });
     const frozenAtLedger = state?.lastLedger || 0;
 
     const newKey = await prisma.frozenLedgerKey.create({
       data: {
         ledgerKey,
-        contractAddress,
+        contractAddress: contractAddress ?? '',
+        active: true,
         frozenAtLedger,
         frozenAtTime: new Date(),
         reason,
-        frozenBy: actor,
-        metadata: metadata ? metadata : undefined,
-      }
+      },
     });
 
     invalidateFreezeCache();
@@ -130,19 +136,26 @@ freezeRouter.patch('/keys/:id', adminAuth, async (req: Request, res: Response) =
     if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
 
     const actor = getActor(req);
-    
-    const existing = await prisma.frozenLedgerKey.findUnique({ where: { id: req.params.id }});
+
+    const existing = await prisma.frozenLedgerKey.findUnique({ where: { id: req.params.id } });
     if (!existing) return res.status(404).json({ error: 'Key not found' });
 
     const updated = await prisma.frozenLedgerKey.update({
       where: { id: req.params.id },
-      data: parsed.data
+      data: parsed.data,
     });
 
     if (parsed.data.active !== undefined) {
       invalidateFreezeCache();
     }
-    await logAudit(actor, 'UPDATE_FREEZE', updated.id, existing, updated, parsed.data.reason || 'Update');
+    await logAudit(
+      actor,
+      'UPDATE_FREEZE',
+      updated.id,
+      existing,
+      updated,
+      parsed.data.reason || 'Update',
+    );
 
     res.json(updated);
   } catch (error: any) {
@@ -156,11 +169,11 @@ freezeRouter.delete('/keys/:id', adminAuth, async (req: Request, res: Response) 
     const actor = getActor(req);
     const reason = req.body.reason || 'Manual delete';
 
-    const existing = await prisma.frozenLedgerKey.findUnique({ where: { id: req.params.id }});
+    const existing = await prisma.frozenLedgerKey.findUnique({ where: { id: req.params.id } });
     if (!existing) return res.status(404).json({ error: 'Key not found' });
 
-    await prisma.frozenLedgerKey.delete({ where: { id: req.params.id }});
-    
+    await prisma.frozenLedgerKey.delete({ where: { id: req.params.id } });
+
     invalidateFreezeCache();
     await logAudit(actor, 'DELETE_FREEZE', req.params.id, existing, null, reason);
 
@@ -184,9 +197,9 @@ freezeRouter.get('/violations', async (req: Request, res: Response) => {
       where,
       take: limit,
       skip: offset,
-      orderBy: { createdAt: 'desc' }
+      orderBy: { createdAt: 'desc' },
     });
-    
+
     const total = await prisma.freezeViolation.count({ where });
 
     res.json({ data: violations, total, limit, offset });
@@ -199,7 +212,7 @@ freezeRouter.get('/violations', async (req: Request, res: Response) => {
 freezeRouter.get('/violations/:id', async (req: Request, res: Response) => {
   try {
     const violation = await prisma.freezeViolation.findUnique({
-      where: { id: req.params.id }
+      where: { id: req.params.id },
     });
     if (!violation) return res.status(404).json({ error: 'Violation not found' });
     res.json(violation);
@@ -214,14 +227,14 @@ freezeRouter.patch('/violations/:id', adminAuth, async (req: Request, res: Respo
     const schema = z.object({
       resolution: z.enum(['pending', 'resolved', 'false_positive']),
       severity: z.enum(['low', 'medium', 'high', 'critical']).optional(),
-      reason: z.string().optional()
+      reason: z.string().optional(),
     });
     const parsed = schema.safeParse(req.body);
     if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
 
     const actor = getActor(req);
-    
-    const existing = await prisma.freezeViolation.findUnique({ where: { id: req.params.id }});
+
+    const existing = await prisma.freezeViolation.findUnique({ where: { id: req.params.id } });
     if (!existing) return res.status(404).json({ error: 'Violation not found' });
 
     const updated = await prisma.freezeViolation.update({
@@ -229,12 +242,17 @@ freezeRouter.patch('/violations/:id', adminAuth, async (req: Request, res: Respo
       data: {
         resolution: parsed.data.resolution,
         ...(parsed.data.severity && { severity: parsed.data.severity }),
-        resolvedBy: actor,
-        resolvedAt: new Date()
-      }
+      },
     });
 
-    await logAudit(actor, 'RESOLVE_VIOLATION', updated.id, existing, updated, parsed.data.reason || 'Resolution updated');
+    await logAudit(
+      actor,
+      'RESOLVE_VIOLATION',
+      updated.id,
+      existing,
+      updated,
+      parsed.data.reason || 'Resolution updated',
+    );
 
     res.json(updated);
   } catch (error: any) {
@@ -249,7 +267,7 @@ freezeRouter.get('/stats', async (req: Request, res: Response) => {
       prisma.frozenLedgerKey.count(),
       prisma.frozenLedgerKey.count({ where: { active: true } }),
       prisma.freezeViolation.count(),
-      prisma.freezeViolation.count({ where: { severity: 'critical' } })
+      prisma.freezeViolation.count({ where: { severity: 'critical' } }),
     ]);
 
     res.json({
@@ -257,7 +275,7 @@ freezeRouter.get('/stats', async (req: Request, res: Response) => {
       activeKeys,
       totalViolations,
       criticalViolations,
-      computedAt: new Date().toISOString()
+      computedAt: new Date().toISOString(),
     });
   } catch (error: any) {
     res.status(500).json({ error: error.message });
@@ -280,9 +298,9 @@ freezeRouter.get('/audit-log', async (req: Request, res: Response) => {
       where,
       take: limit,
       skip: offset,
-      orderBy: { timestamp: 'desc' }
+      orderBy: { createdAt: 'desc' },
     });
-    
+
     const total = await prisma.auditLog.count({ where });
 
     res.json({ data: logs, total, limit, offset });

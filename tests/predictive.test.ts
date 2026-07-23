@@ -2,8 +2,8 @@ import { describe, it, expect, vi } from 'vitest';
 import request from 'supertest';
 import express from 'express';
 
-vi.mock('../src/db', () => ({
-  default: {
+vi.mock('../src/db', () => {
+  const mockDb = {
     featureDefinition: { findUnique: vi.fn().mockResolvedValue(null) },
     featureValue: { findMany: vi.fn().mockResolvedValue([]) },
     predictionScenario: { create: vi.fn() },
@@ -11,8 +11,9 @@ vi.mock('../src/db', () => ({
       create: vi.fn().mockImplementation((d: any) => Promise.resolve({ id: 'mock-id', ...d.data })),
       findMany: vi.fn().mockResolvedValue([]),
     },
-  },
-}));
+  };
+  return { default: mockDb, prismaWrite: mockDb };
+});
 
 import { predictRouter } from '../src/api/predict';
 

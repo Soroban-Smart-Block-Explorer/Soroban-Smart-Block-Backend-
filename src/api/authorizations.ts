@@ -1,7 +1,14 @@
 import { Router, Request, Response } from 'express';
 import { z } from 'zod';
-import { prisma } from '../db';
+import { prismaRead as prisma } from '../db';
 import { getLatestLedger } from '../indexer/rpc';
+
+/**
+ * @swagger
+ * tags:
+ *   name: Authorizations
+ *   description: Soroban session authorization tracking and expiry countdowns
+ */
 
 export const authorizationRouter = Router();
 
@@ -10,6 +17,47 @@ const paginationSchema = z.object({
   limit: z.coerce.number().min(1).max(100).default(20),
 });
 
+/**
+ * @swagger
+ * /api/v1/authorizations:
+ *   get:
+ *     summary: List session authorizations
+ *     description: Returns paginated session authorizations with expiry countdown and active/expired status.
+ *     tags: [Authorizations]
+ *     parameters:
+ *       - in: query
+ *         name: contract
+ *         schema: { type: string }
+ *         description: Filter by contract address
+ *       - in: query
+ *         name: active
+ *         schema: { type: string, enum: ['true', 'false', '1', '0'] }
+ *         description: Filter active (not yet expired) or expired authorizations
+ *       - in: query
+ *         name: page
+ *         schema: { type: integer, minimum: 1, default: 1 }
+ *       - in: query
+ *         name: limit
+ *         schema: { type: integer, minimum: 1, maximum: 100, default: 20 }
+ *     responses:
+ *       200:
+ *         description: Paginated authorizations
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 data: { type: array, items: { type: object } }
+ *                 total: { type: integer }
+ *                 page: { type: integer }
+ *                 limit: { type: integer }
+ *                 latestLedger: { type: integer }
+ *       400:
+ *         description: Invalid query parameters
+ *         content:
+ *           application/json:
+ *             schema: { $ref: '#/components/schemas/Error' }
+ */
 authorizationRouter.get('/', async (req: Request, res: Response) => {
   try {
     const { page, limit } = paginationSchema.parse(req.query);
@@ -55,6 +103,25 @@ authorizationRouter.get('/', async (req: Request, res: Response) => {
   }
 });
 
+/**
+ * @swagger
+ * /api/v1/authorizations/dashboard:
+ *   get:
+ *     summary: Authorization expiry dashboard
+ *     description: Returns the top 50 active authorizations with block countdown to expiry.
+ *     tags: [Authorizations]
+ *     responses:
+ *       200:
+ *         description: Active authorization countdowns
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 latestLedger: { type: integer }
+ *                 activeCount: { type: integer }
+ *                 countdowns: { type: array, items: { type: object } }
+ */
 authorizationRouter.get('/dashboard', async (_req: Request, res: Response) => {
   try {
     const latestLedger = await getLatestLedger();
@@ -84,6 +151,36 @@ authorizationRouter.get('/dashboard', async (_req: Request, res: Response) => {
   }
 });
 
+/**
+ * @swagger
+ * /api/v1/authorizations/{id}:
+ *   get:
+ *     summary: Get a single authorization by ID
+ *     tags: [Authorizations]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: string }
+ *     responses:
+ *       200:
+ *         description: Authorization record with countdown
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 id: { type: string }
+ *                 remainingBlocks: { type: integer }
+ *                 status: { type: string, enum: [active, expired] }
+ *                 countdown: { type: string }
+ *                 latestLedger: { type: integer }
+ *       404:
+ *         description: Authorization not found
+ *         content:
+ *           application/json:
+ *             schema: { $ref: '#/components/schemas/Error' }
+ */
 authorizationRouter.get('/:id', async (req: Request, res: Response) => {
   try {
     const auth = await prisma.sessionAuthorization.findUnique({ where: { id: req.params.id } });

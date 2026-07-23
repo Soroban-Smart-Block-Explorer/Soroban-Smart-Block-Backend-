@@ -34,7 +34,7 @@ vi.mock('../src/db', () => ({
   prismaRead: {
     sandboxSession: {
       findUnique: vi.fn(async ({ where }: any) => sessionStore.get(where.id) ?? null),
-      count: vi.fn(async ({ where }: any) => sessionStore.has(where?.id) ? 1 : 0),
+      count: vi.fn(async ({ where }: any) => (sessionStore.has(where?.id) ? 1 : 0)),
     },
     sandboxAccount: {
       findMany: vi.fn(async ({ where }: any) => getArrayStore(accountStore, where.sessionId)),
@@ -124,7 +124,10 @@ vi.mock('../src/db', () => ({
     sandboxAccount: {
       createMany: vi.fn(async ({ data }: any) => {
         for (const row of data) {
-          getArrayStore(accountStore, row.sessionId).push({ id: uniqueId('account'), ...clone(row) });
+          getArrayStore(accountStore, row.sessionId).push({
+            id: uniqueId('account'),
+            ...clone(row),
+          });
         }
         return { count: data.length };
       }),
@@ -153,7 +156,9 @@ vi.mock('../src/db', () => ({
       }),
       update: vi.fn(async ({ where, data }: any) => {
         const rows = getArrayStore(contractStore, where.sessionId_contractId.sessionId);
-        const row = rows.find((entry) => entry.contractId === where.sessionId_contractId.contractId);
+        const row = rows.find(
+          (entry) => entry.contractId === where.sessionId_contractId.contractId,
+        );
         if (!row) throw new Error('contract not found');
         Object.assign(row, clone(data));
         return row;
@@ -165,7 +170,11 @@ vi.mock('../src/db', () => ({
     },
     sandboxSnapshot: {
       create: vi.fn(async ({ data }: any) => {
-        const row = { id: uniqueId('snapshot'), createdAt: new Date('2026-06-18T00:00:00.000Z'), ...clone(data) };
+        const row = {
+          id: uniqueId('snapshot'),
+          createdAt: new Date('2026-06-18T00:00:00.000Z'),
+          ...clone(data),
+        };
         getArrayStore(snapshotStore, data.sessionId).push(row);
         return row;
       }),
@@ -299,6 +308,50 @@ describe('SandboxEngine', () => {
     expect(fuzzRun.findings[0].severity).toBe('critical');
   });
 
+  it('runs a fuzz campaign, records crashes, and minimizes them', async () => {
+    const { sandboxEngine } = await import('../src/sandbox/runtime');
+    const session = await sandboxEngine.createSession({ seed: 'seed-e' });
+    const contract = await sandboxEngine.deployFromTemplate({
+      sessionId: session.id,
+      templateId: 'sep41-token',
+      name: 'Token',
+      deployer: (await sandboxEngine.listAccounts(session.id))[0].publicKey,
+    });
+
+    const campaign = await sandboxEngine.startFuzzCampaign({
+      sessionId: session.id,
+      contractId: contract.contractId,
+      config: {
+        timeLimitMs: 20,
+        coverageTarget: 60,
+        workers: 2,
+        maxSteps: 4,
+        seedCorpus: [
+          {
+            functionName: 'mint',
+            args: { to: (await sandboxEngine.listAccounts(session.id))[1].publicKey, amount: '1' },
+          },
+        ],
+        invariants: ['totalSupply == sum(balances)'],
+        enableOracleManipulation: true,
+      },
+    });
+
+    expect(campaign.campaignId).toBeDefined();
+    expect(campaign.coverage.totalCoverage).toBeGreaterThan(0);
+    expect(campaign.crashes.length).toBeGreaterThanOrEqual(0);
+
+    if (campaign.crashes.length > 0) {
+      const minimized = await sandboxEngine.minimizeCrash(
+        session.id,
+        campaign.campaignId,
+        campaign.crashes[0].id,
+      );
+      expect(minimized.steps.length).toBeLessThanOrEqual(campaign.crashes[0].steps.length);
+      expect(minimized.suggestedFix).toBeTruthy();
+    }
+  });
+
   it('executes CI steps and stores the result', async () => {
     const { sandboxEngine } = await import('../src/sandbox/runtime');
     const session = await sandboxEngine.createSession({ seed: 'seed-d' });
@@ -313,8 +366,19 @@ describe('SandboxEngine', () => {
       sessionId: session.id,
       onFailure: 'stop',
       steps: [
-        { action: 'call', contract: contract.contractId, function: 'mint', args: { to: (await sandboxEngine.listAccounts(session.id))[1].publicKey, amount: '42' } },
-        { action: 'assert', contract: contract.contractId, function: 'balance_of', expected: { balance: '42' }, args: { owner: (await sandboxEngine.listAccounts(session.id))[1].publicKey } },
+        {
+          action: 'call',
+          contract: contract.contractId,
+          function: 'mint',
+          args: { to: (await sandboxEngine.listAccounts(session.id))[1].publicKey, amount: '42' },
+        },
+        {
+          action: 'assert',
+          contract: contract.contractId,
+          function: 'balance_of',
+          expected: { balance: '42' },
+          args: { owner: (await sandboxEngine.listAccounts(session.id))[1].publicKey },
+        },
       ],
     });
 

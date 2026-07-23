@@ -77,21 +77,21 @@ export async function indexNetworkNodes(): Promise<void> {
           await prisma.networkNode.update({
             where: { publicKey: nodeData.publicKey },
             data: {
-              version: nodeData.version,
+              stellarCoreVersion: nodeData.version,
               isValidator: nodeData.isValidator,
               lastSeen: new Date(),
             },
           });
 
           // Track if version changed
-          if (existing.version !== nodeData.version && nodeData.version) {
+          if (existing.stellarCoreVersion !== nodeData.version && nodeData.version) {
             await prisma.networkNodeEvent.create({
               data: {
                 nodeId: existing.id,
                 eventType: 'version_change',
                 details: JSON.parse(
                   JSON.stringify({
-                    from: existing.version,
+                    from: existing.stellarCoreVersion,
                     to: nodeData.version,
                   }),
                 ),
@@ -104,7 +104,7 @@ export async function indexNetworkNodes(): Promise<void> {
           await prisma.networkNode.create({
             data: {
               publicKey: nodeData.publicKey,
-              version: nodeData.version,
+              stellarCoreVersion: nodeData.version,
               isValidator: nodeData.isValidator || false,
               firstSeen: new Date(),
               lastSeen: new Date(),

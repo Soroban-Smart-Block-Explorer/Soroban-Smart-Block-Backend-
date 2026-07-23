@@ -101,8 +101,9 @@ const paginationSchema = z.object({
  *                 error: limit must be less than or equal to 100
  */
 // GET /events?contract=&type=&topic=&page=1
-eventRouter.get('/', async (req: Request, res: Response) => {
-  try {
+eventRouter.get(
+  '/',
+  asyncHandler(async (req: Request, res: Response) => {
     const { page, limit } = paginationSchema.parse(req.query);
     const { contract, type, topic } = req.query as Record<string, string>;
     const skip = (page - 1) * limit;
@@ -134,10 +135,8 @@ eventRouter.get('/', async (req: Request, res: Response) => {
     ]);
 
     res.json({ data: events, total, page, limit });
-  } catch (e) {
-    res.status(400).json({ error: String(e) });
-  }
-});
+  }),
+);
 
 /**
  * @swagger

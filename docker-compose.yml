@@ -1,5 +1,3 @@
-version: '3.9'
-
 # ─── Shared build context ─────────────────────────────────────────────────────
 x-app-build: &app-build
   build: .
@@ -17,10 +15,55 @@ x-security: &security
 
 # ─── Per-network DB defaults ──────────────────────────────────────────────────
 x-db-healthcheck: &db-healthcheck
-  test: ['CMD-SHELL', 'pg_isready -U postgres']
+  test: ['CMD-SHELL', 'pg_isready -U ${POSTGRES_USER:-postgres}']
   interval: 5s
   timeout: 5s
   retries: 5
+
+x-api-healthcheck: &api-healthcheck
+  test: ['CMD-SHELL', 'wget -qO- http://localhost:$${PORT:-3000}/health || exit 1']
+  interval: 10s
+  timeout: 5s
+  retries: 5
+  start_period: 30s
+
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: '10m'
+    max-file: '3'
+
+x-db-resources: &db-resources
+  limits:
+    cpus: '0.50'
+    memory: 512M
+  reservations:
+    cpus: '0.10'
+    memory: 128M
+
+x-api-resources: &api-resources
+  limits:
+    cpus: '1.00'
+    memory: 512M
+  reservations:
+    cpus: '0.10'
+    memory: 128M
+
+x-indexer-resources: &indexer-resources
+  limits:
+    cpus: '0.50'
+    memory: 256M
+  reservations:
+    cpus: '0.05'
+    memory: 64M
+
+x-redis-resources: &redis-resources
+  limits:
+    cpus: '0.25'
+    memory: 128M
+  reservations:
+    cpus: '0.05'
+    memory: 32M
 
 services:
 
@@ -31,39 +74,61 @@ services:
   # ═══════════════════════════════════════════════════════════════════════════
   redis:
     image: redis:7-alpine
-    ports:
-      - '6379:6379'
+    restart: unless-stopped
+    # No host-port mapping — Redis is reachable only on the internal Compose network.
+    # Set REDIS_PASSWORD in the host environment to enable requirepass authentication.
+    command: >-
+      sh -c 'if [ -n "$$REDIS_PASSWORD" ]; then
+        exec redis-server --requirepass "$$REDIS_PASSWORD";
+      else
+        exec redis-server;
+      fi'
+    environment:
+      REDIS_PASSWORD: '${REDIS_PASSWORD:-}'
     volumes:
       - redis-data:/data
     healthcheck:
-      test: ['CMD', 'redis-cli', 'ping']
+      test:
+        - CMD-SHELL
+        - >-
+          if [ -n "$$REDIS_PASSWORD" ]; then
+            redis-cli -a "$$REDIS_PASSWORD" ping;
+          else
+            redis-cli ping;
+          fi
       interval: 5s
       timeout: 5s
       retries: 5
+    deploy:
+      resources: *redis-resources
+    logging: *logging
 
   # ═══════════════════════════════════════════════════════════════════════════
   # TESTNET
   # ═══════════════════════════════════════════════════════════════════════════
   db-testnet:
-    image: postgres:16-alpine
+    image: apache/age:latest
+    restart: unless-stopped
     environment:
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: password
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
       POSTGRES_DB: soroban_testnet
-    ports:
-      - '5432:5432'
     volumes:
       - pgdata-testnet:/var/lib/postgresql/data
     healthcheck: *db-healthcheck
+    deploy:
+      resources: *db-resources
+    logging: *logging
 
   api-testnet:
     <<: [*app-build, *security]
+    restart: unless-stopped
     ports:
       - '3000:3000'
     environment:
       STELLAR_NETWORK: testnet
-      TESTNET_DATABASE_URL: postgresql://postgres:password@db-testnet:5432/soroban_testnet
-      DATABASE_URL: postgresql://postgres:password@db-testnet:5432/soroban_testnet
+      TESTNET_DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}@db-testnet:5432/soroban_testnet
+      DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}@db-testnet:5432/soroban_testnet
       TESTNET_RPC_URL: https://soroban-testnet.stellar.org
       TESTNET_HORIZON_URL: https://horizon-testnet.stellar.org
       TESTNET_PASSPHRASE: "Test SDF Network ; September 2015"
@@ -73,14 +138,24 @@ services:
     depends_on:
       db-testnet:
         condition: service_healthy
+    healthcheck:
+      test: ['CMD-SHELL', 'wget -qO- http://localhost:3000/health || exit 1']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    deploy:
+      resources: *api-resources
+    logging: *logging
     command: sh -c "npx prisma migrate deploy && node dist/index.js"
 
   indexer-testnet:
     <<: [*app-build, *security]
+    restart: unless-stopped
     environment:
       STELLAR_NETWORK: testnet
-      TESTNET_DATABASE_URL: postgresql://postgres:password@db-testnet:5432/soroban_testnet
-      DATABASE_URL: postgresql://postgres:password@db-testnet:5432/soroban_testnet
+      TESTNET_DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}@db-testnet:5432/soroban_testnet
+      DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}@db-testnet:5432/soroban_testnet
       TESTNET_RPC_URL: https://soroban-testnet.stellar.org
       TESTNET_HORIZON_URL: https://horizon-testnet.stellar.org
       TESTNET_PASSPHRASE: "Test SDF Network ; September 2015"
@@ -89,33 +164,40 @@ services:
     depends_on:
       db-testnet:
         condition: service_healthy
+      api-testnet:
+        condition: service_healthy
+    deploy:
+      resources: *indexer-resources
+    logging: *logging
     command: node dist/indexer/run.js
 
   # ═══════════════════════════════════════════════════════════════════════════
   # MAINNET
   # ═══════════════════════════════════════════════════════════════════════════
   db-mainnet:
-    image: postgres:16-alpine
+    image: apache/age:latest
+    restart: unless-stopped
     environment:
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: password
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
       POSTGRES_DB: soroban_mainnet
-    ports:
-      - '5433:5432'
     volumes:
       - pgdata-mainnet:/var/lib/postgresql/data
     healthcheck: *db-healthcheck
+    deploy:
+      resources: *db-resources
+    logging: *logging
     profiles: [mainnet]
 
   api-mainnet:
     <<: [*app-build, *security]
+    restart: unless-stopped
     ports:
       - '3001:3001'
     environment:
       STELLAR_NETWORK: mainnet
-      MAINNET_DATABASE_URL: postgresql://postgres:password@db-mainnet:5432/soroban_mainnet
-      DATABASE_URL: postgresql://postgres:password@db-mainnet:5432/soroban_mainnet
-      # Set MAINNET_RPC_URL to your provider (e.g. Validation Cloud)
+      MAINNET_DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}@db-mainnet:5432/soroban_mainnet
+      DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}@db-mainnet:5432/soroban_mainnet
       MAINNET_RPC_URL: ${MAINNET_RPC_URL:-}
       MAINNET_HORIZON_URL: https://horizon.stellar.org
       MAINNET_PASSPHRASE: "Public Global Stellar Network ; September 2015"
@@ -125,15 +207,25 @@ services:
     depends_on:
       db-mainnet:
         condition: service_healthy
+    healthcheck:
+      test: ['CMD-SHELL', 'wget -qO- http://localhost:3001/health || exit 1']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    deploy:
+      resources: *api-resources
+    logging: *logging
     command: sh -c "npx prisma migrate deploy && node dist/index.js"
     profiles: [mainnet]
 
   indexer-mainnet:
     <<: [*app-build, *security]
+    restart: unless-stopped
     environment:
       STELLAR_NETWORK: mainnet
-      MAINNET_DATABASE_URL: postgresql://postgres:password@db-mainnet:5432/soroban_mainnet
-      DATABASE_URL: postgresql://postgres:password@db-mainnet:5432/soroban_mainnet
+      MAINNET_DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}@db-mainnet:5432/soroban_mainnet
+      DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}@db-mainnet:5432/soroban_mainnet
       MAINNET_RPC_URL: ${MAINNET_RPC_URL:-}
       MAINNET_HORIZON_URL: https://horizon.stellar.org
       MAINNET_PASSPHRASE: "Public Global Stellar Network ; September 2015"
@@ -142,6 +234,11 @@ services:
     depends_on:
       db-mainnet:
         condition: service_healthy
+      api-mainnet:
+        condition: service_healthy
+    deploy:
+      resources: *indexer-resources
+    logging: *logging
     command: node dist/indexer/run.js
     profiles: [mainnet]
 
@@ -149,26 +246,29 @@ services:
   # DEVNET  (local Stellar Quickstart)
   # ═══════════════════════════════════════════════════════════════════════════
   db-devnet:
-    image: postgres:16-alpine
+    image: apache/age:latest
+    restart: unless-stopped
     environment:
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: password
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
       POSTGRES_DB: soroban_devnet
-    ports:
-      - '5434:5432'
     volumes:
       - pgdata-devnet:/var/lib/postgresql/data
     healthcheck: *db-healthcheck
+    deploy:
+      resources: *db-resources
+    logging: *logging
     profiles: [devnet]
 
   api-devnet:
     <<: [*app-build, *security]
+    restart: unless-stopped
     ports:
       - '3002:3002'
     environment:
       STELLAR_NETWORK: devnet
-      DEVNET_DATABASE_URL: postgresql://postgres:password@db-devnet:5432/soroban_devnet
-      DATABASE_URL: postgresql://postgres:password@db-devnet:5432/soroban_devnet
+      DEVNET_DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}@db-devnet:5432/soroban_devnet
+      DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}@db-devnet:5432/soroban_devnet
       DEVNET_RPC_URL: http://stellar-quickstart:8000/soroban/rpc
       DEVNET_HORIZON_URL: http://stellar-quickstart:8000
       DEVNET_PASSPHRASE: "Standalone Network ; February 2017"
@@ -178,15 +278,25 @@ services:
     depends_on:
       db-devnet:
         condition: service_healthy
+    healthcheck:
+      test: ['CMD-SHELL', 'wget -qO- http://localhost:3002/health || exit 1']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    deploy:
+      resources: *api-resources
+    logging: *logging
     command: sh -c "npx prisma migrate deploy && node dist/index.js"
     profiles: [devnet]
 
   indexer-devnet:
     <<: [*app-build, *security]
+    restart: unless-stopped
     environment:
       STELLAR_NETWORK: devnet
-      DEVNET_DATABASE_URL: postgresql://postgres:password@db-devnet:5432/soroban_devnet
-      DATABASE_URL: postgresql://postgres:password@db-devnet:5432/soroban_devnet
+      DEVNET_DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}@db-devnet:5432/soroban_devnet
+      DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}@db-devnet:5432/soroban_devnet
       DEVNET_RPC_URL: http://stellar-quickstart:8000/soroban/rpc
       DEVNET_HORIZON_URL: http://stellar-quickstart:8000
       DEVNET_PASSPHRASE: "Standalone Network ; February 2017"
@@ -195,11 +305,360 @@ services:
     depends_on:
       db-devnet:
         condition: service_healthy
+      api-devnet:
+        condition: service_healthy
+    deploy:
+      resources: *indexer-resources
+    logging: *logging
     command: node dist/indexer/run.js
     profiles: [devnet]
+
+  # ═══════════════════════════════════════════════════════════════════════════
+  # ANALYTICS DATA LAKE  (#566)
+  # Start with:  docker compose --profile analytics up
+  # ═══════════════════════════════════════════════════════════════════════════
+
+  zookeeper:
+    image: confluentinc/cp-zookeeper:7.6.1
+    restart: unless-stopped
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+    volumes:
+      - zookeeper-data:/var/lib/zookeeper/data
+      - zookeeper-log:/var/lib/zookeeper/log
+    healthcheck:
+      test: ['CMD-SHELL', 'echo ruok | nc localhost 2181 | grep imok']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    deploy:
+      resources:
+        limits:
+          cpus: '0.25'
+          memory: 256M
+    logging: *logging
+    profiles: [analytics]
+
+  kafka:
+    image: confluentinc/cp-kafka:7.6.1
+    restart: unless-stopped
+    depends_on:
+      zookeeper:
+        condition: service_healthy
+    ports:
+      - '9092:9092'      # internal Compose network
+      - '29092:29092'    # host access for local dev
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092,PLAINTEXT_HOST://localhost:29092
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: 'true'
+      KAFKA_NUM_PARTITIONS: 6
+      KAFKA_DEFAULT_REPLICATION_FACTOR: 1
+      # Retention: 7 days so lagging consumers can catch up
+      KAFKA_LOG_RETENTION_HOURS: 168
+      KAFKA_LOG_SEGMENT_BYTES: 1073741824
+    volumes:
+      - kafka-data:/var/lib/kafka/data
+    healthcheck:
+      test: ['CMD-SHELL', 'kafka-broker-api-versions --bootstrap-server localhost:9092']
+      interval: 15s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    deploy:
+      resources:
+        limits:
+          cpus: '0.50'
+          memory: 512M
+    logging: *logging
+    profiles: [analytics]
+
+  debezium:
+    image: debezium/connect:2.7
+    restart: unless-stopped
+    depends_on:
+      kafka:
+        condition: service_healthy
+      db-testnet:
+        condition: service_healthy
+    ports:
+      - '8083:8083'
+    environment:
+      BOOTSTRAP_SERVERS: kafka:9092
+      GROUP_ID: soroban-debezium
+      CONFIG_STORAGE_TOPIC: debezium.configs
+      OFFSET_STORAGE_TOPIC: debezium.offsets
+      STATUS_STORAGE_TOPIC: debezium.statuses
+      CONFIG_STORAGE_REPLICATION_FACTOR: 1
+      OFFSET_STORAGE_REPLICATION_FACTOR: 1
+      STATUS_STORAGE_REPLICATION_FACTOR: 1
+      # Exactly-once semantics
+      EXACTLY_ONCE_SUPPORT: required
+      PRODUCER_OVERRIDE_ENABLE_IDEMPOTENCE: 'true'
+      CONNECT_PRODUCER_MAX_IN_FLIGHT_REQUESTS_PER_CONNECTION: '1'
+    healthcheck:
+      test: ['CMD-SHELL', 'curl -sf http://localhost:8083/connectors || exit 1']
+      interval: 15s
+      timeout: 10s
+      retries: 10
+      start_period: 60s
+    deploy:
+      resources:
+        limits:
+          cpus: '0.50'
+          memory: 512M
+    logging: *logging
+    profiles: [analytics]
+
+  trino:
+    image: trinodb/trino:448
+    restart: unless-stopped
+    depends_on:
+      kafka:
+        condition: service_healthy
+    ports:
+      - '8080:8080'
+    environment:
+      # Trino will auto-discover Iceberg tables from the Glue catalog
+      AWS_REGION: ${AWS_REGION:-us-east-1}
+      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:-}
+      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:-}
+    volumes:
+      - trino-catalog:/etc/trino/catalog
+    healthcheck:
+      test: ['CMD-SHELL', 'curl -sf http://localhost:8080/v1/info | grep -q "\"starting\":false"']
+      interval: 20s
+      timeout: 10s
+      retries: 10
+      start_period: 60s
+    deploy:
+      resources:
+        limits:
+          cpus: '2.00'
+          memory: 2G
+        reservations:
+          cpus: '0.50'
+          memory: 512M
+    logging: *logging
+    profiles: [analytics]
+
+  # Kafka UI — browse topics and Debezium connector status
+  kafka-ui:
+    image: provectuslabs/kafka-ui:latest
+    restart: unless-stopped
+    depends_on:
+      kafka:
+        condition: service_healthy
+    ports:
+      - '8090:8080'
+    environment:
+      KAFKA_CLUSTERS_0_NAME: soroban-local
+      KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka:9092
+      KAFKA_CLUSTERS_0_KAFKACONNECT_0_NAME: debezium
+      KAFKA_CLUSTERS_0_KAFKACONNECT_0_ADDRESS: http://debezium:8083
+    deploy:
+      resources:
+        limits:
+          cpus: '0.25'
+          memory: 256M
+    logging: *logging
+    profiles: [analytics]
+
+  # ═══════════════════════════════════════════════════════════════════════════
+  # P2P INDEXER NETWORK (testnet) — see docs/P2P_INDEXER_DESIGN.md §7-8.
+  #
+  # A minimal 3-node local swarm (1 seed + 2 peers) for exercising the P2P
+  # code paths end-to-end. Each node gets its own Postgres so replication is
+  # genuinely exercised across independent databases rather than shared
+  # state. Peer discovery uses mDNS (P2P_MDNS_ENABLED=true) since all
+  # containers share the compose bridge network — this sidesteps needing to
+  # know the seed's PeerId ahead of time for local testing. Real multi-host
+  # deployments should set P2P_BOOTSTRAP_PEERS to a static seed multiaddr
+  # instead (mDNS is LAN-only by design).
+  #
+  # Scale beyond 3 nodes (e.g. the 10+ node acceptance-criteria harness) via
+  # `ts-node scripts/gen-p2p-compose.ts N > docker-compose.p2p.generated.yml`
+  # rather than hand-editing this block.
+  # ═══════════════════════════════════════════════════════════════════════════
+  db-testnet-p2p-seed:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+      POSTGRES_DB: soroban_testnet_p2p_seed
+    volumes:
+      - pgdata-testnet-p2p-seed:/var/lib/postgresql/data
+    healthcheck: *db-healthcheck
+    deploy:
+      resources: *db-resources
+    logging: *logging
+    profiles: [p2p]
+
+  # Each p2p-profile node runs the COMBINED api+indexer process
+  # (dist/index.js, same as api-testnet/mainnet) rather than the headless
+  # indexer-only entrypoint, so every node exposes /health, /p2p/status, and
+  # /p2p/ledger/:seq over HTTP — that's what makes the chaos scripts
+  # (scripts/chaos/*.ts) able to exercise query-forwarding, kill nodes, and
+  # inject a bad hash against a real reachable endpoint per node.
+  indexer-testnet-p2p-seed:
+    <<: [*app-build, *security]
+    restart: unless-stopped
+    ports:
+      - '3010:3010'
+    environment:
+      STELLAR_NETWORK: testnet
+      PORT: 3010
+      TESTNET_DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}@db-testnet-p2p-seed:5432/soroban_testnet_p2p_seed
+      DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}@db-testnet-p2p-seed:5432/soroban_testnet_p2p_seed
+      TESTNET_RPC_URL: https://soroban-testnet.stellar.org
+      TESTNET_HORIZON_URL: https://horizon-testnet.stellar.org
+      TESTNET_PASSPHRASE: "Test SDF Network ; September 2015"
+      P2P_ENABLED: 'true'
+      P2P_MDNS_ENABLED: 'true'
+      P2P_IS_RELAY_SERVER: 'true'
+      P2P_LISTEN_ADDR: /ip4/0.0.0.0/tcp/4001
+      P2P_IDENTITY_PATH: /app/data/p2p/testnet/identity.key
+      P2P_CHALLENGE_INTERVAL_MS: '15000'
+    volumes:
+      - p2p-identity-seed:/app/data/p2p
+    depends_on:
+      db-testnet-p2p-seed:
+        condition: service_healthy
+    healthcheck:
+      test: ['CMD-SHELL', 'wget -qO- http://localhost:3010/health || exit 1']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    deploy:
+      resources: *indexer-resources
+    logging: *logging
+    command: sh -c "npx prisma migrate deploy && node dist/index.js"
+    profiles: [p2p]
+
+  db-testnet-p2p-peer1:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+      POSTGRES_DB: soroban_testnet_p2p_peer1
+    volumes:
+      - pgdata-testnet-p2p-peer1:/var/lib/postgresql/data
+    healthcheck: *db-healthcheck
+    deploy:
+      resources: *db-resources
+    logging: *logging
+    profiles: [p2p]
+
+  indexer-testnet-p2p-peer1:
+    <<: [*app-build, *security]
+    restart: unless-stopped
+    ports:
+      - '3011:3011'
+    environment:
+      STELLAR_NETWORK: testnet
+      PORT: 3011
+      TESTNET_DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}@db-testnet-p2p-peer1:5432/soroban_testnet_p2p_peer1
+      DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}@db-testnet-p2p-peer1:5432/soroban_testnet_p2p_peer1
+      TESTNET_RPC_URL: https://soroban-testnet.stellar.org
+      TESTNET_HORIZON_URL: https://horizon-testnet.stellar.org
+      TESTNET_PASSPHRASE: "Test SDF Network ; September 2015"
+      P2P_ENABLED: 'true'
+      P2P_MDNS_ENABLED: 'true'
+      P2P_LISTEN_ADDR: /ip4/0.0.0.0/tcp/4001
+      P2P_IDENTITY_PATH: /app/data/p2p/testnet/identity.key
+      P2P_CHALLENGE_INTERVAL_MS: '15000'
+    volumes:
+      - p2p-identity-peer1:/app/data/p2p
+    depends_on:
+      db-testnet-p2p-peer1:
+        condition: service_healthy
+      indexer-testnet-p2p-seed:
+        condition: service_started
+    healthcheck:
+      test: ['CMD-SHELL', 'wget -qO- http://localhost:3011/health || exit 1']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    deploy:
+      resources: *indexer-resources
+    logging: *logging
+    command: sh -c "npx prisma migrate deploy && node dist/index.js"
+    profiles: [p2p]
+
+  db-testnet-p2p-peer2:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+      POSTGRES_DB: soroban_testnet_p2p_peer2
+    volumes:
+      - pgdata-testnet-p2p-peer2:/var/lib/postgresql/data
+    healthcheck: *db-healthcheck
+    deploy:
+      resources: *db-resources
+    logging: *logging
+    profiles: [p2p]
+
+  indexer-testnet-p2p-peer2:
+    <<: [*app-build, *security]
+    restart: unless-stopped
+    ports:
+      - '3012:3012'
+    environment:
+      STELLAR_NETWORK: testnet
+      PORT: 3012
+      TESTNET_DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}@db-testnet-p2p-peer2:5432/soroban_testnet_p2p_peer2
+      DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}@db-testnet-p2p-peer2:5432/soroban_testnet_p2p_peer2
+      TESTNET_RPC_URL: https://soroban-testnet.stellar.org
+      TESTNET_HORIZON_URL: https://horizon-testnet.stellar.org
+      TESTNET_PASSPHRASE: "Test SDF Network ; September 2015"
+      P2P_ENABLED: 'true'
+      P2P_MDNS_ENABLED: 'true'
+      P2P_LISTEN_ADDR: /ip4/0.0.0.0/tcp/4001
+      P2P_IDENTITY_PATH: /app/data/p2p/testnet/identity.key
+      P2P_CHALLENGE_INTERVAL_MS: '15000'
+    volumes:
+      - p2p-identity-peer2:/app/data/p2p
+    depends_on:
+      db-testnet-p2p-peer2:
+        condition: service_healthy
+      indexer-testnet-p2p-seed:
+        condition: service_started
+    healthcheck:
+      test: ['CMD-SHELL', 'wget -qO- http://localhost:3012/health || exit 1']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    deploy:
+      resources: *indexer-resources
+    logging: *logging
+    command: sh -c "npx prisma migrate deploy && node dist/index.js"
+    profiles: [p2p]
 
 volumes:
   pgdata-testnet:
   pgdata-mainnet:
   pgdata-devnet:
   redis-data:
+  zookeeper-data:
+  zookeeper-log:
+  kafka-data:
+  trino-catalog:
+  pgdata-testnet-p2p-seed:
+  pgdata-testnet-p2p-peer1:
+  pgdata-testnet-p2p-peer2:
+  p2p-identity-seed:
+  p2p-identity-peer1:
+  p2p-identity-peer2:

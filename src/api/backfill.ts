@@ -1,6 +1,6 @@
-import { Router } from 'express';
+import { Router, Request, Response, NextFunction } from 'express';
 import { z } from 'zod';
-import { prisma } from '../db';
+import { prismaRead as prisma } from '../db';
 import { ChannelManager } from '../feed/channelManager';
 
 const router = Router();
@@ -15,8 +15,18 @@ const backfillSchema = z.object({
   callbackUrl: z.string().url().optional(),
 });
 
-// POST /api/v1/feed/backfill - Request historical data
-router.post('/', async (req, res) => {
+// Operator-only guard for write mutations — mirrors the adminAuth pattern in freeze.ts
+const operatorAuth = (req: Request, res: Response, next: NextFunction) => {
+  const token = req.headers['x-operator-token'] || req.headers['x-admin-token'];
+  if (!token) {
+    return res.status(401).json({ error: 'Unauthorized: operator token required' });
+  }
+  req.actor = typeof token === 'string' ? token : String(token);
+  next();
+};
+
+// POST /api/v1/feed/backfill - Request historical data (operator-only)
+router.post('/', operatorAuth, async (req, res) => {
   try {
     const validatedData = backfillSchema.parse(req.body);
 
@@ -72,6 +82,19 @@ router.post('/', async (req, res) => {
     console.error('Failed to create backfill request:', error);
     res.status(500).json({ error: 'Internal server error' });
   }
+});
+
+// GET /api/v1/feed/backfill/limits - Get backfill limits
+// Must be registered before /:requestId to prevent the param route from shadowing it
+router.get('/limits', (_req, res) => {
+  res.json({
+    maxRangeDays: 90,
+    maxFileSizeBytes: 1024 * 1024 * 1024, // 1GB
+    maxRecords: 10000000, // 10M records
+    rateLimitPerDay: 10,
+    supportedFormats: ['jsonl', 'csv', 'parquet', 'arrow', 'json'],
+    supportedCompression: ['none', 'gzip', 'brotli'],
+  });
 });
 
 // GET /api/v1/feed/backfill/:requestId - Check backfill status and download URL
@@ -157,18 +180,6 @@ router.get('/', async (req, res) => {
     console.error('Failed to fetch backfill requests:', error);
     res.status(500).json({ error: 'Internal server error' });
   }
-});
-
-// GET /api/v1/feed/backfill/limits - Get backfill limits
-router.get('/limits', (req, res) => {
-  res.json({
-    maxRangeDays: 90,
-    maxFileSizeBytes: 1024 * 1024 * 1024, // 1GB
-    maxRecords: 10000000, // 10M records
-    rateLimitPerDay: 10,
-    supportedFormats: ['jsonl', 'csv', 'parquet', 'arrow', 'json'],
-    supportedCompression: ['none', 'gzip', 'brotli'],
-  });
 });
 
 async function processBackfillRequest(requestId: string) {

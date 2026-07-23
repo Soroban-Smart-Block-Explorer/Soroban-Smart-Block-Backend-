@@ -1,15 +1,12 @@
 import { Router, Request, Response } from 'express';
-import { EnsembleForecaster } from '../predictive/ensemble';
 import { featureStore } from '../indexer/feature-store';
-import prisma from '../db';
+import { prismaWrite as prisma } from '../db';
 import crypto from 'crypto';
 import { asyncHandler } from '../middleware/asyncHandler';
+import { config } from '../config';
+import { getDeterministicDriftPsi, getForecaster } from '../predictive/factory';
 
 export const predictRouter = Router();
-const forecaster = new EnsembleForecaster();
-
-// Ensure models are "trained" on start for mocks
-forecaster.trainAll(Array.from({ length: 30 }, () => 1000 + Math.random() * 500));
 
 predictRouter.post(
   '/forecast',
@@ -17,7 +14,7 @@ predictRouter.post(
     const { metric, horizon, confidence_level } = req.body;
     try {
       const data = await featureStore.getHistoricalData(metric || 'tx_volume', 30);
-      const predictions = forecaster.predict(horizon || 30, data, confidence_level || 0.95);
+      const predictions = getForecaster().predict(horizon || 30, data, confidence_level || 0.95);
       res.json({
         success: true,
         metric,
@@ -38,10 +35,10 @@ predictRouter.get(
 
     try {
       const data = await featureStore.getHistoricalData(metric, 30);
-      const predictions = forecaster.predict(horizon, data, 0.95);
+      const predictions = getForecaster().predict(horizon, data, 0.95);
       res.json({
         success: true,
-        models: forecaster.getModels(),
+        models: getForecaster().getModels(),
         predictions,
       });
     } catch (error: any) {
@@ -58,7 +55,7 @@ predictRouter.get(
 
     try {
       const data = await featureStore.getHistoricalData(metric, 30);
-      const predictions = forecaster.predict(horizon, data, 0.95);
+      const predictions = getForecaster().predict(horizon, data, 0.95);
       res.json({
         success: true,
         metric,
@@ -75,7 +72,7 @@ predictRouter.get(
   asyncHandler(async (req: Request, res: Response) => {
     res.json({
       success: true,
-      models: forecaster.getModels(),
+      models: getForecaster().getModels(),
     });
   }),
 );
@@ -88,7 +85,7 @@ predictRouter.post(
     const data = await featureStore.getHistoricalData(metric || 'tx_volume', 30);
     data.push(anomaly_value);
 
-    const predictions = forecaster.predict(14, data, 0.8);
+    const predictions = getForecaster().predict(14, data, 0.8);
 
     // Calculate recovery
     const baseline = data.slice(0, 30).reduce((a, b) => a + b, 0) / 30;
@@ -148,7 +145,7 @@ predictRouter.post(
       }
     }
 
-    const predictions = forecaster.predict(horizon || 30, data, 0.95);
+    const predictions = getForecaster().predict(horizon || 30, data, 0.95);
 
     res.json({
       success: true,
@@ -178,11 +175,13 @@ predictRouter.get(
   asyncHandler(async (req: Request, res: Response) => {
     res.json({
       success: true,
-      drift_status: forecaster.getModels().map((m) => ({
-        model: m.name,
-        psi: Math.random() * 0.1, // Below 0.2 means no drift
-        drift_detected: false,
-      })),
+      drift_status: getForecaster()
+        .getModels()
+        .map((m) => ({
+          model: m.name,
+          psi: getDeterministicDriftPsi(m.name, config.forecastSeed),
+          drift_detected: false,
+        })),
     });
   }),
 );
@@ -191,12 +190,13 @@ predictRouter.get(
   '/dashboard/overview',
   asyncHandler(async (req: Request, res: Response) => {
     const data = await featureStore.getHistoricalData('tx_volume', 30);
+    const forecaster = getForecaster();
     const predictions = forecaster.predict(30, data, 0.95);
 
     res.json({
       success: true,
       summaryCards: [
-        { title: 'Models Trained', value: 3 },
+        { title: 'Models Trained', value: forecaster.getModels().length },
         { title: 'Global MAPE', value: '4.5%' },
         { title: 'Anomalies Detected (24h)', value: 0 },
       ],

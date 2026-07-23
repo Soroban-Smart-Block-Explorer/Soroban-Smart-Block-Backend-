@@ -5,6 +5,7 @@
  */
 
 import { logger } from '../logger';
+import { background } from '../utils/background';
 import {
   detectDirectArbitrage,
   buildPriceGraph,
@@ -128,12 +129,12 @@ export function startArbitrageScanner() {
 
   // Opportunity scan every second
   setInterval(() => {
-    scanOpportunities().catch(() => {});
+    background('arbitrage.scanOpportunities', () => scanOpportunities().then(() => {}));
   }, SCAN_INTERVAL_MS);
 
   // Sandwich detection every 5 seconds
   setInterval(() => {
-    scanSandwiches().catch(() => {});
+    background('arbitrage.scanSandwiches', () => scanSandwiches().then(() => {}));
   }, SANDWICH_SCAN_INTERVAL_MS);
 
   // Bot detection every 5 minutes
@@ -144,5 +145,5 @@ export function startArbitrageScanner() {
   }, BOT_SCAN_INTERVAL_MS);
 
   // Run initial scan immediately
-  scanOpportunities().catch(() => {});
+  background('arbitrage.scanOpportunities', () => scanOpportunities().then(() => {}));
 }

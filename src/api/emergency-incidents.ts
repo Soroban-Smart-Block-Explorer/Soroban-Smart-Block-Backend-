@@ -1,6 +1,7 @@
 import { Router, Request, Response } from 'express';
 import { prismaRead, prismaWrite } from '../db';
 import { z } from 'zod';
+import { requireAuth, requireRole } from '../auth/middleware';
 
 export const incidentRouter = Router();
 
@@ -33,8 +34,8 @@ const updateSchema = z.object({
   affectedTvlEstimate: z.string().optional(),
 });
 
-// POST /emergency/incidents
-incidentRouter.post('/', async (req: Request, res: Response) => {
+// POST /emergency/incidents  [privileged]
+incidentRouter.post('/', requireAuth, requireRole('admin'), async (req: Request, res: Response) => {
   try {
     const data = createSchema.parse(req.body);
     const incident = await prismaWrite.incidentReport.create({
@@ -82,7 +83,7 @@ incidentRouter.get('/', async (req: Request, res: Response) => {
         orderBy: { createdAt: 'desc' },
         skip,
         take: limit,
-        include: { _count: { select: { comments: true } } },
+        include: { _count: { select: { incidentComments: true } } },
       }),
       prismaRead.incidentReport.count({ where }),
     ]);
@@ -126,7 +127,7 @@ incidentRouter.get('/:id', async (req: Request, res: Response) => {
   try {
     const incident = await prismaRead.incidentReport.findUnique({
       where: { id: req.params.id },
-      include: { comments: { orderBy: { createdAt: 'asc' } }, pauseEvent: true },
+      include: { incidentComments: { orderBy: { createdAt: 'asc' } } },
     });
     if (!incident) return res.status(404).json({ error: 'Not found' });
     res.json(incident);
@@ -135,92 +136,107 @@ incidentRouter.get('/:id', async (req: Request, res: Response) => {
   }
 });
 
-// PATCH /emergency/incidents/:id
-incidentRouter.patch('/:id', async (req: Request, res: Response) => {
-  try {
-    const data = updateSchema.parse(req.body);
+// PATCH /emergency/incidents/:id  [privileged]
+incidentRouter.patch(
+  '/:id',
+  requireAuth,
+  requireRole('admin'),
+  async (req: Request, res: Response) => {
+    try {
+      const data = updateSchema.parse(req.body);
 
-    let timelineUpdate: object | undefined;
-    if (data.timelineEntry) {
-      const current = await prismaRead.incidentReport.findUnique({
+      let timelineUpdate: object | undefined;
+      if (data.timelineEntry) {
+        const current = await prismaRead.incidentReport.findUnique({
+          where: { id: req.params.id },
+          select: { timeline: true },
+        });
+        const existing = (current?.timeline as object[]) ?? [];
+        timelineUpdate = [
+          ...existing,
+          { timestamp: new Date().toISOString(), ...data.timelineEntry },
+        ];
+      }
+
+      const updated = await prismaWrite.incidentReport.update({
+        where: { id: req.params.id },
+        data: {
+          ...(data.status ? { status: data.status } : {}),
+          ...(data.rootCause ? { rootCause: data.rootCause } : {}),
+          ...(data.resolutionNotes ? { resolutionNotes: data.resolutionNotes } : {}),
+          ...(data.affectedUsersEstimate
+            ? { affectedUsersEstimate: data.affectedUsersEstimate }
+            : {}),
+          ...(data.affectedTvlEstimate ? { affectedTvlEstimate: data.affectedTvlEstimate } : {}),
+          ...(timelineUpdate ? { timeline: timelineUpdate } : {}),
+          updatedAt: new Date(),
+        },
+      });
+      res.json(updated);
+    } catch (err: any) {
+      if (err.code === 'P2025') return res.status(404).json({ error: 'Not found' });
+      res.status(400).json({ error: String(err) });
+    }
+  },
+);
+
+// POST /emergency/incidents/:id/comments  [privileged]
+incidentRouter.post(
+  '/:id/comments',
+  requireAuth,
+  requireRole('admin'),
+  async (req: Request, res: Response) => {
+    try {
+      const { author, body } = z
+        .object({ author: z.string().min(1), body: z.string().min(1) })
+        .parse(req.body);
+      const comment = await prismaWrite.incidentComment.create({
+        data: { incidentId: req.params.id, author, body },
+      });
+      res.status(201).json(comment);
+    } catch (err: any) {
+      res.status(400).json({ error: String(err) });
+    }
+  },
+);
+
+// POST /emergency/incidents/:id/resolve  [privileged]
+incidentRouter.post(
+  '/:id/resolve',
+  requireAuth,
+  requireRole('admin'),
+  async (req: Request, res: Response) => {
+    try {
+      const { resolutionNotes } = z
+        .object({ resolutionNotes: z.string().optional() })
+        .parse(req.body);
+      const incident = await prismaRead.incidentReport.findUnique({
         where: { id: req.params.id },
         select: { timeline: true },
       });
-      const existing = (current?.timeline as object[]) ?? [];
-      timelineUpdate = [
-        ...existing,
-        { timestamp: new Date().toISOString(), ...data.timelineEntry },
-      ];
+      const timeline = (incident?.timeline as object[]) ?? [];
+
+      const updated = await prismaWrite.incidentReport.update({
+        where: { id: req.params.id },
+        data: {
+          status: 'resolved',
+          resolvedAt: new Date(),
+          resolutionNotes,
+          timeline: [
+            ...timeline,
+            {
+              timestamp: new Date().toISOString(),
+              event: 'resolved',
+              detail: resolutionNotes ?? 'Marked resolved',
+            },
+          ],
+          updatedAt: new Date(),
+        },
+      });
+      res.json(updated);
+    } catch (err: any) {
+      if (err.code === 'P2025') return res.status(404).json({ error: 'Not found' });
+      res.status(400).json({ error: String(err) });
     }
-
-    const updated = await prismaWrite.incidentReport.update({
-      where: { id: req.params.id },
-      data: {
-        ...(data.status ? { status: data.status } : {}),
-        ...(data.rootCause ? { rootCause: data.rootCause } : {}),
-        ...(data.resolutionNotes ? { resolutionNotes: data.resolutionNotes } : {}),
-        ...(data.affectedUsersEstimate
-          ? { affectedUsersEstimate: data.affectedUsersEstimate }
-          : {}),
-        ...(data.affectedTvlEstimate ? { affectedTvlEstimate: data.affectedTvlEstimate } : {}),
-        ...(timelineUpdate ? { timeline: timelineUpdate } : {}),
-        updatedAt: new Date(),
-      },
-    });
-    res.json(updated);
-  } catch (err: any) {
-    if (err.code === 'P2025') return res.status(404).json({ error: 'Not found' });
-    res.status(400).json({ error: String(err) });
-  }
-});
-
-// POST /emergency/incidents/:id/comments
-incidentRouter.post('/:id/comments', async (req: Request, res: Response) => {
-  try {
-    const { author, body } = z
-      .object({ author: z.string().min(1), body: z.string().min(1) })
-      .parse(req.body);
-    const comment = await prismaWrite.incidentComment.create({
-      data: { incidentId: req.params.id, author, body },
-    });
-    res.status(201).json(comment);
-  } catch (err: any) {
-    res.status(400).json({ error: String(err) });
-  }
-});
-
-// POST /emergency/incidents/:id/resolve
-incidentRouter.post('/:id/resolve', async (req: Request, res: Response) => {
-  try {
-    const { resolutionNotes } = z
-      .object({ resolutionNotes: z.string().optional() })
-      .parse(req.body);
-    const incident = await prismaRead.incidentReport.findUnique({
-      where: { id: req.params.id },
-      select: { timeline: true },
-    });
-    const timeline = (incident?.timeline as object[]) ?? [];
-
-    const updated = await prismaWrite.incidentReport.update({
-      where: { id: req.params.id },
-      data: {
-        status: 'resolved',
-        resolvedAt: new Date(),
-        resolutionNotes,
-        timeline: [
-          ...timeline,
-          {
-            timestamp: new Date().toISOString(),
-            event: 'resolved',
-            detail: resolutionNotes ?? 'Marked resolved',
-          },
-        ],
-        updatedAt: new Date(),
-      },
-    });
-    res.json(updated);
-  } catch (err: any) {
-    if (err.code === 'P2025') return res.status(404).json({ error: 'Not found' });
-    res.status(400).json({ error: String(err) });
-  }
-});
+  },
+);

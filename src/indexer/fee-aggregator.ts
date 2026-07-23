@@ -6,12 +6,11 @@
  */
 
 import { prismaRead, prismaWrite } from '../db';
-import type { RevenuePeriod } from '@prisma/client';
-import {
-  computeLpApr,
-  computeStakingApr,
-  detectAnomalies,
-} from './fee-classifier';
+
+type RevenuePeriod = 'HOUR' | 'DAY' | 'WEEK' | 'MONTH';
+const feeRead = prismaRead as any;
+const feeWrite = prismaWrite as any;
+import { computeLpApr, computeStakingApr, detectAnomalies } from './fee-classifier';
 import { logger } from '../logger';
 
 // ---------------------------------------------------------------------------
@@ -19,16 +18,16 @@ import { logger } from '../logger';
 // ---------------------------------------------------------------------------
 
 const PERIOD_MS: Record<RevenuePeriod, number> = {
-  HOUR:  60 * 60 * 1000,
-  DAY:   24 * 60 * 60 * 1000,
-  WEEK:  7 * 24 * 60 * 60 * 1000,
+  HOUR: 60 * 60 * 1000,
+  DAY: 24 * 60 * 60 * 1000,
+  WEEK: 7 * 24 * 60 * 60 * 1000,
   MONTH: 30 * 24 * 60 * 60 * 1000,
 };
 
 const PERIODS_PER_YEAR: Record<RevenuePeriod, number> = {
-  HOUR:  8760,
-  DAY:   365,
-  WEEK:  52,
+  HOUR: 8760,
+  DAY: 365,
+  WEEK: 52,
   MONTH: 12,
 };
 
@@ -49,7 +48,7 @@ async function aggregateForContract(
 ): Promise<void> {
   const bucketEnd = new Date(bucketStart.getTime() + PERIOD_MS[period]);
 
-  const events = await prismaRead.feeEvent.findMany({
+  const events: any[] = await feeRead.feeEvent.findMany({
     where: {
       contractAddress,
       timestamp: { gte: bucketStart, lt: bucketEnd },
@@ -76,12 +75,12 @@ async function aggregateForContract(
   const feeToken = events[0]?.token ?? 'XLM';
 
   // Best-effort lookup for protocol name
-  const profile = await prismaRead.protocolProfile.findUnique({
+  const profile = await feeRead.protocolProfile.findUnique({
     where: { contractAddress },
     select: { protocolName: true },
   });
 
-  await prismaWrite.protocolRevenue.upsert({
+  await feeWrite.protocolRevenue.upsert({
     where: {
       // compound unique: we use a raw approach since Prisma doesn't support multi-field
       // unique on non-@@unique fields. We find-or-create manually.
@@ -149,7 +148,7 @@ async function computeYieldSnapshot(contractAddress: string): Promise<void> {
 
   const revForWindow = async (days: number) => {
     const since = new Date(now.getTime() - days * 24 * 60 * 60 * 1000);
-    const rows = await prismaRead.protocolRevenue.findMany({
+    const rows: any[] = await feeRead.protocolRevenue.findMany({
       where: { contractAddress, period: 'DAY', timestamp: { gte: since } },
     });
     return rows.reduce(
@@ -161,37 +160,33 @@ async function computeYieldSnapshot(contractAddress: string): Promise<void> {
     );
   };
 
-  const profile = await prismaRead.protocolProfile.findUnique({
+  const profile = await feeRead.protocolProfile.findUnique({
     where: { contractAddress },
   });
   const tvl = Number(profile?.tvl ?? 0);
   const stakedValue = tvl * 0.5; // fallback: assume 50% staked when no separate data
 
-  const [w1, w7, w30] = await Promise.all([
-    revForWindow(1),
-    revForWindow(7),
-    revForWindow(30),
-  ]);
+  const [w1, w7, w30] = await Promise.all([revForWindow(1), revForWindow(7), revForWindow(30)]);
 
-  const lpApr1d   = computeLpApr(w1.lp,   tvl, 365);
-  const lpApr7d   = computeLpApr(w7.lp / 7, tvl, 365);
-  const lpApr30d  = computeLpApr(w30.lp / 30, tvl, 365);
-  const stApr1d   = computeStakingApr(w1.staker,   stakedValue, 365);
-  const stApr7d   = computeStakingApr(w7.staker / 7, stakedValue, 365);
-  const stApr30d  = computeStakingApr(w30.staker / 30, stakedValue, 365);
-  const totalRev  = w30.lp + w30.staker;
+  const lpApr1d = computeLpApr(w1.lp, tvl, 365);
+  const lpApr7d = computeLpApr(w7.lp / 7, tvl, 365);
+  const lpApr30d = computeLpApr(w30.lp / 30, tvl, 365);
+  const stApr1d = computeStakingApr(w1.staker, stakedValue, 365);
+  const stApr7d = computeStakingApr(w7.staker / 7, stakedValue, 365);
+  const stApr30d = computeStakingApr(w30.staker / 30, stakedValue, 365);
+  const totalRev = w30.lp + w30.staker;
   const revenueShare = tvl > 0 && totalRev > 0 ? (totalRev / tvl) * 100 : null;
 
-  await prismaWrite.yieldSnapshot.create({
+  await feeWrite.yieldSnapshot.create({
     data: {
       contractAddress,
       protocolName: profile?.protocolName,
       timestamp: now,
-      lpApr1d:   isFinite(lpApr1d)  ? lpApr1d  : null,
-      lpApr7d:   isFinite(lpApr7d)  ? lpApr7d  : null,
-      lpApr30d:  isFinite(lpApr30d) ? lpApr30d : null,
-      stakingApr1d:  isFinite(stApr1d)  ? stApr1d  : null,
-      stakingApr7d:  isFinite(stApr7d)  ? stApr7d  : null,
+      lpApr1d: isFinite(lpApr1d) ? lpApr1d : null,
+      lpApr7d: isFinite(lpApr7d) ? lpApr7d : null,
+      lpApr30d: isFinite(lpApr30d) ? lpApr30d : null,
+      stakingApr1d: isFinite(stApr1d) ? stApr1d : null,
+      stakingApr7d: isFinite(stApr7d) ? stApr7d : null,
       stakingApr30d: isFinite(stApr30d) ? stApr30d : null,
       totalValueLocked: profile?.tvl ?? null,
       stakedValue: stakedValue > 0 ? stakedValue.toString() : null,
@@ -207,7 +202,7 @@ async function computeYieldSnapshot(contractAddress: string): Promise<void> {
 export async function runHourlyAggregation(): Promise<void> {
   const bucketStart = alignedBucketStart('HOUR');
 
-  const contracts = await prismaRead.feeEvent.findMany({
+  const contracts = await feeRead.feeEvent.findMany({
     select: { contractAddress: true },
     distinct: ['contractAddress'],
     where: {
@@ -228,7 +223,7 @@ export async function runHourlyAggregation(): Promise<void> {
 export async function runDailyAggregation(): Promise<void> {
   const dayStart = alignedBucketStart('DAY');
 
-  const contracts = await prismaRead.feeEvent.findMany({
+  const contracts = await feeRead.feeEvent.findMany({
     select: { contractAddress: true },
     distinct: ['contractAddress'],
     where: {
@@ -257,14 +252,10 @@ let dailyTimer: ReturnType<typeof setInterval> | null = null;
 
 export function startFeeAggregator(): void {
   // Run immediately on startup, then on schedule
-  runHourlyAggregation().catch((e) =>
-    logger.error('[fee-aggregator] hourly error:', e),
-  );
+  runHourlyAggregation().catch((e) => logger.error('[fee-aggregator] hourly error:', e));
 
   hourlyTimer = setInterval(() => {
-    runHourlyAggregation().catch((e) =>
-      logger.error('[fee-aggregator] hourly error:', e),
-    );
+    runHourlyAggregation().catch((e) => logger.error('[fee-aggregator] hourly error:', e));
   }, PERIOD_MS.HOUR);
 
   // Daily at midnight aligned intervals
@@ -277,13 +268,9 @@ export function startFeeAggregator(): void {
   };
 
   setTimeout(() => {
-    runDailyAggregation().catch((e) =>
-      logger.error('[fee-aggregator] daily error:', e),
-    );
+    runDailyAggregation().catch((e) => logger.error('[fee-aggregator] daily error:', e));
     dailyTimer = setInterval(() => {
-      runDailyAggregation().catch((e) =>
-        logger.error('[fee-aggregator] daily error:', e),
-      );
+      runDailyAggregation().catch((e) => logger.error('[fee-aggregator] daily error:', e));
     }, PERIOD_MS.DAY);
   }, msUntilMidnight());
 
@@ -341,7 +328,7 @@ export function predictRevenue(
   for (let i = 0; i < forecastDays; i++) {
     const x = n + i;
     const predicted = Math.max(0, intercept + slope * x);
-    const margin = zScore * se * Math.sqrt(1 + 1 / n + ((x - xMean) ** 2) / ssXX);
+    const margin = zScore * se * Math.sqrt(1 + 1 / n + (x - xMean) ** 2 / ssXX);
     const d = new Date(now.getTime() + (i + 1) * 24 * 60 * 60 * 1000);
     dates.push(d.toISOString().slice(0, 10));
     revenue.push(parseFloat(predicted.toFixed(4)));

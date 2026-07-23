@@ -1,3 +1,4 @@
+import { randomBytes, createHash } from 'crypto';
 import { Router, Request, Response } from 'express';
 import { prismaRead, prismaWrite } from '../db';
 import {
@@ -21,6 +22,15 @@ import { calculateDelegatedVotingPower } from '../reputation/governance';
 import { createArbitrationCase, resolveArbitrationCase } from '../reputation/arbitration';
 import { ChainReputationData, EndorsementInput, LinkedIdentityInput } from '../reputation/types';
 
+/**
+ * @swagger
+ * tags:
+ *   name: Reputation
+ *   description: >
+ *     Address reputation scoring, Sybil detection, attestations, verifiable credentials,
+ *     cross-chain identity linking, trust networks, governance, and reputation NFTs.
+ *     Note: this router is not currently mounted in router.ts.
+ */
 export const reputationRouter = Router();
 
 function parseChainData(value: unknown): ChainReputationData[] {
@@ -59,6 +69,60 @@ function handleAsync(handler: (req: Request, res: Response) => Promise<unknown>)
 // 🔴 MUST-HAVE ENDPOINTS
 // ─────────────────────────────────────────────────────────────────────────────
 
+/**
+ * @swagger
+ * /api/v1/reputation/leaderboard:
+ *   get:
+ *     summary: Get reputation leaderboard (overall)
+ *     description: >
+ *       Returns the top-scored addresses from the database. Category defaults to "overall".
+ *       Also accessible as /api/v1/reputation/leaderboard/{category}.
+ *     tags: [Reputation]
+ *     parameters:
+ *       - in: query
+ *         name: limit
+ *         schema: { type: integer, minimum: 1, maximum: 100, default: 10 }
+ *         description: Number of entries to return (clamped 1-100, never throws 400).
+ *     responses:
+ *       200:
+ *         description: Leaderboard entries for the overall category
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 category: { type: string, example: overall }
+ *                 leaderboard:
+ *                   type: array
+ *                   items:
+ *                     $ref: '#/components/schemas/LeaderboardEntry'
+ * /api/v1/reputation/leaderboard/{category}:
+ *   get:
+ *     summary: Get reputation leaderboard for a specific category
+ *     tags: [Reputation]
+ *     parameters:
+ *       - in: path
+ *         name: category
+ *         required: true
+ *         schema: { type: string }
+ *         description: Score category (e.g. "activity", "governance", "attestations").
+ *       - in: query
+ *         name: limit
+ *         schema: { type: integer, minimum: 1, maximum: 100, default: 10 }
+ *     responses:
+ *       200:
+ *         description: Leaderboard entries for the requested category
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 category: { type: string, example: activity }
+ *                 leaderboard:
+ *                   type: array
+ *                   items:
+ *                     $ref: '#/components/schemas/LeaderboardEntry'
+ */
 // GET /api/v1/reputation/leaderboard & GET /api/v1/reputation/leaderboard/:category
 reputationRouter.get(
   '/leaderboard(/:category)?',
@@ -86,6 +150,40 @@ reputationRouter.get(
   }),
 );
 
+/**
+ * @swagger
+ * /api/v1/reputation/search:
+ *   get:
+ *     summary: Search reputation profiles by address or domain
+ *     tags: [Reputation]
+ *     parameters:
+ *       - in: query
+ *         name: q
+ *         required: true
+ *         schema: { type: string }
+ *         description: Partial address or domain string (case-insensitive, up to 10 results).
+ *     responses:
+ *       200:
+ *         description: Matching profiles
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 query: { type: string, example: 'GBZX' }
+ *                 results:
+ *                   type: array
+ *                   items:
+ *                     $ref: '#/components/schemas/ReputationProfileRecord'
+ *       400:
+ *         description: Query param q is missing or empty
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *             example:
+ *               error: Search query q is required
+ */
 // GET /api/v1/reputation/search?q=...
 reputationRouter.get(
   '/search',
@@ -109,6 +207,29 @@ reputationRouter.get(
   }),
 );
 
+/**
+ * @swagger
+ * /api/v1/reputation/{address}:
+ *   get:
+ *     summary: Compute and return the full reputation score for an address
+ *     description: >
+ *       Fetches on-chain profile data, computes the score using all active signals,
+ *       persists the result to the database, and returns the full ScoreResult.
+ *     tags: [Reputation]
+ *     parameters:
+ *       - in: path
+ *         name: address
+ *         required: true
+ *         schema: { type: string }
+ *         description: Stellar or EVM address (normalised to canonical form).
+ *     responses:
+ *       200:
+ *         description: Full reputation score result
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ReputationScoreResult'
+ */
 // GET /api/v1/reputation/:address
 reputationRouter.get(
   '/:address',
@@ -121,6 +242,33 @@ reputationRouter.get(
   }),
 );
 
+/**
+ * @swagger
+ * /api/v1/reputation/{address}/summary:
+ *   get:
+ *     summary: Get a brief reputation summary for an address
+ *     description: Returns the composite score and earned badges without the full breakdown.
+ *     tags: [Reputation]
+ *     parameters:
+ *       - in: path
+ *         name: address
+ *         required: true
+ *         schema: { type: string }
+ *     responses:
+ *       200:
+ *         description: Address score and badge list
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 address: { type: string, example: 'GBZXN7PIRZGNMHGA7MUUUF4GWPY5AYPV6LY4UV2GL6VJGIQRXFDNMADI' }
+ *                 score: { type: number, example: 72.5 }
+ *                 badges:
+ *                   type: array
+ *                   items:
+ *                     $ref: '#/components/schemas/ReputationBadge'
+ */
 // GET /api/v1/reputation/:address/summary
 reputationRouter.get(
   '/:address/summary',
@@ -136,6 +284,37 @@ reputationRouter.get(
   }),
 );
 
+/**
+ * @swagger
+ * /api/v1/reputation/{address}/history:
+ *   get:
+ *     summary: Get reputation score history for an address
+ *     description: >
+ *       Returns a single history entry from the database record (timestamp + combinedScore).
+ *       Returns an empty array if no profile exists yet.
+ *     tags: [Reputation]
+ *     parameters:
+ *       - in: path
+ *         name: address
+ *         required: true
+ *         schema: { type: string }
+ *     responses:
+ *       200:
+ *         description: Score history entries
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 address: { type: string, example: 'GBZXN7PIRZGNMHGA7MUUUF4GWPY5AYPV6LY4UV2GL6VJGIQRXFDNMADI' }
+ *                 history:
+ *                   type: array
+ *                   items:
+ *                     type: object
+ *                     properties:
+ *                       timestamp: { type: string, format: date-time }
+ *                       score: { type: number, nullable: true }
+ */
 // GET /api/v1/reputation/:address/history
 reputationRouter.get(
   '/:address/history',
@@ -161,6 +340,32 @@ reputationRouter.get(
   }),
 );
 
+/**
+ * @swagger
+ * /api/v1/reputation/{address}/signals:
+ *   get:
+ *     summary: Get the raw signal breakdown for an address
+ *     description: Returns the per-signal breakdown array from a freshly computed score.
+ *     tags: [Reputation]
+ *     parameters:
+ *       - in: path
+ *         name: address
+ *         required: true
+ *         schema: { type: string }
+ *     responses:
+ *       200:
+ *         description: Signal breakdown
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 address: { type: string, example: 'GBZXN7PIRZGNMHGA7MUUUF4GWPY5AYPV6LY4UV2GL6VJGIQRXFDNMADI' }
+ *                 signals:
+ *                   type: array
+ *                   items:
+ *                     $ref: '#/components/schemas/ReputationBreakdownItem'
+ */
 // GET /api/v1/reputation/:address/signals
 reputationRouter.get(
   '/:address/signals',
@@ -175,6 +380,31 @@ reputationRouter.get(
   }),
 );
 
+/**
+ * @swagger
+ * /api/v1/reputation/{address}/badges:
+ *   get:
+ *     summary: Get earned reputation badges for an address
+ *     tags: [Reputation]
+ *     parameters:
+ *       - in: path
+ *         name: address
+ *         required: true
+ *         schema: { type: string }
+ *     responses:
+ *       200:
+ *         description: Badge list
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 address: { type: string, example: 'GBZXN7PIRZGNMHGA7MUUUF4GWPY5AYPV6LY4UV2GL6VJGIQRXFDNMADI' }
+ *                 badges:
+ *                   type: array
+ *                   items:
+ *                     $ref: '#/components/schemas/ReputationBadge'
+ */
 // GET /api/v1/reputation/:address/badges
 reputationRouter.get(
   '/:address/badges',
@@ -188,6 +418,31 @@ reputationRouter.get(
   }),
 );
 
+/**
+ * @swagger
+ * /api/v1/reputation/{address}/cross-chain:
+ *   get:
+ *     summary: Get per-chain reputation scores for an address
+ *     tags: [Reputation]
+ *     parameters:
+ *       - in: path
+ *         name: address
+ *         required: true
+ *         schema: { type: string }
+ *     responses:
+ *       200:
+ *         description: Cross-chain score breakdown
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 address: { type: string, example: 'GBZXN7PIRZGNMHGA7MUUUF4GWPY5AYPV6LY4UV2GL6VJGIQRXFDNMADI' }
+ *                 crossChainScores:
+ *                   type: array
+ *                   items:
+ *                     $ref: '#/components/schemas/ReputationChainScore'
+ */
 // GET /api/v1/reputation/:address/cross-chain
 reputationRouter.get(
   '/:address/cross-chain',
@@ -206,6 +461,53 @@ reputationRouter.get(
 // 🟠 SHOULD-HAVE ENDPOINTS
 // ─────────────────────────────────────────────────────────────────────────────
 
+/**
+ * @swagger
+ * /api/v1/reputation/{address}/attest:
+ *   post:
+ *     summary: Submit an on-chain or off-chain attestation for an address
+ *     description: >
+ *       Upserts the attestation by its computed uid, re-scores the profile, and
+ *       returns the stored Attestation record.
+ *     tags: [Reputation]
+ *     parameters:
+ *       - in: path
+ *         name: address
+ *         required: true
+ *         schema: { type: string }
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [chainId, schemaId, attester]
+ *             properties:
+ *               chainId: { type: string, example: stellar }
+ *               schemaId: { type: string, example: schema-kyc-v1 }
+ *               attester: { type: string, example: 'GBZXN7PIRZGNMHGA7MUUUF4GWPY5AYPV6LY4UV2GL6VJGIQRXFDNMADI' }
+ *               recipient: { type: string }
+ *               revoked: { type: boolean, default: false }
+ *               signature: { type: string }
+ *               transactionHash: { type: string }
+ *               blockNumber: { type: integer }
+ *               data: { type: object }
+ *     responses:
+ *       200:
+ *         description: Upserted attestation record
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ReputationAttestationRecord'
+ *       400:
+ *         description: chainId, schemaId, or attester is missing
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *             example:
+ *               error: chainId, schemaId, and attester are required
+ */
 // POST /api/v1/reputation/:address/attest
 reputationRouter.post(
   '/:address/attest',
@@ -270,6 +572,32 @@ reputationRouter.post(
   }),
 );
 
+/**
+ * @swagger
+ * /api/v1/reputation/{address}/attestations:
+ *   get:
+ *     summary: List all stored attestations for an address
+ *     tags: [Reputation]
+ *     parameters:
+ *       - in: path
+ *         name: address
+ *         required: true
+ *         schema: { type: string }
+ *     responses:
+ *       200:
+ *         description: Attestation list with total count
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 address: { type: string }
+ *                 attestations:
+ *                   type: array
+ *                   items:
+ *                     $ref: '#/components/schemas/ReputationAttestationRecord'
+ *                 total: { type: integer, example: 3 }
+ */
 // GET /api/v1/reputation/:address/attestations
 reputationRouter.get(
   '/:address/attestations',
@@ -284,6 +612,43 @@ reputationRouter.get(
   }),
 );
 
+/**
+ * @swagger
+ * /api/v1/reputation/{address}/attestations/{id}/verify:
+ *   get:
+ *     summary: Verify a stored attestation by its uid
+ *     description: Checks whether the attestation has a valid on-chain tx hash or signature.
+ *     tags: [Reputation]
+ *     parameters:
+ *       - in: path
+ *         name: address
+ *         required: true
+ *         schema: { type: string }
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: string }
+ *         description: The uid of the attestation.
+ *     responses:
+ *       200:
+ *         description: Verification result
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 id: { type: string }
+ *                 verified: { type: boolean, example: true }
+ *                 verificationMsg: { type: string, example: 'attestation on-chain or valid signature verified' }
+ *       404:
+ *         description: Attestation not found
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *             example:
+ *               error: Attestation not found
+ */
 // GET /api/v1/reputation/:address/attestations/:id/verify
 reputationRouter.get(
   '/:address/attestations/:id/verify',
@@ -318,6 +683,60 @@ reputationRouter.get(
   }),
 );
 
+/**
+ * @swagger
+ * /api/v1/reputation/{address}/credentials:
+ *   post:
+ *     summary: Submit a W3C Verifiable Credential for an address
+ *     description: >
+ *       Validates the credential against the W3C VC data model, upserts it in the database,
+ *       re-scores the profile, and returns the stored record.
+ *     tags: [Reputation]
+ *     parameters:
+ *       - in: path
+ *         name: address
+ *         required: true
+ *         schema: { type: string }
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             description: >
+ *               W3C Verifiable Credential. Must include @context containing
+ *               "w3.org/ns/credentials", type "VerifiableCredential", id, issuer,
+ *               issuanceDate, credentialSubject.id, and a proof block.
+ *             example:
+ *               "@context": ["https://www.w3.org/ns/credentials/v2"]
+ *               id: "https://example.edu/credentials/1"
+ *               type: ["VerifiableCredential", "KYCCredential"]
+ *               issuer: "did:example:issuer"
+ *               issuanceDate: "2026-06-01T00:00:00Z"
+ *               credentialSubject:
+ *                 id: "GBZXN7PIRZGNMHGA7MUUUF4GWPY5AYPV6LY4UV2GL6VJGIQRXFDNMADI"
+ *               proof:
+ *                 type: "Ed25519Signature2020"
+ *                 created: "2026-06-01T00:00:00Z"
+ *                 verificationMethod: "did:example:issuer#key-1"
+ *                 proofPurpose: "assertionMethod"
+ *                 proofValue: "z..."
+ *     responses:
+ *       200:
+ *         description: Upserted verifiable credential record
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ReputationVerifiableCredential'
+ *       400:
+ *         description: Credential does not match W3C VC format
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *             example:
+ *               error: Invalid W3C Verifiable Credential format
+ */
 // POST /api/v1/reputation/:address/credentials
 reputationRouter.post(
   '/:address/credentials',
@@ -378,6 +797,32 @@ reputationRouter.post(
   }),
 );
 
+/**
+ * @swagger
+ * /api/v1/reputation/{address}/credentials:
+ *   get:
+ *     summary: List stored verifiable credentials for an address
+ *     tags: [Reputation]
+ *     parameters:
+ *       - in: path
+ *         name: address
+ *         required: true
+ *         schema: { type: string }
+ *     responses:
+ *       200:
+ *         description: Credential list with total count
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 address: { type: string }
+ *                 credentials:
+ *                   type: array
+ *                   items:
+ *                     $ref: '#/components/schemas/ReputationVerifiableCredential'
+ *                 total: { type: integer, example: 2 }
+ */
 // GET /api/v1/reputation/:address/credentials
 reputationRouter.get(
   '/:address/credentials',
@@ -392,6 +837,33 @@ reputationRouter.get(
   }),
 );
 
+/**
+ * @swagger
+ * /api/v1/reputation/credentials/verify:
+ *   post:
+ *     summary: Check whether a JSON payload matches the W3C VC format
+ *     description: >
+ *       Stateless check against the W3C Verifiable Credential data model rules.
+ *       Always returns 200 with a boolean result; never throws 400.
+ *     tags: [Reputation]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             description: Candidate W3C Verifiable Credential payload.
+ *     responses:
+ *       200:
+ *         description: Verification result
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 verified: { type: boolean, example: true }
+ *                 message: { type: string, example: 'Credential matches W3C verification rules' }
+ */
 // POST /api/v1/reputation/credentials/verify
 reputationRouter.post(
   '/credentials/verify',
@@ -405,6 +877,25 @@ reputationRouter.post(
   }),
 );
 
+/**
+ * @swagger
+ * /api/v1/reputation/{address}/sybil-score:
+ *   get:
+ *     summary: Get the Sybil risk assessment for an address
+ *     tags: [Reputation]
+ *     parameters:
+ *       - in: path
+ *         name: address
+ *         required: true
+ *         schema: { type: string }
+ *     responses:
+ *       200:
+ *         description: Sybil risk assessment
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/SybilAssessment'
+ */
 // GET /api/v1/reputation/:address/sybil-score
 reputationRouter.get(
   '/:address/sybil-score',
@@ -416,6 +907,55 @@ reputationRouter.get(
   }),
 );
 
+/**
+ * @swagger
+ * /api/v1/reputation/verify-cross-chain:
+ *   post:
+ *     summary: Record a verified cross-chain reputation signal for an address
+ *     description: Creates a ReputationSignal record and re-scores the profile.
+ *     tags: [Reputation]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [address, chain, signalType]
+ *             properties:
+ *               address: { type: string, example: 'GBZXN7PIRZGNMHGA7MUUUF4GWPY5AYPV6LY4UV2GL6VJGIQRXFDNMADI' }
+ *               chain: { type: string, example: stellar }
+ *               signalType: { type: string, example: governance_vote }
+ *               value: { type: number, example: 1 }
+ *               source: { type: string, example: offchain }
+ *               metadata: { type: object }
+ *     responses:
+ *       200:
+ *         description: Created ReputationSignal record
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 id: { type: string, example: 'clz9q1x4t0000s6h2signal01' }
+ *                 profileId: { type: string }
+ *                 signalType: { type: string, example: governance_vote }
+ *                 chain: { type: string, example: stellar }
+ *                 value: { type: number, nullable: true, example: 1 }
+ *                 weight: { type: number, nullable: true, example: 0.1 }
+ *                 normalizedScore: { type: number, nullable: true, example: 1 }
+ *                 source: { type: string, nullable: true, example: offchain }
+ *                 verified: { type: boolean, example: true }
+ *                 metadata: { type: object, nullable: true }
+ *                 createdAt: { type: string, format: date-time }
+ *       400:
+ *         description: address, chain, or signalType is missing
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *             example:
+ *               error: address, chain, and signalType are required
+ */
 // POST /api/v1/reputation/verify-cross-chain
 reputationRouter.post(
   '/verify-cross-chain',
@@ -455,6 +995,44 @@ reputationRouter.post(
   }),
 );
 
+/**
+ * @swagger
+ * /api/v1/reputation/link:
+ *   post:
+ *     summary: Link a cross-chain address to a canonical reputation profile
+ *     description: >
+ *       Verifies the signature binding the linked address to the canonical address,
+ *       upserts the LinkedIdentity record, and re-scores the profile.
+ *     tags: [Reputation]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [canonicalAddress, chainId, address, signature]
+ *             properties:
+ *               canonicalAddress: { type: string, example: 'GBZXN7PIRZGNMHGA7MUUUF4GWPY5AYPV6LY4UV2GL6VJGIQRXFDNMADI' }
+ *               chainId: { type: string, example: stellar }
+ *               address: { type: string, example: 'GAAZI4TCR3TY5OJHCTJC2A4QSY6CJWJH5IAJTGKIN2ER7LBNVKOCCWN' }
+ *               message: { type: string }
+ *               signature: { type: string }
+ *     responses:
+ *       200:
+ *         description: Upserted LinkedIdentity record
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ReputationLinkedIdentity'
+ *       400:
+ *         description: canonicalAddress, chainId, address, or signature is missing
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *             example:
+ *               error: canonicalAddress, chainId, address, and signature are required
+ */
 // POST /api/v1/reputation/link
 reputationRouter.post(
   '/link',
@@ -522,6 +1100,31 @@ reputationRouter.post(
   }),
 );
 
+/**
+ * @swagger
+ * /api/v1/reputation/{address}/links:
+ *   get:
+ *     summary: List all linked cross-chain identities for an address
+ *     tags: [Reputation]
+ *     parameters:
+ *       - in: path
+ *         name: address
+ *         required: true
+ *         schema: { type: string }
+ *     responses:
+ *       200:
+ *         description: Linked identity list
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 address: { type: string }
+ *                 links:
+ *                   type: array
+ *                   items:
+ *                     $ref: '#/components/schemas/ReputationLinkedIdentity'
+ */
 // GET /api/v1/reputation/:address/links
 reputationRouter.get(
   '/:address/links',
@@ -535,6 +1138,38 @@ reputationRouter.get(
   }),
 );
 
+/**
+ * @swagger
+ * /api/v1/reputation/link/{id}:
+ *   delete:
+ *     summary: Remove a linked cross-chain identity by its record id
+ *     description: >
+ *       Deletes the LinkedIdentity record and re-scores the owning profile.
+ *       Returns 500 if the record does not exist (Prisma throws, no explicit 404).
+ *     tags: [Reputation]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: string }
+ *         description: LinkedIdentity record id.
+ *     responses:
+ *       200:
+ *         description: Deletion confirmed with the removed record
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success: { type: boolean, example: true }
+ *                 removedLink:
+ *                   allOf:
+ *                     - $ref: '#/components/schemas/ReputationLinkedIdentity'
+ *                     - type: object
+ *                       properties:
+ *                         profile:
+ *                           $ref: '#/components/schemas/ReputationProfileRecord'
+ */
 // DELETE /api/v1/reputation/link/:id
 reputationRouter.delete(
   '/link/:id',
@@ -557,6 +1192,42 @@ reputationRouter.delete(
 // 🔵 NICE-TO-HAVE ENDPOINTS
 // ─────────────────────────────────────────────────────────────────────────────
 
+/**
+ * @swagger
+ * /api/v1/reputation/trust-network/{address}:
+ *   get:
+ *     summary: Get the trust graph for an address
+ *     description: Builds a graph of trust edges derived from on-chain profile data.
+ *     tags: [Reputation]
+ *     parameters:
+ *       - in: path
+ *         name: address
+ *         required: true
+ *         schema: { type: string }
+ *     responses:
+ *       200:
+ *         description: Trust graph (nodes and edges)
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 nodes:
+ *                   type: array
+ *                   items: { type: string }
+ *                   example: ['GBZX...', 'GAAZ...']
+ *                 edges:
+ *                   type: array
+ *                   items:
+ *                     type: object
+ *                     properties:
+ *                       from: { type: string }
+ *                       to: { type: string }
+ *                       chainId: { type: string }
+ *                       weight: { type: number }
+ *                       type: { type: string, nullable: true }
+ *                       transactionHash: { type: string, nullable: true }
+ */
 // GET /api/v1/reputation/trust-network/:address
 reputationRouter.get(
   '/trust-network/:address',
@@ -568,6 +1239,32 @@ reputationRouter.get(
   }),
 );
 
+/**
+ * @swagger
+ * /api/v1/reputation/trust-network/{address}/path/{target}:
+ *   get:
+ *     summary: Find the shortest trust path between two addresses
+ *     description: >
+ *       Returns the shortest hop path from address to target through the trust graph.
+ *       Returns a null path and distance -1 if no path exists.
+ *     tags: [Reputation]
+ *     parameters:
+ *       - in: path
+ *         name: address
+ *         required: true
+ *         schema: { type: string }
+ *       - in: path
+ *         name: target
+ *         required: true
+ *         schema: { type: string }
+ *     responses:
+ *       200:
+ *         description: Trust path result
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/TrustPath'
+ */
 // GET /api/v1/reputation/trust-network/:address/path/:target
 reputationRouter.get(
   '/trust-network/:address/path/:target',
@@ -581,6 +1278,30 @@ reputationRouter.get(
   }),
 );
 
+/**
+ * @swagger
+ * /api/v1/reputation/trust-network/influence/{address}:
+ *   get:
+ *     summary: Get the influence score for an address in the trust network
+ *     description: >
+ *       Computes a simplified PageRank-style influence score based on incoming trust edge weights.
+ *     tags: [Reputation]
+ *     parameters:
+ *       - in: path
+ *         name: address
+ *         required: true
+ *         schema: { type: string }
+ *     responses:
+ *       200:
+ *         description: Influence score
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 address: { type: string, example: 'GBZXN7PIRZGNMHGA7MUUUF4GWPY5AYPV6LY4UV2GL6VJGIQRXFDNMADI' }
+ *                 influenceScore: { type: number, example: 1.35 }
+ */
 // GET /api/v1/reputation/trust-network/influence/:address
 reputationRouter.get(
   '/trust-network/influence/:address',
@@ -601,6 +1322,40 @@ reputationRouter.get(
   }),
 );
 
+/**
+ * @swagger
+ * /api/v1/reputation/endorse:
+ *   post:
+ *     summary: Record an endorsement from one address to another
+ *     tags: [Reputation]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [chainId, endorser, subject]
+ *             properties:
+ *               chainId: { type: string, example: stellar }
+ *               endorser: { type: string, example: 'GBZXN7PIRZGNMHGA7MUUUF4GWPY5AYPV6LY4UV2GL6VJGIQRXFDNMADI' }
+ *               subject: { type: string, example: 'GAAZI4TCR3TY5OJHCTJC2A4QSY6CJWJH5IAJTGKIN2ER7LBNVKOCCWN' }
+ *               weight: { type: number, default: 1.0 }
+ *     responses:
+ *       200:
+ *         description: Created endorsement record
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ReputationEndorsement'
+ *       400:
+ *         description: chainId, endorser, or subject is missing
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *             example:
+ *               error: chainId, endorser, and subject are required
+ */
 // POST /api/v1/reputation/endorse
 reputationRouter.post(
   '/endorse',
@@ -634,6 +1389,31 @@ reputationRouter.post(
   }),
 );
 
+/**
+ * @swagger
+ * /api/v1/reputation/{address}/endorsements/received:
+ *   get:
+ *     summary: List endorsements received by an address
+ *     tags: [Reputation]
+ *     parameters:
+ *       - in: path
+ *         name: address
+ *         required: true
+ *         schema: { type: string }
+ *     responses:
+ *       200:
+ *         description: Received endorsements
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 address: { type: string }
+ *                 endorsements:
+ *                   type: array
+ *                   items:
+ *                     $ref: '#/components/schemas/ReputationEndorsement'
+ */
 // GET /api/v1/reputation/:address/endorsements/received
 reputationRouter.get(
   '/:address/endorsements/received',
@@ -647,6 +1427,41 @@ reputationRouter.get(
   }),
 );
 
+/**
+ * @swagger
+ * /api/v1/reputation/disputes:
+ *   post:
+ *     summary: Open a reputation dispute against an address
+ *     tags: [Reputation]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [challenger, respondent, challenge, evidenceHash]
+ *             properties:
+ *               challenger: { type: string, example: 'GBZXN7PIRZGNMHGA7MUUUF4GWPY5AYPV6LY4UV2GL6VJGIQRXFDNMADI' }
+ *               respondent: { type: string, example: 'GAAZI4TCR3TY5OJHCTJC2A4QSY6CJWJH5IAJTGKIN2ER7LBNVKOCCWN' }
+ *               challenge: { type: string, example: 'Sybil farming accusations' }
+ *               evidenceHash: { type: string, example: 'e5f40312...' }
+ *               quorumVotes: { type: integer, default: 5 }
+ *     responses:
+ *       200:
+ *         description: Created dispute record (votes not included)
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ReputationDisputeRecord'
+ *       400:
+ *         description: challenger, respondent, challenge, or evidenceHash is missing
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *             example:
+ *               error: challenger, respondent, challenge, and evidenceHash are required
+ */
 // POST /api/v1/reputation/disputes
 reputationRouter.post(
   '/disputes',
@@ -694,6 +1509,33 @@ reputationRouter.post(
   }),
 );
 
+/**
+ * @swagger
+ * /api/v1/reputation/disputes/{id}:
+ *   get:
+ *     summary: Get a dispute by id, including all votes
+ *     tags: [Reputation]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: string }
+ *     responses:
+ *       200:
+ *         description: Dispute record with embedded votes
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ReputationDisputeRecord'
+ *       404:
+ *         description: Dispute not found
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *             example:
+ *               error: Dispute not found
+ */
 // GET /api/v1/reputation/disputes/:id
 reputationRouter.get(
   '/disputes/:id',
@@ -707,6 +1549,55 @@ reputationRouter.get(
   }),
 );
 
+/**
+ * @swagger
+ * /api/v1/reputation/disputes/{id}/vote:
+ *   post:
+ *     summary: Cast a vote on a reputation dispute
+ *     tags: [Reputation]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: string }
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [voter, vote]
+ *             properties:
+ *               voter: { type: string, example: 'GBZXN7PIRZGNMHGA7MUUUF4GWPY5AYPV6LY4UV2GL6VJGIQRXFDNMADI' }
+ *               vote: { type: string, enum: [uphold, reject, abstain], example: uphold }
+ *               weight: { type: number, default: 1.0 }
+ *               signature: { type: string }
+ *               transactionHash: { type: string }
+ *     responses:
+ *       200:
+ *         description: Created vote record
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 id: { type: string }
+ *                 disputeId: { type: string }
+ *                 voter: { type: string }
+ *                 vote: { type: string, nullable: true }
+ *                 weight: { type: number, nullable: true }
+ *                 signature: { type: string, nullable: true }
+ *                 transactionHash: { type: string, nullable: true }
+ *                 createdAt: { type: string, format: date-time }
+ *       400:
+ *         description: voter or vote is missing
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *             example:
+ *               error: voter and vote are required
+ */
 // POST /api/v1/reputation/disputes/:id/vote
 reputationRouter.post(
   '/disputes/:id/vote',
@@ -731,6 +1622,51 @@ reputationRouter.post(
   }),
 );
 
+/**
+ * @swagger
+ * /api/v1/reputation/disputes/{id}/resolve:
+ *   post:
+ *     summary: Resolve a dispute by tallying its votes
+ *     description: >
+ *       Fetches the dispute and all votes, runs arbitration logic, and updates
+ *       the dispute status and outcome. No request body needed.
+ *     tags: [Reputation]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: string }
+ *     responses:
+ *       200:
+ *         description: Updated dispute and arbitration result
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 dispute:
+ *                   $ref: '#/components/schemas/ReputationDisputeRecord'
+ *                 resolution:
+ *                   type: object
+ *                   properties:
+ *                     caseId: { type: string }
+ *                     status: { type: string, enum: [open, resolved] }
+ *                     outcome: { type: string, nullable: true, enum: [upheld, rejected, timeout] }
+ *                     votesFor: { type: number }
+ *                     votesAgainst: { type: number }
+ *                     votesAbstain: { type: number }
+ *                     quorumVotes: { type: integer }
+ *                     quorumReached: { type: boolean }
+ *                     winner: { type: string }
+ *       404:
+ *         description: Dispute not found
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *             example:
+ *               error: Dispute not found
+ */
 // POST /api/v1/reputation/disputes/:id/resolve
 reputationRouter.post(
   '/disputes/:id/resolve',
@@ -777,6 +1713,38 @@ reputationRouter.post(
   }),
 );
 
+/**
+ * @swagger
+ * /api/v1/reputation/oracle/query:
+ *   post:
+ *     summary: Query the reputation oracle for a full response
+ *     description: Computes and returns the complete oracle response including attestations, credentials, sybil assessment, and proof.
+ *     tags: [Reputation]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [address]
+ *             properties:
+ *               address: { type: string, example: 'GBZXN7PIRZGNMHGA7MUUUF4GWPY5AYPV6LY4UV2GL6VJGIQRXFDNMADI' }
+ *     responses:
+ *       200:
+ *         description: Full oracle reputation response
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/OracleReputationResponse'
+ *       400:
+ *         description: address is missing
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *             example:
+ *               error: address is required
+ */
 // POST /api/v1/reputation/oracle/query
 reputationRouter.post(
   '/oracle/query',
@@ -789,6 +1757,34 @@ reputationRouter.post(
   }),
 );
 
+/**
+ * @swagger
+ * /api/v1/reputation/oracle/proof:
+ *   get:
+ *     summary: Get the verifiable proof for an address's reputation score
+ *     tags: [Reputation]
+ *     parameters:
+ *       - in: query
+ *         name: address
+ *         required: true
+ *         schema: { type: string }
+ *         description: Address to generate proof for.
+ *     responses:
+ *       200:
+ *         description: Reputation proof envelope
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ReputationProof'
+ *       400:
+ *         description: address query param is missing
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *             example:
+ *               error: address query param is required
+ */
 // GET /api/v1/reputation/oracle/proof
 reputationRouter.get(
   '/oracle/proof',
@@ -805,6 +1801,46 @@ reputationRouter.get(
 // 🟢 STRETCH ENDPOINTS
 // ─────────────────────────────────────────────────────────────────────────────
 
+/**
+ * @swagger
+ * /api/v1/reputation/governance/delegate:
+ *   post:
+ *     summary: Delegate voting power to another address
+ *     description: Upserts a delegation record keyed by delegator address.
+ *     tags: [Reputation]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [delegator, delegatee]
+ *             properties:
+ *               delegator: { type: string, example: 'GBZXN7PIRZGNMHGA7MUUUF4GWPY5AYPV6LY4UV2GL6VJGIQRXFDNMADI' }
+ *               delegatee: { type: string, example: 'GAAZI4TCR3TY5OJHCTJC2A4QSY6CJWJH5IAJTGKIN2ER7LBNVKOCCWN' }
+ *               amount: { type: number }
+ *     responses:
+ *       200:
+ *         description: Upserted delegation record
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 id: { type: string }
+ *                 delegator: { type: string }
+ *                 delegatee: { type: string }
+ *                 amount: { type: string, nullable: true }
+ *                 createdAt: { type: string, format: date-time }
+ *       400:
+ *         description: delegator or delegatee is missing
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *             example:
+ *               error: delegator and delegatee are required
+ */
 // POST /api/v1/reputation/governance/delegate
 reputationRouter.post(
   '/governance/delegate',
@@ -831,6 +1867,34 @@ reputationRouter.post(
   }),
 );
 
+/**
+ * @swagger
+ * /api/v1/reputation/governance/voting-power/{address}:
+ *   get:
+ *     summary: Get the effective voting power for an address
+ *     description: >
+ *       Combines own power (combinedScore / 10) with delegated-in and delegated-out amounts
+ *       from all delegation records in the database.
+ *     tags: [Reputation]
+ *     parameters:
+ *       - in: path
+ *         name: address
+ *         required: true
+ *         schema: { type: string }
+ *     responses:
+ *       200:
+ *         description: Voting power breakdown
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 address: { type: string }
+ *                 ownPower: { type: number, example: 7.25 }
+ *                 delegatedIn: { type: number, example: 2.0 }
+ *                 delegatedOut: { type: number, example: 0 }
+ *                 effectivePower: { type: number, example: 9.25 }
+ */
 // GET /api/v1/reputation/governance/voting-power/:address
 reputationRouter.get(
   '/governance/voting-power/:address',
@@ -865,6 +1929,49 @@ reputationRouter.get(
   }),
 );
 
+/**
+ * @swagger
+ * /api/v1/reputation/governance/vote:
+ *   post:
+ *     summary: Cast or update a governance vote for a proposal
+ *     description: Upserts a vote keyed by (proposalId, voter). The Prisma model stores the vote in a "vote" column; the "support" field in the request maps to that column.
+ *     tags: [Reputation]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [proposalId, voter, support]
+ *             properties:
+ *               proposalId: { type: string, example: prop-42 }
+ *               voter: { type: string, example: 'GBZXN7PIRZGNMHGA7MUUUF4GWPY5AYPV6LY4UV2GL6VJGIQRXFDNMADI' }
+ *               weight: { type: number, default: 1.0 }
+ *               support: { type: string, enum: [for, against, abstain], example: for }
+ *     responses:
+ *       200:
+ *         description: Upserted governance vote record
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 id: { type: string }
+ *                 proposalId: { type: string }
+ *                 voter: { type: string }
+ *                 vote: { type: string, nullable: true }
+ *                 weight: { type: number, nullable: true }
+ *                 reason: { type: string, nullable: true }
+ *                 createdAt: { type: string, format: date-time }
+ *       400:
+ *         description: proposalId, voter, or support is missing
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *             example:
+ *               error: proposalId, voter, and support are required
+ */
 // POST /api/v1/reputation/governance/vote
 reputationRouter.post(
   '/governance/vote',
@@ -894,6 +2001,44 @@ reputationRouter.post(
   }),
 );
 
+/**
+ * @swagger
+ * /api/v1/reputation/nfts/mint/{badgeType}:
+ *   post:
+ *     summary: Mint a Soulbound reputation NFT for an address
+ *     description: Creates a ReputationNft record with a deterministic tokenId and a random mintedTxHash placeholder.
+ *     tags: [Reputation]
+ *     parameters:
+ *       - in: path
+ *         name: badgeType
+ *         required: true
+ *         schema: { type: string }
+ *         description: Badge type identifier (e.g. "whale", "governance_voter").
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [address]
+ *             properties:
+ *               address: { type: string, example: 'GBZXN7PIRZGNMHGA7MUUUF4GWPY5AYPV6LY4UV2GL6VJGIQRXFDNMADI' }
+ *     responses:
+ *       200:
+ *         description: Created NFT record
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ReputationNftRecord'
+ *       400:
+ *         description: address is missing
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *             example:
+ *               error: address is required
+ */
 // POST /api/v1/reputation/nfts/mint/:badgeType
 reputationRouter.post(
   '/nfts/mint/:badgeType',
@@ -910,7 +2055,7 @@ reputationRouter.post(
         address: canonical,
         badgeType,
         tokenId,
-        mintedTxHash: `tx-${Math.random().toString(36).substring(2, 12)}`,
+        mintedTxHash: `tx-${randomBytes(5).toString('hex')}`,
       },
     });
 
@@ -918,6 +2063,27 @@ reputationRouter.post(
   }),
 );
 
+/**
+ * @swagger
+ * /api/v1/reputation/nfts/{address}:
+ *   get:
+ *     summary: List all reputation NFTs for an address
+ *     tags: [Reputation]
+ *     parameters:
+ *       - in: path
+ *         name: address
+ *         required: true
+ *         schema: { type: string }
+ *     responses:
+ *       200:
+ *         description: Array of NFT records
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: array
+ *               items:
+ *                 $ref: '#/components/schemas/ReputationNftRecord'
+ */
 // GET /api/v1/reputation/nfts/:address
 reputationRouter.get(
   '/nfts/:address',
@@ -930,6 +2096,36 @@ reputationRouter.get(
   }),
 );
 
+/**
+ * @swagger
+ * /api/v1/reputation/nfts/{address}/{badgeType}/verify:
+ *   get:
+ *     summary: Verify whether an address holds a specific Soulbound NFT badge
+ *     tags: [Reputation]
+ *     parameters:
+ *       - in: path
+ *         name: address
+ *         required: true
+ *         schema: { type: string }
+ *       - in: path
+ *         name: badgeType
+ *         required: true
+ *         schema: { type: string }
+ *     responses:
+ *       200:
+ *         description: Verification result with the matching NFT record if found
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 verified: { type: boolean, example: true }
+ *                 nft:
+ *                   oneOf:
+ *                     - $ref: '#/components/schemas/ReputationNftRecord'
+ *                     - type: 'null'
+ *                 message: { type: string, example: 'Authentic badge Soulbound NFT verified on-chain.' }
+ */
 // GET /api/v1/reputation/nfts/:address/:badgeType/verify
 reputationRouter.get(
   '/nfts/:address/:badgeType/verify',
@@ -949,6 +2145,22 @@ reputationRouter.get(
   }),
 );
 
+/**
+ * @swagger
+ * /api/v1/reputation/sdk/js:
+ *   get:
+ *     summary: Download the Reputation JavaScript SDK
+ *     description: Returns a minimal ES module client as application/javascript.
+ *     tags: [Reputation]
+ *     responses:
+ *       200:
+ *         description: JavaScript SDK source
+ *         content:
+ *           application/javascript:
+ *             schema:
+ *               type: string
+ *             example: "export class ReputationClient { ... }"
+ */
 // GET /api/v1/reputation/sdk/js
 reputationRouter.get(
   '/sdk/js',
@@ -969,6 +2181,42 @@ export class ReputationClient {
   }),
 );
 
+/**
+ * @swagger
+ * /api/v1/reputation/sdk/register:
+ *   post:
+ *     summary: Register a dApp to receive a Reputation SDK API key
+ *     tags: [Reputation]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [name]
+ *             properties:
+ *               name: { type: string, example: MyDeFiApp }
+ *     responses:
+ *       200:
+ *         description: Registered dApp record with generated API key
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 id: { type: string, example: 'clz9q1x4t0000s6h2dapp0001' }
+ *                 name: { type: string, example: MyDeFiApp }
+ *                 apiKey: { type: string, example: 'rep-sdk-abc123def456' }
+ *                 createdAt: { type: string, format: date-time }
+ *       400:
+ *         description: name is missing
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *             example:
+ *               error: name is required
+ */
 // POST /api/v1/reputation/sdk/register
 reputationRouter.post(
   '/sdk/register',
@@ -976,12 +2224,14 @@ reputationRouter.post(
     const { name } = req.body;
     if (!name) return res.status(400).json({ error: 'name is required' });
 
-    const apiKey = `rep-sdk-${Math.random().toString(36).substring(2, 15)}`;
+    const rawKey = randomBytes(32).toString('hex');
+    const apiKey = `rep-sdk-${rawKey}`;
+    const keyHash = createHash('sha256').update(apiKey).digest('hex');
     const dapp = await prismaWrite.registeredDapp.create({
-      data: { name, apiKey },
+      data: { name, apiKey: keyHash },
     });
 
-    return res.json(dapp);
+    return res.json({ ...dapp, apiKey });
   }),
 );
 
@@ -989,6 +2239,44 @@ reputationRouter.post(
 // 🔒 PRE-EXISTING COMPATIBILITY MOCK ROUTES (TO PRESERVE INTEGRATION TESTS)
 // ─────────────────────────────────────────────────────────────────────────────
 
+/**
+ * @swagger
+ * /api/v1/reputation/score:
+ *   post:
+ *     summary: Compute a reputation score (legacy stateless endpoint)
+ *     description: >
+ *       Accepts inline chain data and computes the score without touching the database.
+ *       Prefer GET /api/v1/reputation/{address} for DB-backed scoring.
+ *     tags: [Reputation]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [address]
+ *             properties:
+ *               address: { type: string, example: 'GBZXN7PIRZGNMHGA7MUUUF4GWPY5AYPV6LY4UV2GL6VJGIQRXFDNMADI' }
+ *               chainData:
+ *                 type: array
+ *                 description: On-chain data array. If provided it must be an array or a 400 is returned.
+ *                 items: { type: object }
+ *     responses:
+ *       200:
+ *         description: Score result with badges override
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ReputationScoreResult'
+ *       400:
+ *         description: address is missing or chainData is not an array
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *             example:
+ *               error: address is required
+ */
 reputationRouter.post(
   '/score',
   handleAsync(async (req, res) => {
@@ -1004,6 +2292,56 @@ reputationRouter.post(
   }),
 );
 
+/**
+ * @swagger
+ * /api/v1/reputation/identity/score:
+ *   post:
+ *     summary: Compute a cross-identity reputation score (legacy stateless endpoint)
+ *     description: >
+ *       Accepts inline chain data and linked identity inputs. Verifies signatures,
+ *       aggregates scores across all linked addresses, and returns the result.
+ *       Prefer the DB-backed endpoints for persistent scoring.
+ *     tags: [Reputation]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [canonicalAddress]
+ *             properties:
+ *               canonicalAddress: { type: string, example: 'GBZXN7PIRZGNMHGA7MUUUF4GWPY5AYPV6LY4UV2GL6VJGIQRXFDNMADI' }
+ *               chainData:
+ *                 type: array
+ *                 description: Must be an array if provided; omit to use empty set.
+ *                 items: { type: object }
+ *               links:
+ *                 type: array
+ *                 description: Linked identity inputs to verify and include.
+ *                 items: { type: object }
+ *     responses:
+ *       200:
+ *         description: Score result extended with identityLinks
+ *         content:
+ *           application/json:
+ *             schema:
+ *               allOf:
+ *                 - $ref: '#/components/schemas/ReputationScoreResult'
+ *                 - type: object
+ *                   properties:
+ *                     identityLinks:
+ *                       type: array
+ *                       items:
+ *                         $ref: '#/components/schemas/VerifiedIdentityLink'
+ *       400:
+ *         description: canonicalAddress is missing or chainData/links is not an array
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *             example:
+ *               error: canonicalAddress is required
+ */
 reputationRouter.post(
   '/identity/score',
   handleAsync(async (req, res) => {
@@ -1025,6 +2363,55 @@ reputationRouter.post(
   }),
 );
 
+/**
+ * @swagger
+ * /api/v1/reputation/identity/link:
+ *   post:
+ *     summary: Verify a set of cross-chain identity links (legacy stateless endpoint)
+ *     description: >
+ *       Verifies each linked identity's signature and returns the verification results.
+ *       Does not persist anything to the database.
+ *     tags: [Reputation]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [canonicalAddress]
+ *             properties:
+ *               canonicalAddress: { type: string, example: 'GBZXN7PIRZGNMHGA7MUUUF4GWPY5AYPV6LY4UV2GL6VJGIQRXFDNMADI' }
+ *               links:
+ *                 type: array
+ *                 description: Must be an array if provided.
+ *                 items:
+ *                   type: object
+ *                   properties:
+ *                     chainId: { type: string }
+ *                     address: { type: string }
+ *                     message: { type: string }
+ *                     signature: { type: string }
+ *     responses:
+ *       200:
+ *         description: Verification results for each link
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 links:
+ *                   type: array
+ *                   items:
+ *                     $ref: '#/components/schemas/VerifiedIdentityLink'
+ *       400:
+ *         description: canonicalAddress is missing or links is not an array
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *             example:
+ *               error: canonicalAddress is required
+ */
 reputationRouter.post(
   '/identity/link',
   handleAsync(async (req, res) => {
@@ -1041,6 +2428,51 @@ reputationRouter.post(
   }),
 );
 
+/**
+ * @swagger
+ * /api/v1/reputation/leaderboards/{category}:
+ *   get:
+ *     summary: Get a leaderboard from inline chain data (legacy stateless endpoint)
+ *     description: >
+ *       Builds a leaderboard entirely from the chainData query/body parameter.
+ *       Returns 400 if chainData is provided but is not a JSON array.
+ *       Prefer GET /api/v1/reputation/leaderboard for DB-backed results.
+ *     tags: [Reputation]
+ *     parameters:
+ *       - in: path
+ *         name: category
+ *         required: true
+ *         schema: { type: string }
+ *         description: Score category (e.g. "overall"). Pass "overall" to match the base route.
+ *       - in: query
+ *         name: limit
+ *         schema: { type: integer, minimum: 1, maximum: 100, default: 10 }
+ *       - in: query
+ *         name: chainData
+ *         schema: { type: string }
+ *         description: JSON-encoded ChainReputationData array (must be an array if provided).
+ *     responses:
+ *       200:
+ *         description: Leaderboard entries derived from the supplied chain data
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 category: { type: string, example: overall }
+ *                 leaderboard:
+ *                   type: array
+ *                   items:
+ *                     $ref: '#/components/schemas/LeaderboardEntry'
+ *       400:
+ *         description: chainData is not an array
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *             example:
+ *               error: chainData must be an array
+ */
 reputationRouter.get(
   '/leaderboards/:category?',
   handleAsync(async (req, res) => {
@@ -1053,6 +2485,46 @@ reputationRouter.get(
   }),
 );
 
+/**
+ * @swagger
+ * /api/v1/reputation/badges/{address}:
+ *   get:
+ *     summary: Get earned badges from inline chain data (legacy stateless endpoint)
+ *     description: >
+ *       Computes badges from the supplied chainData without touching the database.
+ *       Returns 400 if chainData is provided but is not an array.
+ *     tags: [Reputation]
+ *     parameters:
+ *       - in: path
+ *         name: address
+ *         required: true
+ *         schema: { type: string }
+ *       - in: query
+ *         name: chainData
+ *         schema: { type: string }
+ *         description: JSON-encoded ChainReputationData array.
+ *     responses:
+ *       200:
+ *         description: Badge list
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 address: { type: string }
+ *                 badges:
+ *                   type: array
+ *                   items:
+ *                     $ref: '#/components/schemas/ReputationBadge'
+ *       400:
+ *         description: chainData is not an array
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *             example:
+ *               error: chainData must be an array
+ */
 reputationRouter.get(
   '/badges/:address',
   handleAsync(async (req, res) => {
@@ -1064,6 +2536,40 @@ reputationRouter.get(
   }),
 );
 
+/**
+ * @swagger
+ * /api/v1/reputation/oracle/{address}:
+ *   get:
+ *     summary: Get an oracle response from inline chain data (legacy stateless endpoint)
+ *     description: >
+ *       Computes the oracle response from the supplied chainData without touching the database.
+ *       Returns 400 if chainData is provided but is not an array.
+ *     tags: [Reputation]
+ *     parameters:
+ *       - in: path
+ *         name: address
+ *         required: true
+ *         schema: { type: string }
+ *       - in: query
+ *         name: chainData
+ *         schema: { type: string }
+ *         description: JSON-encoded ChainReputationData array.
+ *     responses:
+ *       200:
+ *         description: Oracle reputation response
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/OracleReputationResponse'
+ *       400:
+ *         description: chainData is not an array
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *             example:
+ *               error: chainData must be an array
+ */
 reputationRouter.get(
   '/oracle/:address',
   handleAsync(async (req, res) => {
@@ -1072,6 +2578,51 @@ reputationRouter.get(
   }),
 );
 
+/**
+ * @swagger
+ * /api/v1/reputation/attestations/{address}:
+ *   get:
+ *     summary: List attestations from inline chain data (legacy stateless endpoint)
+ *     description: >
+ *       Filters and normalises attestations from the supplied chainData for the given address.
+ *       Pass verified=true to return only verifiable attestations.
+ *       Returns 400 if chainData is provided but is not an array.
+ *     tags: [Reputation]
+ *     parameters:
+ *       - in: path
+ *         name: address
+ *         required: true
+ *         schema: { type: string }
+ *       - in: query
+ *         name: chainData
+ *         schema: { type: string }
+ *         description: JSON-encoded ChainReputationData array.
+ *       - in: query
+ *         name: verified
+ *         schema: { type: string, enum: ['true'] }
+ *         description: Set to "true" to return only verifiable attestations.
+ *     responses:
+ *       200:
+ *         description: Normalised attestations for the address
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 address: { type: string }
+ *                 attestations:
+ *                   type: array
+ *                   items: { type: object }
+ *                 total: { type: integer }
+ *       400:
+ *         description: chainData is not an array
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *             example:
+ *               error: chainData must be an array
+ */
 reputationRouter.get(
   '/attestations/:address',
   handleAsync(async (req, res) => {
@@ -1090,6 +2641,51 @@ reputationRouter.get(
   }),
 );
 
+/**
+ * @swagger
+ * /api/v1/reputation/credentials/{address}:
+ *   get:
+ *     summary: List verifiable credentials from inline chain data (legacy stateless endpoint)
+ *     description: >
+ *       Filters and normalises credentials from the supplied chainData for the given address.
+ *       Pass verified=true to return only W3C-valid credentials.
+ *       Returns 400 if chainData is provided but is not an array.
+ *     tags: [Reputation]
+ *     parameters:
+ *       - in: path
+ *         name: address
+ *         required: true
+ *         schema: { type: string }
+ *       - in: query
+ *         name: chainData
+ *         schema: { type: string }
+ *         description: JSON-encoded ChainReputationData array.
+ *       - in: query
+ *         name: verified
+ *         schema: { type: string, enum: ['true'] }
+ *         description: Set to "true" to return only W3C-valid credentials.
+ *     responses:
+ *       200:
+ *         description: Normalised credentials for the address
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 address: { type: string }
+ *                 credentials:
+ *                   type: array
+ *                   items: { type: object }
+ *                 total: { type: integer }
+ *       400:
+ *         description: chainData is not an array
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *             example:
+ *               error: chainData must be an array
+ */
 reputationRouter.get(
   '/credentials/:address',
   handleAsync(async (req, res) => {
@@ -1106,6 +2702,40 @@ reputationRouter.get(
   }),
 );
 
+/**
+ * @swagger
+ * /api/v1/reputation/sybil/{address}:
+ *   get:
+ *     summary: Get Sybil risk from inline chain data (legacy stateless endpoint)
+ *     description: >
+ *       Computes a Sybil risk assessment from the supplied chainData without touching the database.
+ *       Returns 400 if chainData is provided but is not an array.
+ *     tags: [Reputation]
+ *     parameters:
+ *       - in: path
+ *         name: address
+ *         required: true
+ *         schema: { type: string }
+ *       - in: query
+ *         name: chainData
+ *         schema: { type: string }
+ *         description: JSON-encoded ChainReputationData array.
+ *     responses:
+ *       200:
+ *         description: Sybil risk assessment
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/SybilAssessment'
+ *       400:
+ *         description: chainData is not an array
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *             example:
+ *               error: chainData must be an array
+ */
 reputationRouter.get(
   '/sybil/:address',
   handleAsync(async (req, res) => {
@@ -1114,6 +2744,53 @@ reputationRouter.get(
   }),
 );
 
+/**
+ * @swagger
+ * /api/v1/reputation/trust/path:
+ *   post:
+ *     summary: Find a trust path from inline chain data (legacy stateless endpoint)
+ *     description: >
+ *       Builds the trust graph from the supplied chainData and returns the shortest path
+ *       from "from" to "to". Does not touch the database.
+ *     tags: [Reputation]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [from, to]
+ *             properties:
+ *               from: { type: string, example: 'GBZXN7PIRZGNMHGA7MUUUF4GWPY5AYPV6LY4UV2GL6VJGIQRXFDNMADI' }
+ *               to: { type: string, example: 'GAAZI4TCR3TY5OJHCTJC2A4QSY6CJWJH5IAJTGKIN2ER7LBNVKOCCWN' }
+ *               chainData:
+ *                 type: array
+ *                 description: Must be an array if provided.
+ *                 items: { type: object }
+ *               maxDepth: { type: integer, default: 6 }
+ *     responses:
+ *       200:
+ *         description: Trust path result (path is null if no route exists)
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 from: { type: string }
+ *                 to: { type: string }
+ *                 path:
+ *                   oneOf:
+ *                     - $ref: '#/components/schemas/TrustPath'
+ *                     - type: 'null'
+ *       400:
+ *         description: from or to is missing, or chainData is not an array
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *             example:
+ *               error: from and to are required
+ */
 reputationRouter.post(
   '/trust/path',
   handleAsync(async (req, res) => {
@@ -1128,6 +2805,64 @@ reputationRouter.post(
   }),
 );
 
+/**
+ * @swagger
+ * /api/v1/reputation/endorsements:
+ *   post:
+ *     summary: Compute weighted endorsements from inline data (legacy stateless endpoint)
+ *     description: >
+ *       Applies endorser-score weights to a list of endorsements and returns them sorted
+ *       by descending weight. Does not persist anything. Returns 400 if endorsements
+ *       is provided but is not an array.
+ *     tags: [Reputation]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               endorsements:
+ *                 type: array
+ *                 description: Must be an array if provided.
+ *                 items:
+ *                   type: object
+ *                   properties:
+ *                     chainId: { type: string }
+ *                     endorser: { type: string }
+ *                     subject: { type: string }
+ *                     weight: { type: number }
+ *               endorserScores:
+ *                 type: object
+ *                 description: Map of endorser address to their reputation score.
+ *                 additionalProperties: { type: number }
+ *                 example: { 'GBZX...': 72.5 }
+ *     responses:
+ *       200:
+ *         description: Endorsements with computed weights, sorted descending
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 endorsements:
+ *                   type: array
+ *                   items:
+ *                     type: object
+ *                     properties:
+ *                       chainId: { type: string }
+ *                       endorser: { type: string }
+ *                       subject: { type: string }
+ *                       weight: { type: number }
+ *       400:
+ *         description: endorsements is not an array
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *             example:
+ *               error: endorsements must be an array
+ */
 reputationRouter.post(
   '/endorsements',
   handleAsync(async (req, res) => {
@@ -1139,6 +2874,44 @@ reputationRouter.post(
   }),
 );
 
+/**
+ * @swagger
+ * /api/v1/reputation/oracle-counts/{address}:
+ *   get:
+ *     summary: Count valid attestations and credentials from inline chain data (legacy stateless endpoint)
+ *     description: >
+ *       Returns the count of verifiable attestations and W3C-valid credentials for the given
+ *       address in the supplied chainData. Returns 400 if chainData is provided but is not an array.
+ *     tags: [Reputation]
+ *     parameters:
+ *       - in: path
+ *         name: address
+ *         required: true
+ *         schema: { type: string }
+ *       - in: query
+ *         name: chainData
+ *         schema: { type: string }
+ *         description: JSON-encoded ChainReputationData array.
+ *     responses:
+ *       200:
+ *         description: Attestation and credential counts
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 address: { type: string }
+ *                 attestations: { type: integer, example: 3 }
+ *                 credentials: { type: integer, example: 2 }
+ *       400:
+ *         description: chainData is not an array
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *             example:
+ *               error: chainData must be an array
+ */
 reputationRouter.get(
   '/oracle-counts/:address',
   handleAsync(async (req, res) => {

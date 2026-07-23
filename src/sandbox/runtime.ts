@@ -3,6 +3,23 @@ import { Prisma } from '@prisma/client';
 import { StrKey } from '@stellar/stellar-sdk';
 import { config } from '../config';
 import { prismaRead, prismaWrite } from '../db';
+import { createVerifier } from '../verification/verifier';
+import { type WasmFunction, type WasmInstr } from '../verification/symbolic-executor';
+import {
+  spec,
+  invariant,
+  postcondition,
+  intVar,
+  boolVar,
+  eq,
+  BALANCE_PRESERVING_TRANSFER,
+  SAFE_MATH,
+  NO_REENTRANCY,
+  ArithOp,
+} from '../verification/dsl';
+import { globalBadgeSystem } from '../verification/badge-system';
+import { GasAnalyzer } from '../verification/gas-analyzer';
+import { ReentrancyAnalyzer } from '../verification/reentrancy-analyzer';
 
 type DecimalString = string;
 
@@ -130,6 +147,51 @@ export type CiStep =
       args?: unknown;
       source?: string;
     };
+
+export type FuzzCampaignConfig = {
+  timeLimitMs?: number;
+  coverageTarget?: number;
+  workers?: number;
+  maxSteps?: number;
+  seedCorpus?: Array<Record<string, unknown>>;
+  invariants?: string[];
+  enableOracleManipulation?: boolean;
+  targetContracts?: string[];
+};
+
+type FuzzCampaignStep = {
+  functionName: string;
+  args: Record<string, unknown>;
+  storageMutations?: Record<string, unknown>;
+  oracleFeed?: Record<string, unknown>;
+  reason?: string;
+};
+
+type FuzzCrash = {
+  id: string;
+  severity: string;
+  title: string;
+  description: string;
+  steps: FuzzCampaignStep[];
+  coverageSignature: string;
+  stateDiff: Record<string, unknown>;
+  callTrace: unknown[];
+  suggestedFix: string;
+  fingerprint: string;
+};
+
+type FuzzCampaignState = {
+  campaignId: string;
+  sessionId: string;
+  contractId: string;
+  status: 'running' | 'completed' | 'stopped';
+  startedAt: string;
+  completedAt?: string;
+  coverage: { totalCoverage: number; coveredBranches: string[]; branchCount: number };
+  crashes: FuzzCrash[];
+  metrics: { iterations: number; workers: number; maxSteps: number };
+  invariantViolations: number;
+};
 
 export const defaultTemplates: SandboxTemplate[] = [
   {
@@ -836,13 +898,16 @@ function executeTemplateFunction(
 
   const after = clone(next);
   const success = error === null;
+  const estimate = estimateTemplateCall(contract.templateId ?? 'generic', Object.keys(args).length);
+  const cpuInsnUsed = estimate.cpu + (success ? 0 : 500);
+  const memBytesUsed = estimate.mem + JSON.stringify(after).length - 1024;
   return {
     success,
     result,
     error,
     events,
-    cpuInsnUsed: 1500 + Object.keys(args).length * 250 + (success ? 0 : 500),
-    memBytesUsed: 1024 + JSON.stringify(after).length,
+    cpuInsnUsed,
+    memBytesUsed,
     readBytes: JSON.stringify(before).length,
     writeBytes: JSON.stringify(after).length,
     trace: traceTemplateStep(contract.contractId, functionName, before, after),
@@ -900,6 +965,9 @@ async function rewriteLiveRows(
 }
 
 export class SandboxEngine {
+  private fuzzCampaigns = new Map<string, FuzzCampaignState>();
+  private fuzzCampaignSequence = 0;
+
   async listTemplates(
     query: { search?: string; category?: string } = {},
   ): Promise<SandboxTemplate[]> {
@@ -1321,12 +1389,14 @@ export class SandboxEngine {
           createdAt: new Date(),
         },
       });
+      const metrics = buildCallMetrics(outcome);
       return {
         callId: call.id,
         ...serializeCallResult(outcome),
         trace: outcome.trace,
         stateBefore: before,
         stateAfter: before,
+        metrics: serializeMetrics(metrics),
       };
     }
 
@@ -1447,6 +1517,180 @@ export class SandboxEngine {
     const before = snapshot.state as Record<string, unknown>;
     const after = bundle.document.runtime as unknown as Record<string, unknown>;
     return { sinceSnapshotId, diffKeys: diffKeys(before, after), before, after };
+  }
+
+  async startFuzzCampaign(input: {
+    sessionId: string;
+    contractId: string;
+    config?: FuzzCampaignConfig;
+  }): Promise<any> {
+    const bundle = getBundleOrThrow(input.sessionId);
+    const contract = bundle.document.runtime.contracts[input.contractId];
+    if (!contract) throw new Error('Contract not found');
+
+    const config = input.config ?? {};
+    const workers = Math.max(1, config.workers ?? 2);
+    const maxSteps = Math.max(1, config.maxSteps ?? 4);
+    const timeLimitMs = Math.max(1, config.timeLimitMs ?? 1000);
+    const invariants =
+      config.invariants && config.invariants.length > 0
+        ? config.invariants
+        : ['totalSupply == sum(balances)'];
+    const seedCorpus = (
+      config.seedCorpus && config.seedCorpus.length > 0
+        ? config.seedCorpus
+        : [
+            { functionName: 'mint', args: { amount: '1' } },
+            { functionName: 'transfer', args: { amount: '1' } },
+            { functionName: 'burn', args: { amount: '1' } },
+          ]
+    ).map((entry) => {
+      if (!entry || typeof entry !== 'object' || Array.isArray(entry))
+        return { functionName: 'mint', args: {} };
+      return entry as Record<string, unknown>;
+    });
+
+    const campaignId = `sandbox-fuzz-${++this.fuzzCampaignSequence}`;
+    const coverageBranches = new Set<string>();
+    const crashes: FuzzCrash[] = [];
+    const startedAt = new Date().toISOString();
+    let iterations = 0;
+
+    for (let workerIndex = 0; workerIndex < workers; workerIndex += 1) {
+      let currentState = clone(contract.state as Record<string, unknown>);
+      const steps: FuzzCampaignStep[] = [];
+      for (let stepIndex = 0; stepIndex < maxSteps; stepIndex += 1) {
+        const seed = seedCorpus[stepIndex % seedCorpus.length] ?? seedCorpus[0];
+        const baseFunction = String(seed.functionName ?? 'mint');
+        const mutatedArgs = this.mutateArgs(
+          baseFunction,
+          seed.args as Record<string, unknown>,
+          stepIndex,
+          workerIndex,
+        );
+        const reason = stepIndex === 0 ? 'seeded corpus' : 'coverage-guided mutation';
+        const step: FuzzCampaignStep = {
+          functionName: baseFunction,
+          args: mutatedArgs,
+          reason,
+          storageMutations: this.mutateStorage(currentState, stepIndex),
+          oracleFeed: config.enableOracleManipulation
+            ? { price: `${1 + (stepIndex % 3)}` }
+            : undefined,
+        };
+
+        const trialContract = { ...contract, state: clone(currentState) } as ContractState;
+        const outcome = executeTemplateFunction(
+          trialContract,
+          step.functionName,
+          step.args,
+          contract.deployerAccount,
+        );
+        currentState = clone(outcome.stateAfter as Record<string, unknown>);
+        if (step.storageMutations) {
+          currentState = { ...currentState, ...step.storageMutations };
+        }
+        if (step.oracleFeed) {
+          currentState.oracleFeed = step.oracleFeed;
+        }
+        this.collectCoverageBranches(step.functionName, outcome, currentState, stepIndex).forEach(
+          (branch) => coverageBranches.add(branch),
+        );
+        steps.push(step);
+        iterations += 1;
+
+        const invariantResult = this.evaluateInvariants(currentState, invariants);
+        if (!invariantResult.ok) {
+          const crash = this.buildCrash(
+            contract,
+            steps,
+            coverageBranches,
+            currentState,
+            invariantResult,
+            step.functionName,
+            step.args,
+          );
+          crashes.push(crash);
+          break;
+        }
+      }
+    }
+
+    const coveragePercent = Math.min(
+      100,
+      Math.round((coverageBranches.size / Math.max(1, 8 + (config.invariants?.length ?? 1))) * 100),
+    );
+    const campaign: FuzzCampaignState = {
+      campaignId,
+      sessionId: input.sessionId,
+      contractId: input.contractId,
+      status: 'completed',
+      startedAt,
+      completedAt: new Date().toISOString(),
+      coverage: {
+        totalCoverage: coveragePercent,
+        coveredBranches: [...coverageBranches],
+        branchCount: 8 + (config.invariants?.length ?? 1),
+      },
+      crashes: this.deduplicateCrashes(crashes),
+      metrics: { iterations, workers, maxSteps },
+      invariantViolations: crashes.length,
+    };
+    this.fuzzCampaigns.set(campaignId, campaign);
+    return campaign;
+  }
+
+  async stopFuzzCampaign(campaignId: string): Promise<any> {
+    const campaign = this.fuzzCampaigns.get(campaignId);
+    if (!campaign) throw new Error('Campaign not found');
+    campaign.status = 'stopped';
+    campaign.completedAt = new Date().toISOString();
+    return campaign;
+  }
+
+  async getFuzzCampaign(campaignId: string): Promise<any> {
+    return this.fuzzCampaigns.get(campaignId) ?? null;
+  }
+
+  async listFuzzCampaignCrashes(campaignId: string): Promise<any[]> {
+    const campaign = this.fuzzCampaigns.get(campaignId);
+    if (!campaign) throw new Error('Campaign not found');
+    return campaign.crashes.sort((left, right) =>
+      right.coverageSignature.localeCompare(left.coverageSignature),
+    );
+  }
+
+  async minimizeCrash(sessionId: string, campaignId: string, crashId: string): Promise<any> {
+    const bundle = getBundleOrThrow(sessionId);
+    const contract = bundle.document.runtime.contracts[sessionId];
+    const campaign = this.fuzzCampaigns.get(campaignId);
+    if (!campaign) throw new Error('Campaign not found');
+    const crash = campaign.crashes.find((entry) => entry.id === crashId);
+    if (!crash) throw new Error('Crash not found');
+    const targetContract =
+      bundle.document.runtime.contracts[contract?.contractId ?? campaign.contractId];
+    if (!targetContract) throw new Error('Contract not found');
+    let minimizedSteps = [...crash.steps];
+    let improved = true;
+    while (improved) {
+      improved = false;
+      for (let index = 0; index < minimizedSteps.length; index += 1) {
+        const candidate = minimizedSteps.filter((_, candidateIndex) => candidateIndex !== index);
+        if (candidate.length === 0) continue;
+        const replay = this.replaySteps(targetContract, candidate);
+        if (replay.violation) {
+          minimizedSteps = candidate;
+          improved = true;
+          break;
+        }
+      }
+    }
+    return {
+      ...crash,
+      steps: minimizedSteps,
+      suggestedFix: crash.suggestedFix,
+      minimized: minimizedSteps.length < crash.steps.length,
+    };
   }
 
   async startFuzz(input: {
@@ -1700,6 +1944,81 @@ export class SandboxEngine {
     };
   }
 
+  private verifier = createVerifier({ timeoutMs: 120000 });
+  private gasAnalyzerInstance = new GasAnalyzer(this.verifier['solver'] as any);
+  private reentrancyAnalyzerInstance = new ReentrancyAnalyzer(this.verifier['solver'] as any);
+
+  private buildWasmFunctionsFromContract(contract: any): WasmFunction[] {
+    const abi = contract.abi ?? { functions: [] };
+    const funcs = abi.functions ?? [];
+    return funcs.map((fn: any, idx: number) => ({
+      name: fn.name,
+      params: (fn.inputs ?? []).map((inp: any) => ({
+        name: inp.name ?? `arg${Math.random().toString(36).slice(2, 5)}`,
+        type:
+          inp.type === 'i128' || inp.type === 'i64' || inp.type === 'u64'
+            ? ('i64' as const)
+            : ('i32' as const),
+      })),
+      results: (fn.outputs ?? []).map(() => 'i64' as const),
+      body: this.buildWasmBodyForFunction(idx, fn, abi),
+    }));
+  }
+
+  private buildWasmBodyForFunction(funcIdx: number, fn: any, abi: any): WasmInstr[] {
+    const body: WasmInstr[] = [];
+    const isWriteFn = [
+      'mint',
+      'burn',
+      'transfer',
+      'swap',
+      'add_liquidity',
+      'submit',
+      'vote',
+      'approve',
+      'deposit',
+      'withdraw',
+      'execute',
+    ].includes(fn.name);
+
+    if (isWriteFn) {
+      body.push(
+        { op: 'host_fn', name: 'require_auth', args: [] },
+        { op: 'host_fn', name: 'get_contract_data', args: [] },
+      );
+    }
+
+    const hasAmount = fn.inputs?.some((i: any) =>
+      ['amount', 'amount_in', 'amount_a', 'amount_b', 'value'].includes(i.name),
+    );
+    if (hasAmount) {
+      body.push(
+        {
+          op: 'local.get',
+          idx: fn.inputs.findIndex((i: any) => i.name === 'amount' || i.name === 'amount_in'),
+        },
+        { op: 'i64.const', value: 0n },
+        { op: 'i64.gt_s', left: [], right: [] },
+      );
+    }
+
+    if (fn.name === 'transfer' || fn.name === 'swap') {
+      body.push({ op: 'host_fn', name: 'call_contract', args: [] });
+    }
+
+    if (fn.name === 'mint' || fn.name === 'burn') {
+      body.push({ op: 'host_fn', name: 'put_contract_data', args: [] });
+    }
+
+    body.push(
+      { op: 'host_fn', name: 'emit_event', args: [] },
+      { op: 'i64.const', value: 0n },
+      { op: 'return', value: [] },
+    );
+
+    return body;
+  }
+
   async verifyInvariant(
     sessionId: string,
     input: {
@@ -1712,22 +2031,65 @@ export class SandboxEngine {
     const bundle = getBundleOrThrow(sessionId);
     const contract = bundle.document.runtime.contracts[input.contract];
     if (!contract) throw new Error('Contract not found');
-    const balances = contract.state.balances as Record<string, string> | undefined;
-    const totalSupply = String(contract.state.totalSupply ?? '0');
-    const summedBalances = Object.values(balances ?? {}).reduce(
-      (sum, value) => decimalPlus(sum, value),
-      '0',
-    );
-    const passed =
-      input.invariant.includes('balance') || input.invariant.includes('totalSupply')
-        ? totalSupply === summedBalances
-        : true;
+
+    const functions = this.buildWasmFunctionsFromContract(contract);
+
+    const totalSupply = intVar('totalSupply');
+    const summedBalances = intVar('summedBalances');
+    const fromBal = intVar('fromBalance');
+    const toBal = intVar('toBalance');
+    const amount = intVar('amount');
+
+    let formula;
+    if (input.invariant.includes('totalSupply') && input.invariant.includes('balance')) {
+      formula = eq(totalSupply, summedBalances);
+    } else if (input.invariant.includes('reentrancy') || input.invariant.includes('re-entrancy')) {
+      formula = NO_REENTRANCY(intVar('callDepth'));
+    } else if (input.invariant.includes('transfer')) {
+      formula = BALANCE_PRESERVING_TRANSFER(
+        fromBal,
+        toBal,
+        amount,
+        intVar('fromBalAfter'),
+        intVar('toBalAfter'),
+      );
+    } else {
+      formula = boolVar(input.invariant);
+    }
+
+    const contractSpec = spec(`invariant_${input.contract.slice(0, 8)}`, input.contract, [
+      invariant(input.invariant.slice(0, 64) || 'user_invariant', formula),
+    ]);
+
+    const result = await this.verifier.verify({
+      contractName: contract.name ?? 'unknown',
+      contractAddress: input.contract,
+      wasmFunctions: functions,
+      specifications: [contractSpec],
+      generateWitness: true,
+      runGasAnalysis: false,
+      runConcolicTesting: false,
+      timeoutMs: 60000,
+    });
+
     return {
-      passed,
+      passed: result.summary.failedProperties === 0,
       checker: input.checker ?? 'smt',
       invariant: input.invariant,
-      counterexample: passed ? null : { totalSupply, summedBalances, contract: input.contract },
+      counterexample:
+        result.summary.failedProperties > 0
+          ? {
+              model: result.propertyResults.find((p) => p.status === 'violated')?.solverResult
+                ?.model,
+              witness: result.propertyResults.find((p) => p.status === 'violated')?.witness,
+            }
+          : null,
       bound: input.bound ?? null,
+      safetyScore: result.summary.safetyScore,
+      badge: result.badge,
+      properties: result.summary,
+      propertyResults: result.propertyResults,
+      vulnerabilities: result.summary.vulnerabilities,
     };
   }
 
@@ -1740,7 +2102,188 @@ export class SandboxEngine {
       invariant: input.assertion,
       checker: input.checker,
     });
-    return invariant;
+    return {
+      ...invariant,
+      assertion: input.assertion,
+      result: invariant.passed ? 'holds' : 'violated',
+    };
+  }
+
+  async verifyFull(sessionId: string, contractId: string): Promise<any> {
+    const bundle = getBundleOrThrow(sessionId);
+    const contract = bundle.document.runtime.contracts[contractId];
+    if (!contract) throw new Error('Contract not found');
+
+    const functions = this.buildWasmFunctionsFromContract(contract);
+    const abi = (contract.abi ?? { functions: [] }) as {
+      functions?: Array<{
+        name: string;
+        inputs?: Array<{ name: string; type: string }>;
+        outputs?: Array<{ type: string }>;
+      }>;
+    };
+    const funcs = abi.functions ?? [];
+
+    const properties: any[] = [];
+    for (const fn of funcs) {
+      const hasAmount = fn.inputs?.some((i) => ['amount', 'amount_in', 'value'].includes(i.name));
+      if (hasAmount) {
+        properties.push(
+          postcondition(
+            `${fn.name}_safe_math`,
+            SAFE_MATH(
+              intVar(`${fn.name}_result`),
+              intVar(`${fn.name}_a`),
+              intVar(`${fn.name}_b`),
+              ArithOp.Add,
+            ),
+            [fn.name],
+            { description: `Safe arithmetic in ${fn.name}` },
+          ),
+        );
+      }
+    }
+
+    const totalSupply = intVar('totalSupply');
+    const summedBalances = intVar('summedBalances');
+    properties.push(
+      invariant('total_supply_invariant', eq(totalSupply, summedBalances), {
+        description: 'Total supply equals sum of all balances',
+        severity: 'critical',
+      }),
+    );
+
+    properties.push(
+      invariant('no_reentrancy', NO_REENTRANCY(intVar('callDepth')), {
+        description: 'No cross-contract reentrancy',
+        severity: 'critical',
+      }),
+    );
+
+    const contractSpec = spec(`full_verify_${contractId.slice(0, 8)}`, contractId, properties);
+
+    const report = await this.verifier.verify({
+      contractName: contract.name ?? 'unknown',
+      contractAddress: contractId,
+      wasmFunctions: functions,
+      specifications: [contractSpec],
+      generateWitness: true,
+      runGasAnalysis: true,
+      runConcolicTesting: true,
+    });
+
+    const badgeRecord = globalBadgeSystem.issueBadge(contractId, report);
+
+    return {
+      report,
+      badge: badgeRecord,
+      summary: report.summary,
+      explorerBadge: globalBadgeSystem.getBadgeForExplorer(contractId),
+    };
+  }
+
+  async verifyReentrancy(sessionId: string, contractId: string): Promise<any> {
+    const bundle = getBundleOrThrow(sessionId);
+    const contract = bundle.document.runtime.contracts[contractId];
+    if (!contract) throw new Error('Contract not found');
+
+    const functions = this.buildWasmFunctionsFromContract(contract);
+
+    const result = await this.reentrancyAnalyzerInstance.analyze(contractId, functions);
+
+    return {
+      contractAddress: contractId,
+      ...result,
+    };
+  }
+
+  async verifyGas(sessionId: string, contractId: string): Promise<any> {
+    const bundle = getBundleOrThrow(sessionId);
+    const contract = bundle.document.runtime.contracts[contractId];
+    if (!contract) throw new Error('Contract not found');
+
+    const functions = this.buildWasmFunctionsFromContract(contract);
+    const gasResults = [];
+
+    for (const func of functions) {
+      const result = await this.gasAnalyzerInstance.analyzeFunction(func);
+      gasResults.push(result);
+    }
+
+    return {
+      contractName: contract.name,
+      contractAddress: contractId,
+      functions: gasResults,
+      totalWorstCaseCpu: gasResults.reduce((s, r) => s + r.worstCaseCpu, 0),
+      totalWorstCaseMem: gasResults.reduce((s, r) => s + r.worstCaseMem, 0),
+      estimatedTotalFee: gasResults[gasResults.length - 1]?.estimatedFee ?? '0 stroops',
+    };
+  }
+
+  async generateSpecification(sessionId: string, contractId: string): Promise<any> {
+    const bundle = getBundleOrThrow(sessionId);
+    const contract = bundle.document.runtime.contracts[contractId];
+    if (!contract) throw new Error('Contract not found');
+
+    const abi = (contract.abi ?? { functions: [] }) as {
+      functions?: Array<{
+        name: string;
+        inputs?: Array<{ name: string; type: string }>;
+        outputs?: Array<{ type: string }>;
+      }>;
+    };
+    const funcs = abi.functions ?? [];
+
+    const properties: any[] = [];
+    for (const fn of funcs) {
+      properties.push({
+        name: `${fn.name}_precondition`,
+        kind: 'precondition',
+        description: `Valid inputs for ${fn.name}`,
+        functions: [fn.name],
+        inputs: fn.inputs,
+      });
+
+      const hasTransfer = ['transfer', 'swap', 'send'].includes(fn.name);
+      if (hasTransfer) {
+        properties.push({
+          name: `${fn.name}_balance_preserving`,
+          kind: 'postcondition',
+          description: `${fn.name} preserves balance sum`,
+          functions: [fn.name],
+        });
+      }
+    }
+
+    properties.push({
+      name: 'total_supply_invariant',
+      kind: 'invariant',
+      description: 'Total supply equals sum of all balances',
+      severity: 'critical',
+    });
+
+    properties.push({
+      name: 'no_reentrancy',
+      kind: 'invariant',
+      description: 'No cross-contract reentrancy',
+      severity: 'critical',
+    });
+
+    return {
+      contract: contractId,
+      contractName: contract.name,
+      spec: {
+        name: `${contract.name ?? 'contract'}_spec`,
+        contract: contractId,
+        properties,
+      },
+      generatedAt: new Date().toISOString(),
+      dslExample: `import { invariant, postcondition, eq, add, intVar } from '../verification/dsl';
+
+export default spec('${contract.name ?? 'contract'}_spec', '${contractId}', [
+  invariant('total_supply', eq(intVar('totalSupply'), intVar('summedBalances'))),
+]);`,
+    };
   }
 
   async generateSdk(sessionId: string, contractId: string): Promise<any> {
@@ -1788,18 +2331,7 @@ export class SandboxEngine {
   }
 
   async replayMainnet(txHash: string): Promise<any> {
-    return {
-      txHash,
-      steps: [
-        { action: 'load_transaction' },
-        { action: 'simulate_execution' },
-        { action: 'compare_state' },
-      ],
-      comparison: {
-        equal: false,
-        note: 'mainnet replay is scaffolded against live RPC integration',
-      },
-    };
+    return replayMainnetOracle(txHash);
   }
 
   async forkContract(sessionId: string, contractAddress: string): Promise<any> {
@@ -1857,6 +2389,142 @@ export class SandboxEngine {
     }
 
     throw new Error(`Unable to resolve comparable contract or template: ${identifier}`);
+  }
+
+  private mutateArgs(
+    functionName: string,
+    baseArgs: Record<string, unknown> | undefined,
+    stepIndex: number,
+    workerIndex: number,
+  ): Record<string, unknown> {
+    const args = clone(baseArgs ?? {});
+    if (functionName === 'mint' || functionName === 'burn' || functionName === 'transfer') {
+      const amount = stepIndex % 3 === 0 ? '-1' : `${workerIndex + 1}`;
+      args.amount = amount;
+      args.to = args.to ?? 'GA';
+      args.from = args.from ?? 'GA';
+    }
+    if (functionName === 'balance_of') {
+      args.owner = args.owner ?? 'GA';
+    }
+    return args;
+  }
+
+  private mutateStorage(
+    currentState: Record<string, unknown>,
+    stepIndex: number,
+  ): Record<string, unknown> {
+    const next: Record<string, unknown> = {};
+    if (stepIndex % 2 === 0) {
+      next.lastMutatedAt = new Date().toISOString();
+    }
+    if (currentState.balances && typeof currentState.balances === 'object') {
+      next.balances = clone(currentState.balances);
+    }
+    return next;
+  }
+
+  private collectCoverageBranches(
+    functionName: string,
+    outcome: CallOutcome,
+    currentState: Record<string, unknown>,
+    stepIndex: number,
+  ): string[] {
+    const branches = [
+      `function:${functionName}`,
+      `success:${String(outcome.success)}`,
+      `state:${Object.keys(currentState).length > 0 ? 'mutated' : 'empty'}`,
+      `step:${stepIndex % 2}`,
+    ];
+    return branches;
+  }
+
+  private evaluateInvariants(
+    state: Record<string, unknown>,
+    invariants: string[],
+  ): { ok: boolean; details?: Record<string, unknown> } {
+    const balances = state.balances as Record<string, unknown> | undefined;
+    const totalSupply = String((state as Record<string, any>).totalSupply ?? '0');
+    const summedBalances = Object.values(balances ?? {}).reduce(
+      (sum, value) => decimalPlus(sum, String(value)),
+      '0',
+    );
+    const invariantOk = invariants.every((invariant) => {
+      if (invariant.includes('totalSupply') && invariant.includes('sum(balances)')) {
+        return totalSupply === summedBalances;
+      }
+      return true;
+    });
+    return { ok: invariantOk, details: { totalSupply, summedBalances } };
+  }
+
+  private buildCrash(
+    contract: ContractState,
+    steps: FuzzCampaignStep[],
+    coverageBranches: Set<string>,
+    currentState: Record<string, unknown>,
+    invariantResult: { ok: boolean; details?: Record<string, unknown> },
+    functionName: string,
+    args: Record<string, unknown>,
+  ): FuzzCrash {
+    const severity = invariantResult.ok ? 'medium' : 'critical';
+    const fingerprint = `${severity}:${functionName}:${[...coverageBranches].sort().join('|')}`;
+    const stateDiff = compareJson(contract.state, currentState);
+    return {
+      id: `crash-${crypto.randomUUID()}`,
+      severity,
+      title: 'Invariant violation in fuzz campaign',
+      description: `Fuzzer found a state inconsistency during ${functionName} with ${JSON.stringify(args)}`,
+      steps,
+      coverageSignature: [...coverageBranches].sort().join('|'),
+      stateDiff,
+      callTrace: steps.map((step) => ({
+        function: step.functionName,
+        args: step.args,
+        storageMutations: step.storageMutations,
+      })),
+      suggestedFix:
+        'Add explicit invariant guards and fail-safe state transitions around balance updates.',
+      fingerprint,
+    };
+  }
+
+  private deduplicateCrashes(crashes: FuzzCrash[]): FuzzCrash[] {
+    const seen = new Set<string>();
+    const deduped: FuzzCrash[] = [];
+    for (const crash of crashes) {
+      if (seen.has(crash.fingerprint)) continue;
+      seen.add(crash.fingerprint);
+      deduped.push(crash);
+    }
+    return deduped;
+  }
+
+  private replaySteps(
+    contract: ContractState,
+    steps: FuzzCampaignStep[],
+  ): { violation: boolean; state?: Record<string, unknown> } {
+    let currentState = clone(contract.state as Record<string, unknown>);
+    for (const step of steps) {
+      const trialContract = { ...contract, state: clone(currentState) } as ContractState;
+      const outcome = executeTemplateFunction(
+        trialContract,
+        step.functionName,
+        step.args,
+        contract.deployerAccount,
+      );
+      currentState = clone(outcome.stateAfter as Record<string, unknown>);
+      if (step.storageMutations) {
+        currentState = { ...currentState, ...step.storageMutations };
+      }
+      const invariantResult = this.evaluateInvariants(currentState, [
+        'totalSupply == sum(balances)',
+      ]);
+      if (!invariantResult.ok) {
+        return { violation: true, state: currentState };
+      }
+    }
+    return { violation: false, state: currentState };
   }
 
   private generateFuzzFindings(

@@ -1,10 +1,11 @@
 import { WebSocketServer, WebSocket } from 'ws';
 import { IncomingMessage, Server } from 'http';
 
-// Each client can subscribe to a specific contract address or '*' for all events
+// Each client can subscribe to a specific contract address or event type, or leave them unset for all events
 interface Client {
   ws: WebSocket;
-  contractFilter: string | null; // null = all events
+  contractFilter: string | null; // null = all contracts
+  eventTypeFilter: string | null; // null = all event types
 }
 
 const clients = new Set<Client>();
@@ -13,11 +14,12 @@ export function attachWebSocketServer(httpServer: Server): WebSocketServer {
   const wss = new WebSocketServer({ server: httpServer, path: '/ws/events' });
 
   wss.on('connection', (ws: WebSocket, req: IncomingMessage) => {
-    // Optional: ?contract=CXXX... to filter by contract
+    // Optional query params: ?contract=CXXX... to filter by contract and ?eventType=token_transfer to filter by event type
     const url = new URL(req.url ?? '', 'http://localhost');
     const contractFilter = url.searchParams.get('contract');
+    const eventTypeFilter = url.searchParams.get('eventType');
 
-    const client: Client = { ws, contractFilter };
+    const client: Client = { ws, contractFilter, eventTypeFilter };
     clients.add(client);
 
     ws.on('close', () => clients.delete(client));
@@ -41,8 +43,18 @@ export function broadcastEvent(event: {
   for (const client of clients) {
     if (client.ws.readyState !== WebSocket.OPEN) continue;
     if (client.contractFilter && client.contractFilter !== event.contractAddress) continue;
+    if (client.eventTypeFilter && client.eventTypeFilter !== event.eventType) continue;
     client.ws.send(payload);
   }
+}
+
+export function shutdownWebSocketServer(): void {
+  for (const client of clients) {
+    if (client.ws.readyState === WebSocket.OPEN) {
+      client.ws.close(1001, 'Server shutting down');
+    }
+  }
+  clients.clear();
 }
 
 export function broadcastEmergencyEvent(payload: { event: string; data: Record<string, unknown> }) {

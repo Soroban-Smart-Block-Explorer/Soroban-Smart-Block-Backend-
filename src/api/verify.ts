@@ -3,16 +3,19 @@ import { Router, Request, Response } from 'express';
 import multer from 'multer';
 import * as path from 'path';
 import * as os from 'os';
-import { prisma } from '../db';
+import { z } from 'zod';
+import { prismaWrite as prisma } from '../db';
 import {
   extractArchive,
   compileSandboxed,
   hashFile,
   cleanupDir,
   extractSourceFiles,
+  ToolchainEnum,
 } from './compiler';
 import { decompileWasm } from '../indexer/wasm-decompiler';
 import { asyncHandler } from '../middleware/asyncHandler';
+import { background } from '../utils/background';
 
 export const verifyRouter = Router();
 
@@ -37,10 +40,18 @@ verifyRouter.post(
       return;
     }
 
-    const { contractAddress, toolchain = 'soroban-cli@0.9.4' } = req.body as {
-      contractAddress?: string;
-      toolchain?: string;
-    };
+    const schema = z.object({
+      contractAddress: z.string().optional(),
+      toolchain: ToolchainEnum.optional(),
+    });
+
+    const parsed = schema.safeParse(req.body);
+    if (!parsed.success) {
+      await cleanupDir(req.file.path);
+      return res.status(400).json({ error: parsed.error.flatten() });
+    }
+
+    const { contractAddress, toolchain = 'soroban-cli@0.9.4' } = parsed.data;
 
     // Hash the raw archive for deduplication / audit
     const uploadedHash = hashFile(req.file.path);
@@ -87,12 +98,9 @@ verifyRouter.get(
       return;
     }
     if (!job.sourceFiles) {
-      res
-        .status(404)
-        .json({
-          error:
-            'Source files not available. Job may still be pending or failed before extraction.',
-        });
+      res.status(404).json({
+        error: 'Source files not available. Job may still be pending or failed before extraction.',
+      });
       return;
     }
     res.json({ jobId: job.id, status: job.status, files: job.sourceFiles });
@@ -145,12 +153,14 @@ async function runVerification(
       },
     });
   } catch (err: any) {
-    await prisma.verificationJob
-      .update({
-        where: { id: jobId },
-        data: { status: 'failed', errorMsg: err.message ?? String(err) },
-      })
-      .catch(() => {});
+    background('verify.updateJobFailed', () =>
+      prisma.verificationJob
+        .update({
+          where: { id: jobId },
+          data: { status: 'failed', errorMsg: err.message ?? String(err) },
+        })
+        .then(() => {}),
+    );
   } finally {
     if (extractedDir) await cleanupDir(path.dirname(extractedDir));
     await cleanupDir(archivePath);
@@ -221,7 +231,10 @@ verifyRouter.post(
       return;
     } finally {
       // Best-effort cleanup of temp file
-      import('fs').then((fs) => fs.promises.unlink(req.file!.path).catch(() => {}));
+      background('verify.cleanupTempFile', async () => {
+        const fs = await import('fs');
+        await fs.promises.unlink(req.file!.path);
+      });
     }
 
     let result;

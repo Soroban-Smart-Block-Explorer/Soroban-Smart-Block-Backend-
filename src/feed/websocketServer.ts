@@ -207,8 +207,8 @@ export class FeedWebSocketServer {
   }
 
   private async getMissedMessages(channels: string[], lastSequence: number) {
-    const { prisma } = await import('../db');
-    return await prisma.feedMessage.findMany({
+    const { prismaRead } = await import('../db');
+    return await prismaRead.feedMessage.findMany({
       where: {
         channelName: { in: channels },
         sequence: { gt: lastSequence },

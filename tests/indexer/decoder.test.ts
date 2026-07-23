@@ -6,43 +6,49 @@ import { xdr, Address, Keypair, nativeToScVal } from '@stellar/stellar-sdk';
 function toBase64(val: xdr.ScVal): string {
   return val.toXDR('base64');
 }
-function addrXdr(addr: string): string {
-  return new Address(addr).toScVal().toXDR('base64');
+
+function addrBase64(address: string): string {
+  return new Address(address).toScVal().toXDR('base64');
 }
 
-const ADDR_A = Keypair.random().publicKey();
-const ADDR_B = Keypair.random().publicKey();
-const ADDR_C = Keypair.random().publicKey();
+const FROM_ADDR = Keypair.random().publicKey();
+const TO_ADDR = Keypair.random().publicKey();
+const ADMIN_ADDR = Keypair.random().publicKey();
 
 describe('decodeEvent', () => {
   it('decodes a SEP-41 transfer event', () => {
+    const from = FROM_ADDR;
+    const to = TO_ADDR;
+
     const topics = [
       toBase64(nativeToScVal('transfer', { type: 'symbol' })),
-      addrXdr(ADDR_A),
-      addrXdr(ADDR_B),
+      addrBase64(from),
+      addrBase64(to),
     ];
     const data = toBase64(nativeToScVal(1000n, { type: 'i128' }));
 
     const result = decodeEvent(topics, data);
 
     expect(result.eventType).toBe('transfer');
-    expect(result.decoded.from).toBe(ADDR_A);
-    expect(result.decoded.to).toBe(ADDR_B);
+    expect(result.decoded.from).toBe(from);
+    expect(result.decoded.to).toBe(to);
     expect(result.decoded.amount).toBe('0.0001000');
   });
 
   it('decodes a SEP-41 mint event', () => {
+    const admin = ADMIN_ADDR;
+    const to = TO_ADDR;
     const topics = [
       toBase64(nativeToScVal('mint', { type: 'symbol' })),
-      addrXdr(ADDR_C), // admin
-      addrXdr(ADDR_A), // to
+      addrBase64(admin),
+      addrBase64(to),
     ];
     const data = toBase64(nativeToScVal(500n, { type: 'i128' }));
 
     const result = decodeEvent(topics, data);
 
     expect(result.eventType).toBe('mint');
-    expect(result.decoded.to).toBe(ADDR_A);
+    expect(result.decoded.to).toBe(to);
     expect(result.decoded.amount).toBe('0.0000500');
   });
 

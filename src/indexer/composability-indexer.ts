@@ -7,6 +7,7 @@
  */
 import { prismaWrite, prismaRead } from '../db';
 import { logger } from '../logger';
+import { background } from '../utils/background';
 
 /* eslint-disable @typescript-eslint/no-implied-eval */
 const _setInterval: (fn: () => void, ms: number) => unknown = setInterval;
@@ -157,16 +158,18 @@ async function scanPendingTransactions(): Promise<void> {
             mitigationGuide: String(p.details.mitigationGuide ?? ''),
           },
         });
-        await prismaWrite.compositionPatternInstance
-          .create({
-            data: {
-              txId: composed.id,
-              patternId: dbPattern.id,
-              confidence: p.confidence,
-              details: p.details as object,
-            },
-          })
-          .catch(() => {});
+        background('composability.createPatternInstance', () =>
+          prismaWrite.compositionPatternInstance
+            .create({
+              data: {
+                txId: composed.id,
+                patternId: dbPattern.id,
+                confidence: p.confidence,
+                details: p.details as object,
+              },
+            })
+            .then(() => {}),
+        );
       }
 
       // Update composability profile for each contract
@@ -232,9 +235,11 @@ async function scanPendingTransactions(): Promise<void> {
         });
       }
     } catch (err) {
-      await prismaWrite.composedTransaction
-        .update({ where: { txHash: tx.hash }, data: { analysisStatus: 'failed' } })
-        .catch(() => {});
+      background('composability.markTxFailed', () =>
+        prismaWrite.composedTransaction
+          .update({ where: { txHash: tx.hash }, data: { analysisStatus: 'failed' } })
+          .then(() => {}),
+      );
       logger.error('Composability analysis failed', { txHash: tx.hash, error: String(err) });
     }
   }
@@ -288,9 +293,9 @@ export function startComposabilityIndexer(): void {
   scan();
   setInterval(scan, SCAN_INTERVAL_MS);
   setInterval(() => {
-    computeECISnapshot().catch(() => {});
+    background('composability.eciSnapshot', () => computeECISnapshot().then(() => {}));
   }, ECI_INTERVAL_MS);
   setTimeout(() => {
-    computeECISnapshot().catch(() => {});
+    background('composability.eciSnapshot', () => computeECISnapshot().then(() => {}));
   }, 60_000);
 }

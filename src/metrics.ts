@@ -21,6 +21,21 @@ export const httpRequestTotal = new Counter({
   registers: [registry],
 });
 
+// ── HTTP Errors (global error handler) ───────────────────────────────────────
+export const httpErrorsTotal = new Counter({
+  name: 'http_errors_total',
+  help: 'Total number of HTTP errors by classification code',
+  labelNames: ['code', 'severity', 'route'],
+  registers: [registry],
+});
+
+// ── 5xx Error Surge Alerting ─────────────────────────────────────────────────
+export const http5xxSurge = new Gauge({
+  name: 'http_5xx_surge_ratio',
+  help: 'Ratio of 5xx errors to total requests over 5min window (>0.01 triggers alert)',
+  registers: [registry],
+});
+
 // ── Indexer / ingestion ──────────────────────────────────────────────────────
 export const indexerLastLedger = new Gauge({
   name: 'indexer_last_ledger',
@@ -66,5 +81,19 @@ export const dbQueryDuration = new Histogram({
 export const dbConnectionStatus = new Gauge({
   name: 'db_connection_status',
   help: 'Database connection status (1 = healthy, 0 = unhealthy)',
+  registers: [registry],
+});
+
+// ── Cache health ─────────────────────────────────────────────────────────────
+export const cacheBackendStatus = new Gauge({
+  name: 'cache_backend_status',
+  help: 'Cache backend in use: 1 = Redis connected, 0 = in-memory fallback',
+  registers: [registry],
+});
+
+// ── Replica lag ──────────────────────────────────────────────────────────────
+export const replicaLagCheckErrors = new Counter({
+  name: 'replica_lag_check_errors_total',
+  help: 'Total number of replica lag-check failures (forces primary selection)',
   registers: [registry],
 });

@@ -7,6 +7,10 @@ import {
 } from '../../src/db/replicaGateway';
 import type { PrismaClient } from '@prisma/client';
 
+vi.mock('../../src/metrics', () => ({
+  replicaLagCheckErrors: { inc: vi.fn() },
+}));
+
 function makeClient(lastLedger: number | null) {
   return {
     indexerState: {
@@ -33,12 +37,12 @@ describe('measureReplicaLag', () => {
     expect(lag).toBe(0);
   });
 
-  it('returns 0 (fail-open) when the DB throws', async () => {
+  it('forces primary by returning excess-lag when the DB throws', async () => {
     const broken = {
       indexerState: { findUnique: vi.fn().mockRejectedValue(new Error('db down')) },
     } as unknown as PrismaClient;
     const lag = await measureReplicaLag(broken, broken);
-    expect(lag).toBe(0);
+    expect(lag).toBeGreaterThan(LAG_THRESHOLD_LEDGERS);
   });
 
   it('caches the result within TTL', async () => {
@@ -70,5 +74,14 @@ describe('getReadClient', () => {
     const write = makeClient(100);
     const client = await getReadClient(read, write);
     expect(client).toBe(read);
+  });
+
+  it('returns write client when DB throws (database-outage scenario)', async () => {
+    const broken = {
+      indexerState: { findUnique: vi.fn().mockRejectedValue(new Error('ECONNREFUSED')) },
+    } as unknown as PrismaClient;
+    const client = await getReadClient(broken, broken);
+    // write === broken here; confirms primary is selected on outage
+    expect(client).toBe(broken);
   });
 });

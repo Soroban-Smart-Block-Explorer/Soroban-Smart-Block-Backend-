@@ -1,7 +1,7 @@
 {
   "root": true,
   "parser": "@typescript-eslint/parser",
-  "plugins": ["@typescript-eslint", "unused-imports"],
+  "plugins": ["@typescript-eslint", "unused-imports", "error-handling"],
   "extends": [
     "eslint:recommended",
     "plugin:@typescript-eslint/recommended"
@@ -24,7 +24,9 @@
     ],
     "no-console": "off",
     "prefer-const": "error",
-    "no-var": "error"
+    "no-var": "error",
+    "error-handling/require-async-handler": "error",
+    "error-handling/no-phantom-prisma-field": "warn"
   },
   "ignorePatterns": ["dist/", "node_modules/"]
 }

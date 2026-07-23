@@ -315,25 +315,45 @@ export async function analyzeStateExtension(
   ledgerSequence: number,
   ledgerCloseTime: Date,
 ): Promise<StateExtensionAnalysis | null> {
-  const params = extractStateExtensionParams(functionName, rawArgs);
-  if (!params) return null;
+  const startMs = Date.now();
+  try {
+    const params = extractStateExtensionParams(functionName, rawArgs);
+    if (!params) return null;
 
-  const extensionRange = analyzeExtensionRange(params);
-  const clampingAnalysis = analyzeClampingBehavior(params);
-  const equityMetrics = calculateEquityMetrics(params, ledgerSequence);
-  const historicalContext = await analyzeHistoricalContext(contractAddress, ledgerSequence);
+    const extensionRange = analyzeExtensionRange(params);
+    const clampingAnalysis = analyzeClampingBehavior(params);
+    const equityMetrics = calculateEquityMetrics(params, ledgerSequence);
+    const historicalContext = await analyzeHistoricalContext(contractAddress, ledgerSequence);
 
-  return {
-    contractAddress,
-    transactionHash,
-    ledgerSequence,
-    ledgerCloseTime,
-    params,
-    extensionRange,
-    clampingAnalysis,
-    equityMetrics,
-    historicalContext,
-  };
+    const durationMs = Date.now() - startMs;
+    if (durationMs > 500) {
+      console.warn(
+        '[analyzeStateExtension] slow execution: %dms for %s',
+        durationMs,
+        contractAddress,
+      );
+    }
+
+    return {
+      contractAddress,
+      transactionHash,
+      ledgerSequence,
+      ledgerCloseTime,
+      params,
+      extensionRange,
+      clampingAnalysis,
+      equityMetrics,
+      historicalContext,
+    };
+  } catch (error) {
+    console.error(
+      '[analyzeStateExtension] error after %dms for %s:',
+      Date.now() - startMs,
+      contractAddress,
+      error,
+    );
+    return null;
+  }
 }
 
 /**

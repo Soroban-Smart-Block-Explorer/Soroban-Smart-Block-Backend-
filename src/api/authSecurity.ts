@@ -4,9 +4,15 @@ import { requireAuth, requireRole } from '../auth/middleware';
 
 export const authSecurityRouter = Router();
 
-interface RiskFlag { flag: string; severity: 'low' | 'medium' | 'high' }
+interface RiskFlag {
+  flag: string;
+  severity: 'low' | 'medium' | 'high';
+}
 
-async function assessSessionRisk(sessionId: string, userId: string): Promise<{ score: number; flags: RiskFlag[] }> {
+async function assessSessionRisk(
+  sessionId: string,
+  userId: string,
+): Promise<{ score: number; flags: RiskFlag[] }> {
   const flags: RiskFlag[] = [];
 
   // Check recent failed logins for this user
@@ -42,7 +48,8 @@ async function assessSessionRisk(sessionId: string, userId: string): Promise<{ s
       const curr = recentLogins[i];
       if (prev.ipAddress && curr.ipAddress && prev.ipAddress !== curr.ipAddress) {
         const diffMs = curr.createdAt.getTime() - prev.createdAt.getTime();
-        if (diffMs < 5 * 60 * 1000) { // <5 min between different IPs
+        if (diffMs < 5 * 60 * 1000) {
+          // <5 min between different IPs
           flags.push({ flag: 'impossible_travel', severity: 'high' });
           break;
         }
@@ -57,60 +64,81 @@ async function assessSessionRisk(sessionId: string, userId: string): Promise<{ s
   return { score: Math.min(score, 1), flags };
 }
 
-authSecurityRouter.get('/sessions/:sessionId/risk', requireAuth, async (req: Request, res: Response) => {
-  const { sessionId } = req.params;
-  const session = await prisma.authSession.findFirst({
-    where: { id: sessionId, userId: req.user!.id },
-  });
-  if (!session) return res.status(404).json({ error: 'Session not found' });
+authSecurityRouter.get(
+  '/sessions/:sessionId/risk',
+  requireAuth,
+  asyncHandler(async (req: Request, res: Response) => {
+    const { sessionId } = req.params;
+    const session = await prisma.authSession.findFirst({
+      where: { id: sessionId, userId: req.user!.id },
+    });
+    if (!session) return res.status(404).json({ error: 'Session not found' });
 
-  const { score, flags } = await assessSessionRisk(sessionId, req.user!.id);
-  const level = score >= 0.6 ? 'high' : score >= 0.3 ? 'medium' : 'low';
+    const { score, flags } = await assessSessionRisk(sessionId, req.user!.id);
+    const level = score >= 0.6 ? 'high' : score >= 0.3 ? 'medium' : 'low';
 
-  res.json({
-    riskScore: Math.round(score * 100) / 100,
-    riskLevel: level,
-    flags: flags.map((f) => f.flag),
-    lastAssessment: new Date().toISOString(),
-  });
-});
+    res.json({
+      riskScore: Math.round(score * 100) / 100,
+      riskLevel: level,
+      flags: flags.map((f) => f.flag),
+      lastAssessment: new Date().toISOString(),
+    });
+  }),
+);
 
-authSecurityRouter.get('/events', requireAuth, async (req: Request, res: Response) => {
-  const events = await prisma.authEvent.findMany({
-    where: {
-      userId: req.user!.id,
-      eventType: {
-        in: ['failed_verify', 'failed_challenge', 'session_revoked', 'access_denied', 'token_rotated'],
+authSecurityRouter.get(
+  '/events',
+  requireAuth,
+  asyncHandler(async (req: Request, res: Response) => {
+    const events = await prisma.authEvent.findMany({
+      where: {
+        userId: req.user!.id,
+        eventType: {
+          in: [
+            'failed_verify',
+            'failed_challenge',
+            'session_revoked',
+            'access_denied',
+            'token_rotated',
+          ],
+        },
       },
-    },
-    orderBy: { createdAt: 'desc' },
-    take: 50,
-  });
-  res.json({ events });
-});
+      orderBy: { createdAt: 'desc' },
+      take: 50,
+    });
+    res.json({ events });
+  }),
+);
 
-authSecurityRouter.get('/overview', requireAuth, requireRole('admin'), async (_req, res) => {
-  const since24h = new Date(Date.now() - 24 * 3600 * 1000);
+authSecurityRouter.get(
+  '/overview',
+  requireAuth,
+  requireRole('admin'),
+  asyncHandler(async (_req, res) => {
+    const since24h = new Date(Date.now() - 24 * 3600 * 1000);
 
-  const [totalUsers, activeSessions, failedLogins] = await Promise.all([
-    prisma.walletUser.count({ where: { isActive: true } }),
-    prisma.authSession.count({ where: { isActive: true } }),
-    prisma.authEvent.count({ where: { eventType: 'failed_verify', createdAt: { gte: since24h } } }),
-  ]);
+    const [totalUsers, activeSessions, failedLogins] = await Promise.all([
+      prisma.walletUser.count({ where: { isActive: true } }),
+      prisma.authSession.count({ where: { isActive: true } }),
+      prisma.authEvent.count({
+        where: { eventType: 'failed_verify', createdAt: { gte: since24h } },
+      }),
+    ]);
 
-  // Find sessions with risk flags (multiple IPs in last hour)
-  const suspiciousUsers = await prisma.authEvent.groupBy({
-    by: ['userId'],
-    where: { eventType: 'login', createdAt: { gte: since24h } },
-    _count: { ipAddress: true },
-    having: { ipAddress: { _count: { gt: 2 } } },
-  });
+    // Find sessions with risk flags (multiple IPs in last hour)
+    const suspiciousUsers = await prisma.authEvent.groupBy({
+      by: ['userId'],
+      where: { eventType: 'login', createdAt: { gte: since24h } },
+      _count: { ipAddress: true },
+      having: { ipAddress: { _count: { gt: 2 } } },
+    });
 
-  res.json({
-    totalUsers,
-    activeSessions,
-    failedLogins24h: failedLogins,
-    flaggedSessions: suspiciousUsers.length,
-    suspiciousPatterns: suspiciousUsers.length > 0 ? ['multiple_ips'] : [],
-  });
-});
+    res.json({
+      totalUsers,
+      activeSessions,
+      failedLogins24h: failedLogins,
+      flaggedSessions: suspiciousUsers.length,
+      suspiciousPatterns: suspiciousUsers.length > 0 ? ['multiple_ips'] : [],
+    });
+  }),
+);

@@ -1,5 +1,6 @@
 import { PrismaClient } from '@prisma/client';
 import { prismaRead, prismaWrite } from '../db';
+import { replicaLagCheckErrors } from '../metrics';
 
 /** Ledgers behind primary before we fall back to the write node (~10 s). */
 export const LAG_THRESHOLD_LEDGERS = 2;
@@ -12,8 +13,11 @@ let cacheExpiresAt = 0;
 
 /**
  * Query the replica for its latest indexed ledger and compare to the primary.
- * Returns the lag in ledgers (primary − replica). Returns 0 on any error so
- * we don't unnecessarily fall back when the check itself fails.
+ * Returns the lag in ledgers (primary − replica).
+ *
+ * On any error the function returns LAG_THRESHOLD_LEDGERS + 1 so that
+ * getReadClient always selects the primary when replica health is unknown.
+ * This avoids serving potentially stale data from a degraded replica.
  */
 export async function measureReplicaLag(
   read: PrismaClient = prismaRead,
@@ -32,7 +36,9 @@ export async function measureReplicaLag(
     const replicaLedger = replicaState?.lastLedger ?? 0;
     cachedLag = Math.max(0, primaryLedger - replicaLedger);
   } catch {
-    cachedLag = 0; // fail-open: don't force primary on measurement error
+    // Replica health is unknown — force primary to avoid serving stale data.
+    replicaLagCheckErrors.inc();
+    cachedLag = LAG_THRESHOLD_LEDGERS + 1;
   }
 
   cacheExpiresAt = now + CACHE_TTL_MS;

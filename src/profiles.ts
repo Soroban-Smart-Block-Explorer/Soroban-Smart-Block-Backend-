@@ -80,7 +80,73 @@ const PROFILES: Record<NetworkName, NetworkProfile> = {
   },
 };
 
-/** Return the profile for `name`, throwing if unknown. */
+// ─── Profile validation ───────────────────────────────────────────────────────
+
+function isHttpUrl(s: string): boolean {
+  return s.startsWith('https://') || s.startsWith('http://');
+}
+
+function isWsUrl(s: string): boolean {
+  return s.startsWith('wss://') || s.startsWith('ws://');
+}
+
+function isDbUrl(s: string): boolean {
+  return s.startsWith('postgresql://') || s.startsWith('postgres://');
+}
+
+/**
+ * Validates that a profile's critical URLs are present and well-formed.
+ * Throws with an actionable message on the first violation found.
+ */
+export function validateProfile(profile: NetworkProfile): void {
+  const { name, databaseUrl, rpcUrl, rpcWsUrl, horizonUrl } = profile;
+
+  // ── Required fields ──────────────────────────────────────────────────────
+  if (!databaseUrl) {
+    throw new Error(
+      `[${name}] databaseUrl is required. Set ${name.toUpperCase()}_DATABASE_URL.`,
+    );
+  }
+  if (!rpcUrl) {
+    throw new Error(`[${name}] rpcUrl is required. Set ${name.toUpperCase()}_RPC_URL.`);
+  }
+  if (!rpcWsUrl) {
+    throw new Error(`[${name}] rpcWsUrl is required. Set ${name.toUpperCase()}_RPC_WS_URL.`);
+  }
+
+  // ── URL protocol validation ───────────────────────────────────────────────
+  if (!isDbUrl(databaseUrl)) {
+    throw new Error(
+      `[${name}] databaseUrl must begin with postgresql:// or postgres://, got: "${databaseUrl.slice(0, 30)}"`,
+    );
+  }
+  if (!isHttpUrl(rpcUrl)) {
+    throw new Error(
+      `[${name}] rpcUrl must begin with https:// or http://, got: "${rpcUrl.slice(0, 30)}"`,
+    );
+  }
+  if (!isWsUrl(rpcWsUrl)) {
+    throw new Error(
+      `[${name}] rpcWsUrl must begin with wss:// or ws://, got: "${rpcWsUrl.slice(0, 30)}"`,
+    );
+  }
+  if (horizonUrl && !isHttpUrl(horizonUrl)) {
+    throw new Error(
+      `[${name}] horizonUrl must begin with https:// or http://, got: "${horizonUrl.slice(0, 30)}"`,
+    );
+  }
+
+  // ── Network profile consistency ───────────────────────────────────────────
+  if (name === 'mainnet') {
+    if (rpcUrl.includes('testnet') || horizonUrl.includes('testnet')) {
+      throw new Error(
+        `[mainnet] rpcUrl or horizonUrl appears to point to testnet infrastructure.`,
+      );
+    }
+  }
+}
+
+/** Return the profile for `name`, throwing if unknown or misconfigured. */
 export function getProfile(name: string): NetworkProfile {
   const profile = PROFILES[name as NetworkName];
   if (!profile) {
@@ -88,6 +154,7 @@ export function getProfile(name: string): NetworkProfile {
       `Unknown STELLAR_NETWORK "${name}". Valid values: ${Object.keys(PROFILES).join(', ')}`,
     );
   }
+  validateProfile(profile);
   return profile;
 }
 

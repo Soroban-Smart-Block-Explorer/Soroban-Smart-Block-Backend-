@@ -4,6 +4,7 @@ import crypto from 'crypto';
 import { Prisma } from '@prisma/client';
 import { prismaWrite, prismaRead } from '../../db';
 import { asyncHandler } from '../../middleware/asyncHandler';
+import { invalidateKeyCache } from '../../middleware/apiKeyAuth';
 
 export const keysRouter = Router();
 
@@ -28,6 +29,11 @@ function generateApiKey(): { raw: string; prefix: string; hash: string } {
   const prefix = raw.slice(0, 8);
   const hash = crypto.createHash('sha256').update(raw).digest('hex');
   return { raw, prefix, hash };
+}
+
+/** Evict a key record from the auth cache using the stored hash. */
+function evictFromCache(keyHash: string): void {
+  invalidateKeyCache(keyHash);
 }
 
 // POST /developer/keys
@@ -137,6 +143,7 @@ keysRouter.patch(
 
     const existing = await prismaRead.devApiKey.findFirst({
       where: { id: req.params.id, developerId },
+      select: { id: true, keyHash: true },
     });
     if (!existing) return res.status(404).json({ error: 'API key not found' });
 
@@ -165,6 +172,9 @@ keysRouter.patch(
       },
     });
 
+    // Invalidate cache so updated permissions/IPs take effect immediately
+    evictFromCache(existing.keyHash);
+
     res.json(key);
   }),
 );
@@ -177,6 +187,7 @@ keysRouter.delete(
 
     const existing = await prismaRead.devApiKey.findFirst({
       where: { id: req.params.id, developerId },
+      select: { id: true, keyHash: true },
     });
     if (!existing) return res.status(404).json({ error: 'API key not found' });
 
@@ -184,6 +195,11 @@ keysRouter.delete(
       where: { id: req.params.id },
       data: { status: 'revoked' },
     });
+
+    // Invalidate cache immediately so the revoked key is rejected on the
+    // very next request rather than staying valid for up to KEY_CACHE_TTL ms.
+    evictFromCache(existing.keyHash);
+
     res.status(204).end();
   }),
 );
@@ -196,6 +212,15 @@ keysRouter.post(
 
     const existing = await prismaRead.devApiKey.findFirst({
       where: { id: req.params.id, developerId },
+      select: {
+        id: true,
+        name: true,
+        keyHash: true,
+        permissions: true,
+        allowedIps: true,
+        allowedDomains: true,
+        developerId: true,
+      },
     });
     if (!existing) return res.status(404).json({ error: 'API key not found' });
 
@@ -204,11 +229,14 @@ keysRouter.post(
       data: { status: 'expired', expiresAt: new Date() },
     });
 
+    // Evict the old key from cache before creating the replacement
+    evictFromCache(existing.keyHash);
+
     const { raw, prefix, hash } = generateApiKey();
 
     const newKey = await prismaWrite.devApiKey.create({
       data: {
-        developerId,
+        developerId: existing.developerId,
         name: existing.name + ' (rotated)',
         keyPrefix: prefix,
         keyHash: hash,

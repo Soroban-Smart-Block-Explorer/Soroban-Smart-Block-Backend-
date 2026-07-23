@@ -4,7 +4,7 @@ RUN apt-get update -qq && apt-get install -y -qq openssl ca-certificates > /dev/
 WORKDIR /app
 COPY package*.json ./
 COPY prisma/schema.prisma ./prisma/schema.prisma
-RUN npm ci && npm audit || true
+RUN npm ci && npm audit --audit-level=high
 COPY . .
 RUN npx prisma generate
 RUN npm run build
@@ -15,7 +15,7 @@ RUN apt-get update -qq && apt-get install -y -qq curl ca-certificates gnupg lsb-
     trivy --version && \
     rm -rf /var/lib/apt/lists/*
 COPY --from=builder /app /app
-RUN trivy filesystem --exit-code 1 --severity CRITICAL --no-progress /app 2>&1 || echo "Trivy scan complete (some vulnerabilities found)"
+RUN trivy filesystem --exit-code 1 --severity CRITICAL --no-progress --format json --output /trivy-report.json /app
 
 FROM node:20-slim
 RUN addgroup --gid 1001 appgroup && \
@@ -27,13 +27,14 @@ RUN apt-get update -qq && apt-get install -y -qq openssl wget ca-certificates > 
 WORKDIR /app
 
 COPY package*.json ./
-RUN npm ci --omit=dev --ignore-scripts && npm audit --omit=dev || true
+RUN npm ci --omit=dev --ignore-scripts && npm audit --omit=dev --audit-level=high
 
 COPY --from=builder /app/dist ./dist
+COPY --from=builder /app/dist-esm ./dist-esm
 COPY --from=builder /app/node_modules/.prisma ./node_modules/.prisma
 COPY prisma ./prisma
 
-RUN chown -R appuser:appgroup /app
+RUN mkdir -p /app/data/p2p && chown -R appuser:appgroup /app
 
 RUN mkdir -p /tmp/.npm && chmod 1777 /tmp
 
@@ -42,5 +43,6 @@ USER appuser
 HEALTHCHECK --interval=30s --timeout=10s --start-period=15s --retries=3 \
   CMD wget --no-verbose --tries=1 --spider http://localhost:3000/health || exit 1
 
-EXPOSE 3000
+# 4001: libp2p listen port (P2P_LISTEN_ADDR), only relevant when P2P_ENABLED=true.
+EXPOSE 3000 4001
 CMD ["node", "dist/index.js"]

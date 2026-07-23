@@ -8,6 +8,14 @@
 import { Router, Request, Response } from 'express';
 import { prismaRead as prisma } from '../db';
 import { getLatestLedger } from '../indexer/rpc';
+import { asyncHandler } from '../middleware/asyncHandler';
+
+/**
+ * @swagger
+ * tags:
+ *   name: Sync State
+ *   description: Indexer synchronisation status
+ */
 
 export const syncStateRouter = Router();
 
@@ -33,10 +41,9 @@ export async function getSyncState(): Promise<{
   };
 }
 
-syncStateRouter.get('/', async (_req: Request, res: Response) => {
-  try {
+syncStateRouter.get(
+  '/',
+  asyncHandler(async (_req: Request, res: Response) => {
     res.json(await getSyncState());
-  } catch (e) {
-    res.status(500).json({ error: String(e) });
-  }
-});
+  }),
+);

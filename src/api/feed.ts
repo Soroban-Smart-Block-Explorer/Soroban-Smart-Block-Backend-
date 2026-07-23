@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { z } from 'zod';
 import { ChannelManager } from '../feed/channelManager';
 import { SubscriptionManager } from '../feed/subscriptionManager';
-import { prisma } from '../db';
+import { prismaRead as prisma } from '../db';
 
 const router = Router();
 

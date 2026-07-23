@@ -127,8 +127,9 @@ const listSchema = z.object({
 // GET /transactions
 // Cursor mode:  ?cursor=<ledger>&limit=20&contract=...
 // Offset mode:  ?page=2&limit=20&contract=...
-transactionRouter.get('/', async (req: Request, res: Response) => {
-  try {
+transactionRouter.get(
+  '/',
+  asyncHandler(async (req: Request, res: Response) => {
     const q = listSchema.parse(req.query);
 
     const where: any = {
@@ -175,10 +176,8 @@ transactionRouter.get('/', async (req: Request, res: Response) => {
     ]);
 
     res.json({ data, total, page: q.page, limit: q.limit, pages: Math.ceil(total / q.limit) });
-  } catch (e) {
-    res.status(400).json({ error: String(e) });
-  }
-});
+  }),
+);
 
 /**
  * @swagger

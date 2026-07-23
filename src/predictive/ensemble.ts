@@ -1,10 +1,10 @@
-import { IForecastingModel, ForecastResult, ArimaMock, XgboostMock, LstmMock } from './models';
+import { IForecastingModel, ForecastResult } from './models';
 
 export class EnsembleForecaster {
   private models: IForecastingModel[];
 
-  constructor() {
-    this.models = [new ArimaMock(), new XgboostMock(), new LstmMock()];
+  constructor(models?: IForecastingModel[]) {
+    this.models = models ?? [];
   }
 
   public trainAll(historicalData: number[], features?: Record<string, number[]>) {
@@ -13,14 +13,17 @@ export class EnsembleForecaster {
     }
   }
 
-  public predict(horizon: number, recentData: number[], confidenceLevel = 0.95): ForecastResult[] {
-    // Generate predictions from all models
-    const allPredictions = this.models.map((m) => m.predict(horizon, recentData));
+  public predict(
+    horizon: number,
+    recentData: number[],
+    confidenceLevel = 0.95,
+    referenceDate: Date = new Date(),
+  ): ForecastResult[] {
+    const allPredictions = this.models.map((m) =>
+      m.predict(horizon, recentData, undefined, referenceDate),
+    );
 
-    // Calculate ensemble weights based on mocked Bayesian optimization / recent accuracy
-    // For simplicity, we just average them
     const weights = this.models.map(() => 1 / this.models.length);
-
     const ensembleResults: ForecastResult[] = [];
 
     for (let i = 0; i < horizon; i++) {
@@ -35,10 +38,7 @@ export class EnsembleForecaster {
         if (pred.upperBound > maxUpper) maxUpper = pred.upperBound;
       }
 
-      // Conformal prediction interval simulation based on confidenceLevel
-      // We widen the bounds if confidenceLevel is higher (e.g. 0.99)
       const multiplier = confidenceLevel / 0.95;
-
       const center = weightedPrediction;
       const lower = center - (center - minLower) * multiplier;
       const upper = center + (maxUpper - center) * multiplier;

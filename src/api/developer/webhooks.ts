@@ -4,19 +4,38 @@ import crypto from 'crypto';
 import { Prisma } from '@prisma/client';
 import { prismaWrite, prismaRead } from '../../db';
 import { asyncHandler } from '../../middleware/asyncHandler';
+import { redactSensitiveData } from '../../webhooks/redaction';
 
 export const devWebhooksRouter = Router();
 
+const isAllowedUrl = (raw: string): boolean => {
+  try {
+    const parsed = new URL(raw);
+    const isLocal =
+      parsed.hostname === 'localhost' ||
+      parsed.hostname === '127.0.0.1' ||
+      parsed.hostname === '::1';
+    return parsed.protocol === 'https:' || (isLocal && process.env.NODE_ENV !== 'production');
+  } catch {
+    return false;
+  }
+};
+
+const httpsUrl = z
+  .string()
+  .url()
+  .refine(isAllowedUrl, { message: 'Webhook URL must use HTTPS' });
+
 const createWebhookSchema = z.object({
   developerId: z.string(),
-  url: z.string().url(),
+  url: httpsUrl,
   events: z.array(z.string()).min(1),
   retryPolicy: z.object({ maxRetries: z.number().int(), backoffMs: z.number().int() }).optional(),
   headers: z.record(z.string()).optional(),
 });
 
 const updateWebhookSchema = z.object({
-  url: z.string().url().optional(),
+  url: httpsUrl.optional(),
   events: z.array(z.string()).optional(),
   active: z.boolean().optional(),
   retryPolicy: z.object({ maxRetries: z.number().int(), backoffMs: z.number().int() }).optional(),
@@ -132,6 +151,8 @@ devWebhooksRouter.post(
     const payload = { type: 'test', timestamp: new Date().toISOString(), webhookId: webhook.id };
     const start = Date.now();
 
+    const expiresAt = new Date(Date.now() + webhook.responseRetentionDays * 24 * 60 * 60 * 1000);
+
     const delivery = await prismaWrite.devWebhookDelivery.create({
       data: {
         webhookId: webhook.id,
@@ -139,6 +160,7 @@ devWebhooksRouter.post(
         payload,
         attempt: 1,
         delivered: false,
+        expiresAt,
       },
       select: { id: true, eventType: true, createdAt: true },
     });
@@ -157,6 +179,11 @@ devWebhooksRouter.post(
       });
 
       const durationMs = Date.now() - start;
+      const rawResponseBody = String(response.data);
+      const processedResponseBody = webhook.storeResponseBody
+        ? redactSensitiveData(rawResponseBody.slice(0, 500))
+        : null;
+
       await prismaWrite.devWebhookDelivery.update({
         where: { id: delivery.id },
         data: {
@@ -164,7 +191,7 @@ devWebhooksRouter.post(
           delivered: response.status < 300,
           durationMs,
           deliveredAt: new Date(),
-          responseBody: String(response.data).slice(0, 500),
+          responseBody: processedResponseBody,
         },
       });
       await prismaWrite.devWebhook.update({
@@ -179,9 +206,13 @@ devWebhooksRouter.post(
     } catch (err: unknown) {
       const durationMs = Date.now() - start;
       const msg = err instanceof Error ? err.message : String(err);
+      const processedError = webhook.storeResponseBody
+        ? redactSensitiveData(msg.slice(0, 500))
+        : null;
+
       await prismaWrite.devWebhookDelivery.update({
         where: { id: delivery.id },
-        data: { delivered: false, durationMs, responseBody: msg.slice(0, 500) },
+        data: { delivered: false, durationMs, responseBody: processedError },
       });
       await prismaWrite.devWebhook.update({
         where: { id: webhook.id },
@@ -197,6 +228,9 @@ devWebhooksRouter.get(
   '/:id/deliveries',
   asyncHandler(async (req: Request, res: Response) => {
     const { developerId } = z.object({ developerId: z.string() }).parse(req.query);
+    const { includeResponseBody } = z
+      .object({ includeResponseBody: z.enum(['true', 'false']).optional() })
+      .parse(req.query);
 
     const webhook = await prismaRead.devWebhook.findFirst({
       where: { id: req.params.id, developerId },
@@ -209,7 +243,21 @@ devWebhooksRouter.get(
       take: 50,
     });
 
-    res.json({ data: deliveries });
+    // Exclude responseBody by default for security; only include if explicitly requested
+    const sanitizedDeliveries = deliveries.map((d) => {
+      if (includeResponseBody === 'true') {
+        // User explicitly requested response body - include but potentially redacted
+        return {
+          ...d,
+          responseBody: d.responseBody ? redactSensitiveData(d.responseBody) : null,
+        };
+      }
+      // Exclude responseBody by default
+      const { responseBody: _responseBody, ...rest } = d;
+      return rest;
+    });
+
+    res.json({ data: sanitizedDeliveries });
   }),
 );
 

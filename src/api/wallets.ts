@@ -4,6 +4,7 @@ import { z } from 'zod';
 import { validateAddressParam } from '../middleware/sanitize';
 import axios from 'axios';
 import { config } from '../config';
+import { asyncHandler } from '../middleware/asyncHandler';
 
 /**
  * @swagger
@@ -90,35 +91,31 @@ const paginationSchema = z.object({
 walletRouter.get(
   '/:address/transactions',
   validateAddressParam('address'),
-  async (req: Request, res: Response) => {
-    try {
-      const { page, limit } = paginationSchema.parse(req.query);
-      const skip = (page - 1) * limit;
+  asyncHandler(async (req: Request, res: Response) => {
+    const { page, limit } = paginationSchema.parse(req.query);
+    const skip = (page - 1) * limit;
 
-      const [transactions, total] = await Promise.all([
-        prisma.transaction.findMany({
-          where: { sourceAccount: req.params.address },
-          orderBy: { ledgerSequence: 'desc' },
-          skip,
-          take: limit,
-          select: {
-            hash: true,
-            ledgerSequence: true,
-            ledgerCloseTime: true,
-            contractAddress: true,
-            functionName: true,
-            status: true,
-            humanReadable: true,
-          },
-        }),
-        prisma.transaction.count({ where: { sourceAccount: req.params.address } }),
-      ]);
+    const [transactions, total] = await Promise.all([
+      prisma.transaction.findMany({
+        where: { sourceAccount: req.params.address },
+        orderBy: { ledgerSequence: 'desc' },
+        skip,
+        take: limit,
+        select: {
+          hash: true,
+          ledgerSequence: true,
+          ledgerCloseTime: true,
+          contractAddress: true,
+          functionName: true,
+          status: true,
+          humanReadable: true,
+        },
+      }),
+      prisma.transaction.count({ where: { sourceAccount: req.params.address } }),
+    ]);
 
-      res.json({ data: transactions, total, page, limit });
-    } catch (e) {
-      res.status(400).json({ error: String(e) });
-    }
-  },
+    res.json({ data: transactions, total, page, limit });
+  }),
 );
 
 /**
@@ -172,40 +169,36 @@ walletRouter.get(
 walletRouter.get(
   '/:address/events',
   validateAddressParam('address'),
-  async (req: Request, res: Response) => {
-    try {
-      const { page, limit } = paginationSchema.parse(req.query);
-      const skip = (page - 1) * limit;
-      const address = req.params.address;
+  asyncHandler(async (req: Request, res: Response) => {
+    const { page, limit } = paginationSchema.parse(req.query);
+    const skip = (page - 1) * limit;
+    const address = req.params.address;
 
-      // Fetch events where decoded JSON contains this address as from/to
-      const [events, total] = await Promise.all([
-        prisma.event.findMany({
-          where: {
-            OR: [
-              { decoded: { path: ['from'], equals: address } },
-              { decoded: { path: ['to'], equals: address } },
-            ],
-          },
-          orderBy: { ledgerSequence: 'desc' },
-          skip,
-          take: limit,
-        }),
-        prisma.event.count({
-          where: {
-            OR: [
-              { decoded: { path: ['from'], equals: address } },
-              { decoded: { path: ['to'], equals: address } },
-            ],
-          },
-        }),
-      ]);
+    // Fetch events where decoded JSON contains this address as from/to
+    const [events, total] = await Promise.all([
+      prisma.event.findMany({
+        where: {
+          OR: [
+            { decoded: { path: ['from'], equals: address } },
+            { decoded: { path: ['to'], equals: address } },
+          ],
+        },
+        orderBy: { ledgerSequence: 'desc' },
+        skip,
+        take: limit,
+      }),
+      prisma.event.count({
+        where: {
+          OR: [
+            { decoded: { path: ['from'], equals: address } },
+            { decoded: { path: ['to'], equals: address } },
+          ],
+        },
+      }),
+    ]);
 
-      res.json({ data: events, total, page, limit });
-    } catch (e) {
-      res.status(400).json({ error: String(e) });
-    }
-  },
+    res.json({ data: events, total, page, limit });
+  }),
 );
 
 /**
@@ -305,8 +298,9 @@ walletRouter.get(
  *                 error: 'limit must be less than or equal to 100'
  */
 // GET /wallets/:address/history — unified Soroban + classic Stellar history
-walletRouter.get('/:address/history', async (req: Request, res: Response) => {
-  try {
+walletRouter.get(
+  '/:address/history',
+  asyncHandler(async (req: Request, res: Response) => {
     const { page, limit } = paginationSchema.parse(req.query);
     const address = req.params.address;
 
@@ -373,10 +367,8 @@ walletRouter.get('/:address/history', async (req: Request, res: Response) => {
     const paginated = merged.slice(skip, skip + limit);
 
     res.json({ data: paginated, total: merged.length, page, limit });
-  } catch (e) {
-    res.status(400).json({ error: String(e) });
-  }
-});
+  }),
+);
 
 async function fetchHorizonOperations(address: string, limit: number): Promise<any[]> {
   try {

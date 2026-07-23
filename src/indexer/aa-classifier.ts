@@ -457,3 +457,100 @@ function shorten(addr: string): string {
   if (addr.length <= 12) return addr;
   return `${addr.slice(0, 6)}…${addr.slice(-4)}`;
 }
+
+// ── extractAuthData ───────────────────────────────────────────────────────────
+
+export interface ExtractedAuthData {
+  signers: string[];
+  contractAddresses: string[];
+  functionNames: string[];
+  depth: number;
+  hasContractAuth: boolean;
+}
+
+/**
+ * Parse a base64 XDR transaction envelope and extract all authentication data
+ * (signers, contract addresses, called function names, tree depth).
+ */
+export function extractAuthData(rawXdr: string): ExtractedAuthData {
+  const envelope = xdr.TransactionEnvelope.fromXDR(rawXdr, 'base64');
+
+  let operations: xdr.Operation[];
+  if (envelope.switch().name === 'envelopeTypeTxFeeBump') {
+    operations = envelope.feeBump().tx().innerTx().v1().tx().operations();
+  } else if (envelope.switch().name === 'envelopeTypeTx') {
+    operations = envelope.v1().tx().operations();
+  } else {
+    operations = (envelope as any).v0().tx().operations();
+  }
+
+  const signers = new Set<string>();
+  const contractAddresses = new Set<string>();
+  const functionNames = new Set<string>();
+  let hasContractAuth = false;
+  let maxDepth = 0;
+
+  function walkInvocation(node: xdr.SorobanAuthorizedInvocation, depth: number): void {
+    maxDepth = Math.max(maxDepth, depth);
+    const fn = node.function();
+    if (fn.switch().name === 'sorobanAuthorizedFunctionTypeContractFn') {
+      const contractFn = fn.contractFn();
+      functionNames.add(contractFn.functionName().toString());
+      const addr = contractFn.contractAddress();
+      if (addr.switch().name === 'scAddressTypeContract') {
+        contractAddresses.add(StrKey.encodeContract(addr.contractId()));
+      }
+    }
+    for (const sub of node.subInvocations()) walkInvocation(sub, depth + 1);
+  }
+
+  for (const op of operations) {
+    if (op.body().switch().name !== 'invokeHostFunction') continue;
+    for (const authEntry of op.body().invokeHostFunctionOp().auth()) {
+      const creds = authEntry.credentials();
+      if (creds.switch().name === 'sorobanCredentialsAddress') {
+        const addr = creds.address().address();
+        if (addr.switch().name === 'scAddressTypeAccount') {
+          signers.add(StrKey.encodeEd25519PublicKey(addr.accountId().ed25519()));
+        } else if (addr.switch().name === 'scAddressTypeContract') {
+          contractAddresses.add(StrKey.encodeContract(addr.contractId()));
+          hasContractAuth = true;
+        }
+      }
+      walkInvocation(authEntry.rootInvocation(), 1);
+    }
+  }
+
+  return {
+    signers: [...signers],
+    contractAddresses: [...contractAddresses],
+    functionNames: [...functionNames],
+    depth: maxDepth,
+    hasContractAuth,
+  };
+}
+
+// ── flattenAuthTree ───────────────────────────────────────────────────────────
+
+export interface FlatAuthNode {
+  depth: number;
+  contractAddress: string;
+  functionName: string;
+}
+
+/**
+ * Recursively flatten a ParsedAuth[] tree into an ordered list of
+ * {depth, contractAddress, functionName} nodes for call-trace rendering.
+ */
+export function flattenAuthTree(entries: import('./xdr-parser').ParsedAuth[]): FlatAuthNode[] {
+  const result: FlatAuthNode[] = [];
+
+  function walk(subs: import('./xdr-parser').ParsedAuth['subInvocations'], depth: number): void {
+    for (const sub of subs) {
+      result.push({ depth, contractAddress: sub.contractId, functionName: sub.functionName });
+    }
+  }
+
+  for (const entry of entries) walk(entry.subInvocations, 1);
+  return result;
+}

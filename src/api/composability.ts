@@ -149,6 +149,73 @@ async function analyzeAndPersist(
   return { composed, patterns, verification, safetyScore, riskLevel, callGraph };
 }
 
+/**
+ * @swagger
+ * /api/v1/composability/analyze:
+ *   post:
+ *     tags: [Composability]
+ *     summary: Analyse a composed transaction's call graph
+ *     description: Classifies patterns, scores safety, persists results, and broadcasts WebSocket events. If an exploit is detected a CompositionAlert is also created and broadcast.
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [txHash, contractCalls]
+ *             properties:
+ *               txHash: { type: string }
+ *               ledgerSeq: { type: integer, default: 0 }
+ *               timestamp: { type: string, format: date-time }
+ *               contractCalls:
+ *                 type: array
+ *                 items:
+ *                   type: object
+ *                   required: [from, to, method]
+ *                   properties:
+ *                     from: { type: string }
+ *                     to: { type: string }
+ *                     method: { type: string }
+ *                     args: { type: array, items: {} }
+ *           example:
+ *             txHash: "3389e9f0f1a4e32477b1c0d9e8a6f5b4c3d2e1f0a9b8c7d6e5f40312233445566"
+ *             ledgerSeq: 3168075
+ *             contractCalls:
+ *               - { from: "GBZXN7PIRZGNMHGA7MUUUF4GWPY5AYPV6LY4UV2GL6VJGIQRXFDNMADI", to: "CALLD5GHXR4QSTKHSWQEK4UVMHM4QHU4KZ5G4SBKWY7C7TXKZ45RJ4M5", method: "swap", args: ["1000000000"] }
+ *     responses:
+ *       200:
+ *         description: Analysis result with safety score, detected patterns, and call graph
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 txHash: { type: string }
+ *                 safetyScore: { type: number }
+ *                 riskLevel: { type: string }
+ *                 patterns: { type: array, items: { type: object } }
+ *                 verification: { type: object }
+ *                 callGraph: { type: object }
+ *             example:
+ *               txHash: "3389e9f0f1a4e32477b1c0d9e8a6f5b4c3d2e1f0a9b8c7d6e5f40312233445566"
+ *               safetyScore: 85.5
+ *               riskLevel: "low_risk"
+ *               patterns: []
+ *               verification: { atomicity: true, reentrancyFree: true, scores: { total: 85.5 } }
+ *               callGraph: { nodes: [{ address: "CALLD5GHXR4QSTKHSWQEK4UVMHM4QHU4KZ5G4SBKWY7C7TXKZ45RJ4M5" }], edges: [] }
+ *       400:
+ *         description: Validation error
+ *         content:
+ *           application/json:
+ *             schema: { $ref: '#/components/schemas/ZodValidationError' }
+ *             example: { error: [{ code: "invalid_type", path: ["txHash"], message: "Required" }] }
+ *       500:
+ *         description: Internal server error
+ *         content:
+ *           application/json:
+ *             schema: { $ref: '#/components/schemas/Error' }
+ *             example: { error: "Database connection failed" }
+ */
 // ── POST /analyze ─────────────────────────────────────────────────────────────
 composabilityRouter.post('/analyze', async (req: Request, res: Response) => {
   try {
@@ -174,6 +241,73 @@ composabilityRouter.post('/analyze', async (req: Request, res: Response) => {
   }
 });
 
+/**
+ * @swagger
+ * /api/v1/composability/analyze/batch:
+ *   post:
+ *     tags: [Composability]
+ *     summary: Analyse multiple composed transactions in one request
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: array
+ *             items:
+ *               type: object
+ *               required: [txHash, contractCalls]
+ *               properties:
+ *                 txHash: { type: string }
+ *                 ledgerSeq: { type: integer }
+ *                 timestamp: { type: string, format: date-time }
+ *                 contractCalls:
+ *                   type: array
+ *                   items:
+ *                     type: object
+ *                     required: [from, to, method]
+ *                     properties:
+ *                       from: { type: string }
+ *                       to: { type: string }
+ *                       method: { type: string }
+ *                       args: { type: array, items: {} }
+ *           example:
+ *             - txHash: "3389e9f0f1a4e32477b1c0d9e8a6f5b4c3d2e1f0a9b8c7d6e5f40312233445566"
+ *               contractCalls: [{ from: "GBZXN7PIRZGNMHGA7MUUUF4GWPY5AYPV6LY4UV2GL6VJGIQRXFDNMADI", to: "CALLD5GHXR4QSTKHSWQEK4UVMHM4QHU4KZ5G4SBKWY7C7TXKZ45RJ4M5", method: "swap" }]
+ *     responses:
+ *       200:
+ *         description: Summary results for each transaction
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 processed: { type: integer }
+ *                 results:
+ *                   type: array
+ *                   items:
+ *                     type: object
+ *                     properties:
+ *                       txHash: { type: string }
+ *                       safetyScore: { type: number }
+ *                       riskLevel: { type: string }
+ *                       patternCount: { type: integer }
+ *             example:
+ *               processed: 1
+ *               results:
+ *                 - { txHash: "3389e9f0f1a4e32477b1c0d9e8a6f5b4c3d2e1f0a9b8c7d6e5f40312233445566", safetyScore: 85.5, riskLevel: "low_risk", patternCount: 0 }
+ *       400:
+ *         description: Validation error
+ *         content:
+ *           application/json:
+ *             schema: { $ref: '#/components/schemas/ZodValidationError' }
+ *             example: { error: [{ code: "invalid_type", path: [0, "txHash"], message: "Required" }] }
+ *       500:
+ *         description: Internal server error
+ *         content:
+ *           application/json:
+ *             schema: { $ref: '#/components/schemas/Error' }
+ *             example: { error: "Database connection failed" }
+ */
 // ── POST /analyze/batch ───────────────────────────────────────────────────────
 composabilityRouter.post('/analyze/batch', async (req: Request, res: Response) => {
   try {
@@ -202,6 +336,38 @@ composabilityRouter.post('/analyze/batch', async (req: Request, res: Response) =
   }
 });
 
+/**
+ * @swagger
+ * /api/v1/composability/transactions/{txHash}:
+ *   get:
+ *     tags: [Composability]
+ *     summary: Composed transaction with detected pattern instances
+ *     parameters:
+ *       - in: path
+ *         name: txHash
+ *         required: true
+ *         schema: { type: string }
+ *         example: "3389e9f0f1a4e32477b1c0d9e8a6f5b4c3d2e1f0a9b8c7d6e5f40312233445566"
+ *     responses:
+ *       200:
+ *         description: ComposedTransaction including nested pattern instances and patterns
+ *         content:
+ *           application/json:
+ *             schema: { allOf: [{ $ref: '#/components/schemas/ComposedTransaction' }] }
+ *             example: { id: "clz9q1x4t0000s6h2comptx01", txHash: "3389e9f0f1a4e32477b1c0d9e8a6f5b4c3d2e1f0a9b8c7d6e5f40312233445566", ledgerSeq: 3168075, safetyScore: 85.5, riskLevel: "low_risk", analysisStatus: "completed", patterns: [], createdAt: "2026-06-19T07:24:26.000Z" }
+ *       404:
+ *         description: Transaction not found
+ *         content:
+ *           application/json:
+ *             schema: { $ref: '#/components/schemas/Error' }
+ *             example: { error: "Not found" }
+ *       500:
+ *         description: Internal server error
+ *         content:
+ *           application/json:
+ *             schema: { $ref: '#/components/schemas/Error' }
+ *             example: { error: "Internal server error" }
+ */
 // ── GET /transactions/:txHash ─────────────────────────────────────────────────
 composabilityRouter.get(
   '/transactions/:txHash',
@@ -215,6 +381,38 @@ composabilityRouter.get(
   }),
 );
 
+/**
+ * @swagger
+ * /api/v1/composability/contracts/{address}:
+ *   get:
+ *     tags: [Composability]
+ *     summary: Composability profile for a contract
+ *     parameters:
+ *       - in: path
+ *         name: address
+ *         required: true
+ *         schema: { type: string }
+ *         example: "CALLD5GHXR4QSTKHSWQEK4UVMHM4QHU4KZ5G4SBKWY7C7TXKZ45RJ4M5"
+ *     responses:
+ *       200:
+ *         description: Caller/callee counts, safety averages, and risk incidents
+ *         content:
+ *           application/json:
+ *             schema: { allOf: [{ $ref: '#/components/schemas/ContractComposabilityProfile' }] }
+ *             example: { id: "clz9q1x4t0000s6h2comprf01", contractAddress: "CALLD5GHXR4QSTKHSWQEK4UVMHM4QHU4KZ5G4SBKWY7C7TXKZ45RJ4M5", compositionCount: 42, uniqueCallers: 8, uniqueCallees: 3, safetyScoreAvg: 88.5, riskIncidents: 1, lastAnalyzed: "2026-06-19T07:24:26.000Z" }
+ *       404:
+ *         description: Profile not found
+ *         content:
+ *           application/json:
+ *             schema: { $ref: '#/components/schemas/Error' }
+ *             example: { error: "Not found" }
+ *       500:
+ *         description: Internal server error
+ *         content:
+ *           application/json:
+ *             schema: { $ref: '#/components/schemas/Error' }
+ *             example: { error: "Internal server error" }
+ */
 // ── GET /contracts/:address ───────────────────────────────────────────────────
 composabilityRouter.get(
   '/contracts/:address',
@@ -227,6 +425,45 @@ composabilityRouter.get(
   }),
 );
 
+/**
+ * @swagger
+ * /api/v1/composability/contracts/{address}/patterns:
+ *   get:
+ *     tags: [Composability]
+ *     summary: Pattern instances observed involving a contract
+ *     description: Matches transactions where the contract appears as a caller (from address). Returns up to 50 most recent instances.
+ *     parameters:
+ *       - in: path
+ *         name: address
+ *         required: true
+ *         schema: { type: string }
+ *         example: "CALLD5GHXR4QSTKHSWQEK4UVMHM4QHU4KZ5G4SBKWY7C7TXKZ45RJ4M5"
+ *     responses:
+ *       200:
+ *         description: Pattern instance records with embedded pattern metadata
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: array
+ *               items:
+ *                 type: object
+ *                 properties:
+ *                   id: { type: string }
+ *                   txId: { type: string }
+ *                   patternId: { type: string }
+ *                   confidence: { type: number }
+ *                   details: { type: object, nullable: true }
+ *                   createdAt: { type: string, format: date-time }
+ *                   pattern: { $ref: '#/components/schemas/CompositionPattern' }
+ *             example:
+ *               - { id: "clz9q1x4t0000s6h2cpinst01", txId: "clz9q1x4t0000s6h2comptx01", patternId: "clz9q1x4t0000s6h2comppat1", confidence: 0.92, details: null, createdAt: "2026-06-19T07:24:26.000Z", pattern: { id: "clz9q1x4t0000s6h2comppat1", name: "flash_loan_reentry", category: "reentrancy", riskRating: "critical" } }
+ *       500:
+ *         description: Internal server error
+ *         content:
+ *           application/json:
+ *             schema: { $ref: '#/components/schemas/Error' }
+ *             example: { error: "Internal server error" }
+ */
 // ── GET /contracts/:address/patterns ─────────────────────────────────────────
 composabilityRouter.get(
   '/contracts/:address/patterns',
@@ -242,6 +479,40 @@ composabilityRouter.get(
   }),
 );
 
+/**
+ * @swagger
+ * /api/v1/composability/contracts/{address}/callers:
+ *   get:
+ *     tags: [Composability]
+ *     summary: Caller count and composition partners for a contract
+ *     parameters:
+ *       - in: path
+ *         name: address
+ *         required: true
+ *         schema: { type: string }
+ *         example: "CALLD5GHXR4QSTKHSWQEK4UVMHM4QHU4KZ5G4SBKWY7C7TXKZ45RJ4M5"
+ *     responses:
+ *       200:
+ *         description: Returns zeros when no profile exists yet
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 contractAddress: { type: string }
+ *                 uniqueCallers: { type: integer }
+ *                 composedWith: { type: array, items: {} }
+ *             example:
+ *               contractAddress: "CALLD5GHXR4QSTKHSWQEK4UVMHM4QHU4KZ5G4SBKWY7C7TXKZ45RJ4M5"
+ *               uniqueCallers: 8
+ *               composedWith: []
+ *       500:
+ *         description: Internal server error
+ *         content:
+ *           application/json:
+ *             schema: { $ref: '#/components/schemas/Error' }
+ *             example: { error: "Internal server error" }
+ */
 // ── GET /contracts/:address/callers ───────────────────────────────────────────
 composabilityRouter.get(
   '/contracts/:address/callers',
@@ -257,6 +528,38 @@ composabilityRouter.get(
   }),
 );
 
+/**
+ * @swagger
+ * /api/v1/composability/contracts/{address}/callees:
+ *   get:
+ *     tags: [Composability]
+ *     summary: Callee count for a contract
+ *     parameters:
+ *       - in: path
+ *         name: address
+ *         required: true
+ *         schema: { type: string }
+ *         example: "CALLD5GHXR4QSTKHSWQEK4UVMHM4QHU4KZ5G4SBKWY7C7TXKZ45RJ4M5"
+ *     responses:
+ *       200:
+ *         description: Returns zero when no profile exists yet
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 contractAddress: { type: string }
+ *                 uniqueCallees: { type: integer }
+ *             example:
+ *               contractAddress: "CALLD5GHXR4QSTKHSWQEK4UVMHM4QHU4KZ5G4SBKWY7C7TXKZ45RJ4M5"
+ *               uniqueCallees: 3
+ *       500:
+ *         description: Internal server error
+ *         content:
+ *           application/json:
+ *             schema: { $ref: '#/components/schemas/Error' }
+ *             example: { error: "Internal server error" }
+ */
 // ── GET /contracts/:address/callees ───────────────────────────────────────────
 composabilityRouter.get(
   '/contracts/:address/callees',
@@ -268,6 +571,73 @@ composabilityRouter.get(
   }),
 );
 
+/**
+ * @swagger
+ * /api/v1/composability/patterns:
+ *   get:
+ *     tags: [Composability]
+ *     summary: All catalogued composition patterns ordered by risk rating
+ *     responses:
+ *       200:
+ *         description: Pattern catalogue
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: array
+ *               items: { $ref: '#/components/schemas/CompositionPattern' }
+ *             example:
+ *               - { id: "clz9q1x4t0000s6h2comppat1", name: "flash_loan_reentry", category: "reentrancy", riskRating: "critical", mitigationGuide: "Add reentrancy guard", createdAt: "2026-06-19T07:24:26.000Z", updatedAt: "2026-06-19T07:24:26.000Z" }
+ *       500:
+ *         description: Internal server error
+ *         content:
+ *           application/json:
+ *             schema: { $ref: '#/components/schemas/Error' }
+ *             example: { error: "Internal server error" }
+ *   post:
+ *     tags: [Composability]
+ *     summary: Add a new pattern to the catalogue
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [name, description, category]
+ *             properties:
+ *               name: { type: string }
+ *               description: { type: string }
+ *               category: { type: string }
+ *               riskRating: { type: string, enum: [safe, low_risk, medium_risk, high_risk, critical] }
+ *               requiredCalls: { type: integer }
+ *               detectionRules: {}
+ *               safeIf: {}
+ *               mitigationGuide: { type: string }
+ *           example:
+ *             name: "oracle_price_manipulation"
+ *             description: "Caller manipulates oracle price then immediately executes dependent swap"
+ *             category: "oracle"
+ *             riskRating: "high_risk"
+ *             mitigationGuide: "Use TWAP oracle instead of spot price"
+ *     responses:
+ *       201:
+ *         description: Pattern created
+ *         content:
+ *           application/json:
+ *             schema: { allOf: [{ $ref: '#/components/schemas/CompositionPattern' }] }
+ *             example: { id: "clz9q1x4t0000s6h2comppat2", name: "oracle_price_manipulation", category: "oracle", riskRating: "high_risk", createdAt: "2026-06-19T07:24:26.000Z", updatedAt: "2026-06-19T07:24:26.000Z" }
+ *       400:
+ *         description: Validation error
+ *         content:
+ *           application/json:
+ *             schema: { $ref: '#/components/schemas/ZodValidationError' }
+ *             example: { error: [{ code: "invalid_type", path: ["name"], message: "Required" }] }
+ *       500:
+ *         description: Internal server error
+ *         content:
+ *           application/json:
+ *             schema: { $ref: '#/components/schemas/Error' }
+ *             example: { error: "Unique constraint failed on field: name" }
+ */
 // ── GET /patterns ─────────────────────────────────────────────────────────────
 composabilityRouter.get(
   '/patterns',
@@ -279,6 +649,38 @@ composabilityRouter.get(
   }),
 );
 
+/**
+ * @swagger
+ * /api/v1/composability/patterns/{id}:
+ *   get:
+ *     tags: [Composability]
+ *     summary: Pattern detail with the 20 most recent instances
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: string }
+ *         example: "clz9q1x4t0000s6h2comppat1"
+ *     responses:
+ *       200:
+ *         description: Pattern record with nested instances
+ *         content:
+ *           application/json:
+ *             schema: { allOf: [{ $ref: '#/components/schemas/CompositionPattern' }] }
+ *             example: { id: "clz9q1x4t0000s6h2comppat1", name: "flash_loan_reentry", category: "reentrancy", riskRating: "critical", mitigationGuide: "Add reentrancy guard", instances: [], createdAt: "2026-06-19T07:24:26.000Z", updatedAt: "2026-06-19T07:24:26.000Z" }
+ *       404:
+ *         description: Pattern not found
+ *         content:
+ *           application/json:
+ *             schema: { $ref: '#/components/schemas/Error' }
+ *             example: { error: "Not found" }
+ *       500:
+ *         description: Internal server error
+ *         content:
+ *           application/json:
+ *             schema: { $ref: '#/components/schemas/Error' }
+ *             example: { error: "Internal server error" }
+ */
 // ── GET /patterns/:id ─────────────────────────────────────────────────────────
 composabilityRouter.get(
   '/patterns/:id',
@@ -321,6 +723,33 @@ composabilityRouter.post('/patterns', async (req: Request, res: Response) => {
   }
 });
 
+/**
+ * @swagger
+ * /api/v1/composability/static-analyze/{address}:
+ *   post:
+ *     tags: [Composability]
+ *     summary: Run static analysis on a contract's function signatures
+ *     description: Derives call graph and circular dependency info from the contract's ABI in the DB. Upserts the result.
+ *     parameters:
+ *       - in: path
+ *         name: address
+ *         required: true
+ *         schema: { type: string }
+ *         example: "CALLD5GHXR4QSTKHSWQEK4UVMHM4QHU4KZ5G4SBKWY7C7TXKZ45RJ4M5"
+ *     responses:
+ *       200:
+ *         description: Static analysis record
+ *         content:
+ *           application/json:
+ *             schema: { allOf: [{ $ref: '#/components/schemas/ComposabilityStaticAnalysis' }] }
+ *             example: { id: "clz9q1x4t0000s6h2compsa01", contractAddress: "CALLD5GHXR4QSTKHSWQEK4UVMHM4QHU4KZ5G4SBKWY7C7TXKZ45RJ4M5", hasUnboundedRecursion: false, maxCallDepth: 3, analysisVersion: "1.0", analyzedAt: "2026-06-19T07:24:26.000Z" }
+ *       500:
+ *         description: Internal server error
+ *         content:
+ *           application/json:
+ *             schema: { $ref: '#/components/schemas/Error' }
+ *             example: { error: "Internal server error" }
+ */
 // ── POST /static-analyze/:address ────────────────────────────────────────────
 composabilityRouter.post('/static-analyze/:address', async (req: Request, res: Response) => {
   try {
@@ -358,6 +787,35 @@ composabilityRouter.post('/static-analyze/:address', async (req: Request, res: R
   }
 });
 
+/**
+ * @swagger
+ * /api/v1/composability/circular-dependencies:
+ *   get:
+ *     tags: [Composability]
+ *     summary: Contracts with detected unbounded recursion
+ *     responses:
+ *       200:
+ *         description: Static analysis records where hasUnboundedRecursion is true
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: array
+ *               items:
+ *                 type: object
+ *                 properties:
+ *                   contractAddress: { type: string }
+ *                   circularDeps: { type: array, nullable: true, items: {} }
+ *                   maxCallDepth: { type: integer }
+ *                   analyzedAt: { type: string, format: date-time }
+ *             example:
+ *               - { contractAddress: "CALLD5GHXR4QSTKHSWQEK4UVMHM4QHU4KZ5G4SBKWY7C7TXKZ45RJ4M5", circularDeps: [["swap", "flash_borrow"]], maxCallDepth: 12, analyzedAt: "2026-06-19T07:24:26.000Z" }
+ *       500:
+ *         description: Internal server error
+ *         content:
+ *           application/json:
+ *             schema: { $ref: '#/components/schemas/Error' }
+ *             example: { error: "Internal server error" }
+ */
 // ── GET /circular-dependencies ────────────────────────────────────────────────
 composabilityRouter.get(
   '/circular-dependencies',
@@ -370,6 +828,39 @@ composabilityRouter.get(
   }),
 );
 
+/**
+ * @swagger
+ * /api/v1/composability/verify/{txHash}:
+ *   post:
+ *     tags: [Composability]
+ *     summary: Verify composition safety for a previously analysed transaction
+ *     description: Loads the stored call graph, runs five safety checks, and upserts the verification record.
+ *     parameters:
+ *       - in: path
+ *         name: txHash
+ *         required: true
+ *         schema: { type: string }
+ *         example: "3389e9f0f1a4e32477b1c0d9e8a6f5b4c3d2e1f0a9b8c7d6e5f40312233445566"
+ *     responses:
+ *       200:
+ *         description: Verification record with per-check scores
+ *         content:
+ *           application/json:
+ *             schema: { allOf: [{ $ref: '#/components/schemas/ComposabilityVerification' }] }
+ *             example: { id: "clz9q1x4t0000s6h2compvfy1", txHash: "3389e9f0f1a4e32477b1c0d9e8a6f5b4c3d2e1f0a9b8c7d6e5f40312233445566", atomicity: true, reentrancyFree: false, totalScore: 80.0, verified: false, createdAt: "2026-06-19T07:24:26.000Z" }
+ *       404:
+ *         description: Transaction not found
+ *         content:
+ *           application/json:
+ *             schema: { $ref: '#/components/schemas/Error' }
+ *             example: { error: "Transaction not found" }
+ *       500:
+ *         description: Internal server error
+ *         content:
+ *           application/json:
+ *             schema: { $ref: '#/components/schemas/Error' }
+ *             example: { error: "Internal server error" }
+ */
 // ── POST /verify/:txHash ──────────────────────────────────────────────────────
 composabilityRouter.post('/verify/:txHash', async (req: Request, res: Response) => {
   try {
@@ -422,6 +913,48 @@ composabilityRouter.post('/verify/:txHash', async (req: Request, res: Response) 
   }
 });
 
+/**
+ * @swagger
+ * /api/v1/composability/verify/{txHash}/proof:
+ *   get:
+ *     tags: [Composability]
+ *     summary: Verification proof data for a transaction
+ *     parameters:
+ *       - in: path
+ *         name: txHash
+ *         required: true
+ *         schema: { type: string }
+ *         example: "3389e9f0f1a4e32477b1c0d9e8a6f5b4c3d2e1f0a9b8c7d6e5f40312233445566"
+ *     responses:
+ *       200:
+ *         description: Proof data from the verification record
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 txHash: { type: string }
+ *                 verified: { type: boolean }
+ *                 proofData: { type: object, nullable: true }
+ *                 generatedAt: { type: string, format: date-time }
+ *             example:
+ *               txHash: "3389e9f0f1a4e32477b1c0d9e8a6f5b4c3d2e1f0a9b8c7d6e5f40312233445566"
+ *               verified: false
+ *               proofData: null
+ *               generatedAt: "2026-06-19T07:24:26.000Z"
+ *       404:
+ *         description: No verification found for this transaction
+ *         content:
+ *           application/json:
+ *             schema: { $ref: '#/components/schemas/Error' }
+ *             example: { error: "No verification found for this tx" }
+ *       500:
+ *         description: Internal server error
+ *         content:
+ *           application/json:
+ *             schema: { $ref: '#/components/schemas/Error' }
+ *             example: { error: "Internal server error" }
+ */
 // ── GET /verify/:txHash/proof ─────────────────────────────────────────────────
 composabilityRouter.get(
   '/verify/:txHash/proof',
@@ -439,6 +972,59 @@ composabilityRouter.get(
   }),
 );
 
+/**
+ * @swagger
+ * /api/v1/composability/score/{txHash}:
+ *   get:
+ *     tags: [Composability]
+ *     summary: Safety score and per-dimension breakdown for a transaction
+ *     parameters:
+ *       - in: path
+ *         name: txHash
+ *         required: true
+ *         schema: { type: string }
+ *         example: "3389e9f0f1a4e32477b1c0d9e8a6f5b4c3d2e1f0a9b8c7d6e5f40312233445566"
+ *     responses:
+ *       200:
+ *         description: Score plus optional breakdown when a verification record exists
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 txHash: { type: string }
+ *                 safetyScore: { type: number, nullable: true }
+ *                 riskLevel: { type: string, nullable: true }
+ *                 analysisStatus: { type: string }
+ *                 breakdown:
+ *                   type: object
+ *                   nullable: true
+ *                   properties:
+ *                     atomicity: { type: number }
+ *                     authorization: { type: number }
+ *                     stateConsistency: { type: number }
+ *                     reentrancy: { type: number }
+ *                     oracleFreshness: { type: number }
+ *                     total: { type: number }
+ *             example:
+ *               txHash: "3389e9f0f1a4e32477b1c0d9e8a6f5b4c3d2e1f0a9b8c7d6e5f40312233445566"
+ *               safetyScore: 85.5
+ *               riskLevel: "low_risk"
+ *               analysisStatus: "completed"
+ *               breakdown: { atomicity: 90.0, authorization: 95.0, stateConsistency: 80.0, reentrancy: 60.0, oracleFreshness: 75.0, total: 80.0 }
+ *       404:
+ *         description: Transaction not found
+ *         content:
+ *           application/json:
+ *             schema: { $ref: '#/components/schemas/Error' }
+ *             example: { error: "Not found" }
+ *       500:
+ *         description: Internal server error
+ *         content:
+ *           application/json:
+ *             schema: { $ref: '#/components/schemas/Error' }
+ *             example: { error: "Internal server error" }
+ */
 // ── GET /score/:txHash ────────────────────────────────────────────────────────
 composabilityRouter.get(
   '/score/:txHash',
@@ -471,6 +1057,64 @@ composabilityRouter.get(
   }),
 );
 
+/**
+ * @swagger
+ * /api/v1/composability/report/{txHash}:
+ *   get:
+ *     tags: [Composability]
+ *     summary: Full composability report for a transaction
+ *     parameters:
+ *       - in: path
+ *         name: txHash
+ *         required: true
+ *         schema: { type: string }
+ *         example: "3389e9f0f1a4e32477b1c0d9e8a6f5b4c3d2e1f0a9b8c7d6e5f40312233445566"
+ *       - in: query
+ *         name: format
+ *         schema: { type: string, enum: [json, html], default: json }
+ *     responses:
+ *       200:
+ *         description: Full composability report (JSON by default; text/html when format=html)
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 txHash: { type: string }
+ *                 ledgerSeq: { type: integer }
+ *                 timestamp: { type: string, format: date-time }
+ *                 safetyScore: { type: number, nullable: true }
+ *                 riskLevel: { type: string, nullable: true }
+ *                 callGraph: { type: object, nullable: true }
+ *                 contractCalls: { type: array, nullable: true, items: { type: object } }
+ *                 patterns: { type: array, items: { type: object } }
+ *                 verification: { type: object, nullable: true }
+ *                 recommendations: { type: array, items: { type: string } }
+ *                 generatedAt: { type: string, format: date-time }
+ *             example:
+ *               txHash: "3389e9f0f1a4e32477b1c0d9e8a6f5b4c3d2e1f0a9b8c7d6e5f40312233445566"
+ *               ledgerSeq: 3168075
+ *               safetyScore: 85.5
+ *               riskLevel: "low_risk"
+ *               patterns: []
+ *               verification: null
+ *               recommendations: []
+ *               generatedAt: "2026-06-19T07:24:26.000Z"
+ *           text/html:
+ *             schema: { type: string }
+ *       404:
+ *         description: Transaction not found
+ *         content:
+ *           application/json:
+ *             schema: { $ref: '#/components/schemas/Error' }
+ *             example: { error: "Not found" }
+ *       500:
+ *         description: Internal server error
+ *         content:
+ *           application/json:
+ *             schema: { $ref: '#/components/schemas/Error' }
+ *             example: { error: "Internal server error" }
+ */
 // ── GET /report/:txHash ───────────────────────────────────────────────────────
 composabilityRouter.get(
   '/report/:txHash',
@@ -526,6 +1170,65 @@ composabilityRouter.get(
   }),
 );
 
+/**
+ * @swagger
+ * /api/v1/composability/exploit/check:
+ *   post:
+ *     tags: [Composability]
+ *     summary: Check a call sequence for exploit patterns
+ *     description: If an exploit is detected, a CompositionAlert is persisted with severity critical.
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [contractCalls]
+ *             properties:
+ *               contractCalls:
+ *                 type: array
+ *                 items:
+ *                   type: object
+ *                   required: [from, to, method]
+ *                   properties:
+ *                     from: { type: string }
+ *                     to: { type: string }
+ *                     method: { type: string }
+ *                     args: { type: array, items: {} }
+ *           example:
+ *             contractCalls:
+ *               - { from: "GBZXN7PIRZGNMHGA7MUUUF4GWPY5AYPV6LY4UV2GL6VJGIQRXFDNMADI", to: "CALLD5GHXR4QSTKHSWQEK4UVMHM4QHU4KZ5G4SBKWY7C7TXKZ45RJ4M5", method: "flash_borrow" }
+ *               - { from: "CALLD5GHXR4QSTKHSWQEK4UVMHM4QHU4KZ5G4SBKWY7C7TXKZ45RJ4M5", to: "CALLD5GHXR4QSTKHSWQEK4UVMHM4QHU4KZ5G4SBKWY7C7TXKZ45RJ4M5", method: "swap" }
+ *     responses:
+ *       200:
+ *         description: Exploit detection result
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 exploitDetected: { type: boolean }
+ *                 exploitType: { type: string, nullable: true }
+ *                 confidence: { type: number }
+ *                 description: { type: string, nullable: true }
+ *             example:
+ *               exploitDetected: false
+ *               exploitType: null
+ *               confidence: 0.12
+ *               description: null
+ *       400:
+ *         description: Validation error
+ *         content:
+ *           application/json:
+ *             schema: { $ref: '#/components/schemas/ZodValidationError' }
+ *             example: { error: [{ code: "invalid_type", path: ["contractCalls"], message: "Required" }] }
+ *       500:
+ *         description: Internal server error
+ *         content:
+ *           application/json:
+ *             schema: { $ref: '#/components/schemas/Error' }
+ *             example: { error: "Internal server error" }
+ */
 // ── POST /exploit/check ───────────────────────────────────────────────────────
 composabilityRouter.post('/exploit/check', async (req: Request, res: Response) => {
   try {
@@ -548,6 +1251,29 @@ composabilityRouter.post('/exploit/check', async (req: Request, res: Response) =
   }
 });
 
+/**
+ * @swagger
+ * /api/v1/composability/exploit/detected:
+ *   get:
+ *     tags: [Composability]
+ *     summary: Active (unmitigated) exploit alerts
+ *     responses:
+ *       200:
+ *         description: Up to 50 most recent unmitigated exploit alerts with related pattern
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: array
+ *               items: { $ref: '#/components/schemas/CompositionAlert' }
+ *             example:
+ *               - { id: "clz9q1x4t0000s6h2compalrt", txHash: "3389e9f0f1a4e32477b1c0d9e8a6f5b4c3d2e1f0a9b8c7d6e5f40312233445566", severity: "critical", title: "Exploit: flash_loan_reentry", exploitDetected: true, mitigated: false, createdAt: "2026-06-19T07:24:26.000Z" }
+ *       500:
+ *         description: Internal server error
+ *         content:
+ *           application/json:
+ *             schema: { $ref: '#/components/schemas/Error' }
+ *             example: { error: "Internal server error" }
+ */
 // ── GET /exploit/detected ─────────────────────────────────────────────────────
 composabilityRouter.get(
   '/exploit/detected',
@@ -562,6 +1288,45 @@ composabilityRouter.get(
   }),
 );
 
+/**
+ * @swagger
+ * /api/v1/composability/mitigate/{txHash}:
+ *   post:
+ *     tags: [Composability]
+ *     summary: Generate a mitigation patch for a composed transaction
+ *     description: Detects patterns from the stored call graph and generates a patch object. Persists a CompositionAlert with severity high.
+ *     parameters:
+ *       - in: path
+ *         name: txHash
+ *         required: true
+ *         schema: { type: string }
+ *         example: "3389e9f0f1a4e32477b1c0d9e8a6f5b4c3d2e1f0a9b8c7d6e5f40312233445566"
+ *     responses:
+ *       200:
+ *         description: Generated mitigation patch
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 txHash: { type: string }
+ *                 patch: { type: object }
+ *             example:
+ *               txHash: "3389e9f0f1a4e32477b1c0d9e8a6f5b4c3d2e1f0a9b8c7d6e5f40312233445566"
+ *               patch: { recommendations: ["Add reentrancy guard"], severity: "high" }
+ *       404:
+ *         description: Transaction not found
+ *         content:
+ *           application/json:
+ *             schema: { $ref: '#/components/schemas/Error' }
+ *             example: { error: "Not found" }
+ *       500:
+ *         description: Internal server error
+ *         content:
+ *           application/json:
+ *             schema: { $ref: '#/components/schemas/Error' }
+ *             example: { error: "Internal server error" }
+ */
 // ── POST /mitigate/:txHash ────────────────────────────────────────────────────
 composabilityRouter.post(
   '/mitigate/:txHash',
@@ -588,6 +1353,40 @@ composabilityRouter.post(
   }),
 );
 
+/**
+ * @swagger
+ * /api/v1/composability/mitigate/contract/{contractAddress}:
+ *   post:
+ *     tags: [Composability]
+ *     summary: Generate a mitigation patch across the 10 most recent transactions involving a contract
+ *     parameters:
+ *       - in: path
+ *         name: contractAddress
+ *         required: true
+ *         schema: { type: string }
+ *         example: "CALLD5GHXR4QSTKHSWQEK4UVMHM4QHU4KZ5G4SBKWY7C7TXKZ45RJ4M5"
+ *     responses:
+ *       200:
+ *         description: Aggregated mitigation patch
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 contractAddress: { type: string }
+ *                 patternsFound: { type: integer }
+ *                 patch: { type: object }
+ *             example:
+ *               contractAddress: "CALLD5GHXR4QSTKHSWQEK4UVMHM4QHU4KZ5G4SBKWY7C7TXKZ45RJ4M5"
+ *               patternsFound: 2
+ *               patch: { recommendations: ["Add reentrancy guard", "Use TWAP oracle"] }
+ *       500:
+ *         description: Internal server error
+ *         content:
+ *           application/json:
+ *             schema: { $ref: '#/components/schemas/Error' }
+ *             example: { error: "Internal server error" }
+ */
 // ── POST /mitigate/:contractAddress (contract-level) ─────────────────────────
 composabilityRouter.post(
   '/mitigate/contract/:contractAddress',
@@ -605,6 +1404,49 @@ composabilityRouter.post(
   }),
 );
 
+/**
+ * @swagger
+ * /api/v1/composability/fuzz/{contractAddress}:
+ *   post:
+ *     tags: [Composability]
+ *     summary: Run a composability fuzz campaign against a contract
+ *     parameters:
+ *       - in: path
+ *         name: contractAddress
+ *         required: true
+ *         schema: { type: string }
+ *         example: "CALLD5GHXR4QSTKHSWQEK4UVMHM4QHU4KZ5G4SBKWY7C7TXKZ45RJ4M5"
+ *       - in: query
+ *         name: iterations
+ *         schema: { type: integer, default: 100, maximum: 500 }
+ *     responses:
+ *       200:
+ *         description: Campaign summary with up to 20 findings
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 campaignId: { type: string }
+ *                 contractAddress: { type: string }
+ *                 totalCases: { type: integer }
+ *                 unsafeFound: { type: integer }
+ *                 coverage: { type: number }
+ *                 findings: { type: array, items: { type: object } }
+ *             example:
+ *               campaignId: "clz9q1x4t0000s6h2compfuz1"
+ *               contractAddress: "CALLD5GHXR4QSTKHSWQEK4UVMHM4QHU4KZ5G4SBKWY7C7TXKZ45RJ4M5"
+ *               totalCases: 100
+ *               unsafeFound: 3
+ *               coverage: 0.72
+ *               findings: []
+ *       500:
+ *         description: Internal server error
+ *         content:
+ *           application/json:
+ *             schema: { $ref: '#/components/schemas/Error' }
+ *             example: { error: "Internal server error" }
+ */
 // ── POST /fuzz/:contractAddress ───────────────────────────────────────────────
 composabilityRouter.post('/fuzz/:contractAddress', async (req: Request, res: Response) => {
   try {
@@ -636,6 +1478,38 @@ composabilityRouter.post('/fuzz/:contractAddress', async (req: Request, res: Res
   }
 });
 
+/**
+ * @swagger
+ * /api/v1/composability/fuzz/{campaignId}:
+ *   get:
+ *     tags: [Composability]
+ *     summary: Fuzz campaign record
+ *     parameters:
+ *       - in: path
+ *         name: campaignId
+ *         required: true
+ *         schema: { type: string }
+ *         example: "clz9q1x4t0000s6h2compfuz1"
+ *     responses:
+ *       200:
+ *         description: Full fuzz campaign record including findings
+ *         content:
+ *           application/json:
+ *             schema: { allOf: [{ $ref: '#/components/schemas/ComposabilityFuzzCampaign' }] }
+ *             example: { id: "clz9q1x4t0000s6h2compfuz1", contractAddress: "CALLD5GHXR4QSTKHSWQEK4UVMHM4QHU4KZ5G4SBKWY7C7TXKZ45RJ4M5", status: "completed", totalCases: 100, unsafeFound: 3, coveragePct: 0.72, findings: [], completedAt: "2026-06-19T07:24:27.000Z" }
+ *       404:
+ *         description: Campaign not found
+ *         content:
+ *           application/json:
+ *             schema: { $ref: '#/components/schemas/Error' }
+ *             example: { error: "Campaign not found" }
+ *       500:
+ *         description: Internal server error
+ *         content:
+ *           application/json:
+ *             schema: { $ref: '#/components/schemas/Error' }
+ *             example: { error: "Internal server error" }
+ */
 // ── GET /fuzz/:campaignId ─────────────────────────────────────────────────────
 composabilityRouter.get(
   '/fuzz/:campaignId',
@@ -648,6 +1522,44 @@ composabilityRouter.get(
   }),
 );
 
+/**
+ * @swagger
+ * /api/v1/composability/fuzz/{campaignId}/coverage:
+ *   get:
+ *     tags: [Composability]
+ *     summary: Coverage summary for a fuzz campaign
+ *     parameters:
+ *       - in: path
+ *         name: campaignId
+ *         required: true
+ *         schema: { type: string }
+ *         example: "clz9q1x4t0000s6h2compfuz1"
+ *     responses:
+ *       200:
+ *         description: Coverage fields only (id, coveragePct, totalCases, unsafeFound)
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 id: { type: string }
+ *                 coveragePct: { type: number }
+ *                 totalCases: { type: integer }
+ *                 unsafeFound: { type: integer }
+ *             example: { id: "clz9q1x4t0000s6h2compfuz1", coveragePct: 0.72, totalCases: 100, unsafeFound: 3 }
+ *       404:
+ *         description: Campaign not found
+ *         content:
+ *           application/json:
+ *             schema: { $ref: '#/components/schemas/Error' }
+ *             example: { error: "Campaign not found" }
+ *       500:
+ *         description: Internal server error
+ *         content:
+ *           application/json:
+ *             schema: { $ref: '#/components/schemas/Error' }
+ *             example: { error: "Internal server error" }
+ */
 // ── GET /fuzz/:campaignId/coverage ────────────────────────────────────────────
 composabilityRouter.get(
   '/fuzz/:campaignId/coverage',
@@ -661,6 +1573,79 @@ composabilityRouter.get(
   }),
 );
 
+/**
+ * @swagger
+ * /api/v1/composability/exploit-database:
+ *   get:
+ *     tags: [Composability]
+ *     summary: Browse the composability exploit knowledge base
+ *     parameters:
+ *       - in: query
+ *         name: category
+ *         schema: { type: string }
+ *         example: "reentrancy"
+ *     responses:
+ *       200:
+ *         description: Up to 50 exploit entries, newest first
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: array
+ *               items: { $ref: '#/components/schemas/ComposabilityExploit' }
+ *             example:
+ *               - { id: "clz9q1x4t0000s6h2compexp1", title: "StellarSwap Flash Loan Re-entry", patternCategory: "reentrancy", severity: "critical", affectedContracts: ["CALLD5GHXR4QSTKHSWQEK4UVMHM4QHU4KZ5G4SBKWY7C7TXKZ45RJ4M5"], exploitTxHashes: ["3389e9f0f1a4e32477b1c0d9e8a6f5b4c3d2e1f0a9b8c7d6e5f40312233445566"], discoveredAt: "2026-06-19T07:24:26.000Z" }
+ *       500:
+ *         description: Internal server error
+ *         content:
+ *           application/json:
+ *             schema: { $ref: '#/components/schemas/Error' }
+ *             example: { error: "Internal server error" }
+ *   post:
+ *     tags: [Composability]
+ *     summary: Add an exploit entry to the knowledge base
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [title, description, patternCategory, severity]
+ *             properties:
+ *               title: { type: string }
+ *               description: { type: string }
+ *               patternCategory: { type: string }
+ *               severity: { type: string, enum: [critical, high, medium, low] }
+ *               cveId: { type: string }
+ *               affectedContracts: { type: array, items: { type: string } }
+ *               exploitTxHashes: { type: array, items: { type: string } }
+ *               advisoryUrl: { type: string }
+ *           example:
+ *             title: "StellarSwap Flash Loan Re-entry"
+ *             description: "Attacker used flash loan to re-enter the swap function"
+ *             patternCategory: "reentrancy"
+ *             severity: "critical"
+ *             affectedContracts: ["CALLD5GHXR4QSTKHSWQEK4UVMHM4QHU4KZ5G4SBKWY7C7TXKZ45RJ4M5"]
+ *             exploitTxHashes: ["3389e9f0f1a4e32477b1c0d9e8a6f5b4c3d2e1f0a9b8c7d6e5f40312233445566"]
+ *     responses:
+ *       201:
+ *         description: Exploit entry created
+ *         content:
+ *           application/json:
+ *             schema: { allOf: [{ $ref: '#/components/schemas/ComposabilityExploit' }] }
+ *             example: { id: "clz9q1x4t0000s6h2compexp1", title: "StellarSwap Flash Loan Re-entry", patternCategory: "reentrancy", severity: "critical", discoveredAt: "2026-06-19T07:24:26.000Z" }
+ *       400:
+ *         description: Validation error
+ *         content:
+ *           application/json:
+ *             schema: { $ref: '#/components/schemas/ZodValidationError' }
+ *             example: { error: [{ code: "invalid_type", path: ["title"], message: "Required" }] }
+ *       500:
+ *         description: Internal server error
+ *         content:
+ *           application/json:
+ *             schema: { $ref: '#/components/schemas/Error' }
+ *             example: { error: "Internal server error" }
+ */
 // ── GET /exploit-database ─────────────────────────────────────────────────────
 composabilityRouter.get(
   '/exploit-database',
@@ -704,6 +1689,27 @@ composabilityRouter.post('/exploit-database', async (req: Request, res: Response
   }
 });
 
+/**
+ * @swagger
+ * /api/v1/composability/ecosystem-index:
+ *   get:
+ *     tags: [Composability]
+ *     summary: Latest ecosystem composability health index
+ *     description: Returns the most recent DB snapshot or computes and persists one on the fly if none exists.
+ *     responses:
+ *       200:
+ *         description: Ecosystem index snapshot
+ *         content:
+ *           application/json:
+ *             schema: { allOf: [{ $ref: '#/components/schemas/EcosystemComposabilityIndex' }] }
+ *             example: { id: "clz9q1x4t0000s6h2ecoidx01", score: 74.5, compositionDiversity: 5, avgSafetyScore: 82.3, exploitIncidentRate: 0.002, protocolInterconnectivity: 4.7, totalContracts: 312, totalComposedTx: 1467, computedAt: "2026-06-19T07:24:26.000Z" }
+ *       500:
+ *         description: Internal server error
+ *         content:
+ *           application/json:
+ *             schema: { $ref: '#/components/schemas/Error' }
+ *             example: { error: "Internal server error" }
+ */
 // ── GET /ecosystem-index ──────────────────────────────────────────────────────
 composabilityRouter.get(
   '/ecosystem-index',
@@ -746,6 +1752,33 @@ composabilityRouter.get(
   }),
 );
 
+/**
+ * @swagger
+ * /api/v1/composability/ecosystem-index/history:
+ *   get:
+ *     tags: [Composability]
+ *     summary: Historical ecosystem index snapshots
+ *     parameters:
+ *       - in: query
+ *         name: limit
+ *         schema: { type: integer, default: 30, maximum: 100 }
+ *     responses:
+ *       200:
+ *         description: Index snapshots ordered newest-first
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: array
+ *               items: { $ref: '#/components/schemas/EcosystemComposabilityIndex' }
+ *             example:
+ *               - { id: "clz9q1x4t0000s6h2ecoidx01", score: 74.5, avgSafetyScore: 82.3, totalContracts: 312, computedAt: "2026-06-19T07:24:26.000Z" }
+ *       500:
+ *         description: Internal server error
+ *         content:
+ *           application/json:
+ *             schema: { $ref: '#/components/schemas/Error' }
+ *             example: { error: "Internal server error" }
+ */
 // ── GET /ecosystem-index/history ─────────────────────────────────────────────
 composabilityRouter.get(
   '/ecosystem-index/history',
@@ -759,6 +1792,56 @@ composabilityRouter.get(
   }),
 );
 
+/**
+ * @swagger
+ * /api/v1/composability/graph:
+ *   get:
+ *     tags: [Composability]
+ *     summary: Aggregate cross-contract call graph across recent transactions
+ *     parameters:
+ *       - in: query
+ *         name: riskLevel
+ *         schema: { type: string, enum: [safe, low_risk, medium_risk, high_risk, critical] }
+ *         example: "high_risk"
+ *       - in: query
+ *         name: limit
+ *         schema: { type: integer, default: 100, maximum: 200 }
+ *     responses:
+ *       200:
+ *         description: Graph nodes (unique contract addresses) and directed edges from the merged call graphs
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 nodes:
+ *                   type: array
+ *                   items:
+ *                     type: object
+ *                     properties:
+ *                       id: { type: string }
+ *                       riskLevel: { type: string, nullable: true }
+ *                 edges:
+ *                   type: array
+ *                   items:
+ *                     type: object
+ *                     properties:
+ *                       from: { type: string }
+ *                       to: { type: string }
+ *                       method: { type: string }
+ *                       txHash: { type: string }
+ *                 totalTx: { type: integer }
+ *             example:
+ *               nodes: [{ id: "CALLD5GHXR4QSTKHSWQEK4UVMHM4QHU4KZ5G4SBKWY7C7TXKZ45RJ4M5", riskLevel: "low_risk" }]
+ *               edges: [{ from: "GBZXN7PIRZGNMHGA7MUUUF4GWPY5AYPV6LY4UV2GL6VJGIQRXFDNMADI", to: "CALLD5GHXR4QSTKHSWQEK4UVMHM4QHU4KZ5G4SBKWY7C7TXKZ45RJ4M5", method: "swap", txHash: "3389e9f0f1a4e32477b1c0d9e8a6f5b4c3d2e1f0a9b8c7d6e5f40312233445566" }]
+ *               totalTx: 42
+ *       500:
+ *         description: Internal server error
+ *         content:
+ *           application/json:
+ *             schema: { $ref: '#/components/schemas/Error' }
+ *             example: { error: "Internal server error" }
+ */
 // ── GET /graph ────────────────────────────────────────────────────────────────
 composabilityRouter.get(
   '/graph',
@@ -790,6 +1873,37 @@ composabilityRouter.get(
   }),
 );
 
+/**
+ * @swagger
+ * /api/v1/composability/leaderboard:
+ *   get:
+ *     tags: [Composability]
+ *     summary: Top 20 most-composed contracts
+ *     responses:
+ *       200:
+ *         description: Contract composability profiles ordered by composition count descending
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: array
+ *               items:
+ *                 type: object
+ *                 properties:
+ *                   contractAddress: { type: string }
+ *                   compositionCount: { type: integer }
+ *                   uniqueCallers: { type: integer }
+ *                   uniqueCallees: { type: integer }
+ *                   safetyScoreAvg: { type: number, nullable: true }
+ *                   riskIncidents: { type: integer }
+ *             example:
+ *               - { contractAddress: "CALLD5GHXR4QSTKHSWQEK4UVMHM4QHU4KZ5G4SBKWY7C7TXKZ45RJ4M5", compositionCount: 142, uniqueCallers: 8, uniqueCallees: 3, safetyScoreAvg: 88.5, riskIncidents: 1 }
+ *       500:
+ *         description: Internal server error
+ *         content:
+ *           application/json:
+ *             schema: { $ref: '#/components/schemas/Error' }
+ *             example: { error: "Internal server error" }
+ */
 // ── GET /leaderboard ──────────────────────────────────────────────────────────
 composabilityRouter.get(
   '/leaderboard',
@@ -810,6 +1924,55 @@ composabilityRouter.get(
   }),
 );
 
+/**
+ * @swagger
+ * /api/v1/composability/alerts:
+ *   post:
+ *     tags: [Composability]
+ *     summary: Subscribe to composability alerts
+ *     description: Creates a subscription marker in CompositionAlert; does not fire immediately.
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               contractAddress: { type: string }
+ *               severity: { type: string, enum: [critical, high, medium, low] }
+ *               webhookUrl: { type: string, format: uri }
+ *           example:
+ *             contractAddress: "CALLD5GHXR4QSTKHSWQEK4UVMHM4QHU4KZ5G4SBKWY7C7TXKZ45RJ4M5"
+ *             severity: "high"
+ *             webhookUrl: "https://hooks.example.com/composability"
+ *     responses:
+ *       201:
+ *         description: Subscription created
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 subscriptionId: { type: string }
+ *                 contractAddress: { type: string, nullable: true }
+ *                 severity: { type: string }
+ *             example:
+ *               subscriptionId: "clz9q1x4t0000s6h2compalrt"
+ *               contractAddress: "CALLD5GHXR4QSTKHSWQEK4UVMHM4QHU4KZ5G4SBKWY7C7TXKZ45RJ4M5"
+ *               severity: "high"
+ *       400:
+ *         description: Validation error
+ *         content:
+ *           application/json:
+ *             schema: { $ref: '#/components/schemas/ZodValidationError' }
+ *             example: { error: [{ code: "invalid_string", path: ["webhookUrl"], message: "Invalid url" }] }
+ *       500:
+ *         description: Internal server error
+ *         content:
+ *           application/json:
+ *             schema: { $ref: '#/components/schemas/Error' }
+ *             example: { error: "Internal server error" }
+ */
 // ── POST /alerts ──────────────────────────────────────────────────────────────
 composabilityRouter.post('/alerts', async (req: Request, res: Response) => {
   try {
@@ -843,6 +2006,40 @@ composabilityRouter.post('/alerts', async (req: Request, res: Response) => {
   }
 });
 
+/**
+ * @swagger
+ * /api/v1/composability/digest:
+ *   get:
+ *     tags: [Composability]
+ *     summary: Weekly composability digest
+ *     responses:
+ *       200:
+ *         description: Composed transaction count, critical alerts, new patterns, and ecosystem index for the last 7 days
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 period: { type: string }
+ *                 totalComposedTransactions: { type: integer }
+ *                 criticalAlerts: { type: integer }
+ *                 newPatternsDetected: { type: integer }
+ *                 ecosystemIndex: { type: number, nullable: true }
+ *                 generatedAt: { type: string, format: date-time }
+ *             example:
+ *               period: "last_7_days"
+ *               totalComposedTransactions: 312
+ *               criticalAlerts: 4
+ *               newPatternsDetected: 2
+ *               ecosystemIndex: 74.5
+ *               generatedAt: "2026-06-19T07:24:26.000Z"
+ *       500:
+ *         description: Internal server error
+ *         content:
+ *           application/json:
+ *             schema: { $ref: '#/components/schemas/Error' }
+ *             example: { error: "Internal server error" }
+ */
 // ── GET /digest ───────────────────────────────────────────────────────────────
 composabilityRouter.get(
   '/digest',

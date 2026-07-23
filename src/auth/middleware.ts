@@ -3,6 +3,7 @@ import { verifyToken } from './tokens';
 import { prismaWrite as prisma } from '../db';
 import { hashToken } from './tokens';
 import { hasRole, type Role, type Tier } from './rbac';
+import { background } from '../utils/background';
 
 export async function requireAuth(req: Request, res: Response, next: NextFunction) {
   const authHeader = req.headers['authorization'];
@@ -22,7 +23,11 @@ export async function requireAuth(req: Request, res: Response, next: NextFunctio
   }
 
   // Update last activity (non-blocking)
-  prisma.authSession.update({ where: { id: session.id }, data: { lastActivity: new Date() } }).catch(() => {});
+  background('auth.updateSessionActivity', () =>
+    prisma.authSession
+      .update({ where: { id: session.id }, data: { lastActivity: new Date() } })
+      .then(() => {}),
+  );
 
   req.user = {
     id: session.user.id,

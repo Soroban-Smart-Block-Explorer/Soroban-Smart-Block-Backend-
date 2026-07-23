@@ -10,6 +10,7 @@ import { Router, Request, Response } from 'express';
 import { z } from 'zod';
 import { prismaRead as prisma } from '../db';
 import { runProtocolEconomics } from '../indexer/protocolEconomics';
+import { asyncHandler } from '../middleware/asyncHandler';
 
 export const protocolEconomicsRouter = Router();
 
@@ -19,8 +20,9 @@ const querySchema = z.object({
 });
 
 // GET /analytics/protocol-economics — paginated time-series snapshots
-protocolEconomicsRouter.get('/', async (req: Request, res: Response) => {
-  try {
+protocolEconomicsRouter.get(
+  '/',
+  asyncHandler(async (req: Request, res: Response) => {
     const { bucket, limit } = querySchema.parse(req.query);
     const data = await prisma.protocolEconomicsSnapshot.findMany({
       where: { bucket },
@@ -28,14 +30,13 @@ protocolEconomicsRouter.get('/', async (req: Request, res: Response) => {
       take: limit,
     });
     res.json({ bucket, data });
-  } catch (e) {
-    res.status(400).json({ error: String(e) });
-  }
-});
+  }),
+);
 
 // GET /analytics/protocol-economics/summary — aggregate totals per bucket granularity
-protocolEconomicsRouter.get('/summary', async (_req: Request, res: Response) => {
-  try {
+protocolEconomicsRouter.get(
+  '/summary',
+  asyncHandler(async (_req: Request, res: Response) => {
     const buckets = ['hour', 'day', 'week'] as const;
     const summary: Record<string, object> = {};
 
@@ -57,17 +58,14 @@ protocolEconomicsRouter.get('/summary', async (_req: Request, res: Response) => 
     }
 
     res.json(summary);
-  } catch (e) {
-    res.status(500).json({ error: String(e) });
-  }
-});
+  }),
+);
 
 // POST /analytics/protocol-economics/run — on-demand trigger
-protocolEconomicsRouter.post('/run', async (_req: Request, res: Response) => {
-  try {
+protocolEconomicsRouter.post(
+  '/run',
+  asyncHandler(async (_req: Request, res: Response) => {
     await runProtocolEconomics();
     res.json({ ok: true });
-  } catch (e) {
-    res.status(500).json({ error: String(e) });
-  }
-});
+  }),
+);

@@ -82,6 +82,9 @@ vi.mock('../../src/db', () => ({
       findUnique: vi.fn(),
       update: vi.fn(),
     },
+    searchSuggestion: {
+      findMany: vi.fn(),
+    },
   },
   prismaWrite: {
     nlQuery: {

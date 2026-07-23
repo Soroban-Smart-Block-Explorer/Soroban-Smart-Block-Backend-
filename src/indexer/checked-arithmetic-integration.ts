@@ -252,8 +252,10 @@ export async function identifyOverflowSafeContracts(minOverflowCount: number = 1
     overflowCount: number;
     successCount: number;
     overflowRate: number;
+    durationMs?: number;
   }>
 > {
+  const startMs = Date.now();
   try {
     const transactions = await prisma.transaction.findMany({
       where: {
@@ -301,6 +303,7 @@ export async function identifyOverflowSafeContracts(minOverflowCount: number = 1
     }
 
     // Filter and format results
+    const durationMs = Date.now() - startMs;
     const results = Object.entries(contractStats)
       .filter(([, stats]) => stats.overflows >= minOverflowCount)
       .map(([address, stats]) => ({
@@ -309,12 +312,13 @@ export async function identifyOverflowSafeContracts(minOverflowCount: number = 1
         overflowCount: stats.overflows,
         successCount: stats.successes,
         overflowRate: stats.total > 0 ? stats.overflows / stats.total : 0,
+        durationMs,
       }))
       .sort((a, b) => b.overflowCount - a.overflowCount);
 
     return results;
   } catch (error) {
-    console.error('Failed to identify overflow-safe contracts:', error);
+    console.error('[identifyOverflowSafeContracts] error after %dms:', Date.now() - startMs, error);
     return [];
   }
 }

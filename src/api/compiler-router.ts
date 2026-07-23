@@ -10,10 +10,50 @@ import { asyncHandler } from '../middleware/asyncHandler';
 import multer from 'multer';
 import * as path from 'path';
 import * as os from 'os';
+import * as fs from 'fs';
 import { z } from 'zod';
-import { extractArchive, compileSandboxed, extractSourceFiles, cleanupDir } from './compiler';
+import {
+  extractArchive,
+  compileSandboxed,
+  extractSourceFiles,
+  cleanupDir,
+  ToolchainEnum,
+} from './compiler';
+import { getActiveBuildCount, getConcurrencyLimit, getQueueMetrics } from './build-queue';
+import type { RateLimitTier } from '../middleware/tokenBucket';
 
 export const compilerRouter = Router();
+
+// Middleware to check build quota before processing compile/verify
+/**
+ * Middleware that validates build quota availability for the request's API tier.
+ * Adds X-Compiler-Quota headers and rejects with 429 if limit exceeded.
+ */
+function buildQuotaMiddleware(req: Request, res: Response, next: (err?: any) => void) {
+  const tier = (req.apiKey?.tier ?? 'unauthenticated') as RateLimitTier;
+  const rateLimitTier = (req as Request & { rateLimitResult?: { tier?: string } }).rateLimitResult
+    ?.tier;
+  const active = rateLimitTier ? getActiveBuildCount(rateLimitTier) : 0;
+  const limit = getConcurrencyLimit(tier);
+
+  // Set quota headers for visibility
+  res.setHeader('X-Compiler-Quota-Limit', String(limit));
+  res.setHeader('X-Compiler-Quota-Active', String(active));
+
+  // Check if there's capacity available
+  if (active >= limit && limit > 0) {
+    res.status(429).json({
+      error: 'Concurrent build limit exceeded for tier',
+      tier,
+      limit,
+      active,
+      retryAfter: 10,
+    });
+    return;
+  }
+
+  next();
+}
 
 // Multer for archive uploads (max 50 MB)
 const upload = multer({
@@ -32,6 +72,33 @@ const upload = multer({
     }
   },
 });
+
+// ── Periodic stale temp-file cleanup ─────────────────────────────────────────
+// Remove Multer-uploaded files older than 1 hour that were never processed
+// (e.g. process crashed after upload but before the finally block ran).
+const STALE_AGE_MS = 60 * 60 * 1000; // 1 hour
+const CLEANUP_INTERVAL_MS = 15 * 60 * 1000; // run every 15 minutes
+
+export function startTempFileCleanup(): NodeJS.Timeout {
+  return setInterval(() => {
+    const tmpDir = os.tmpdir();
+    const cutoff = Date.now() - STALE_AGE_MS;
+    fs.readdir(tmpDir, (err, files) => {
+      if (err) return;
+      for (const file of files) {
+        // Multer writes files with a random hex name (no extension)
+        if (!/^[0-9a-f]{32}$/.test(file)) continue;
+        const filePath = path.join(tmpDir, file);
+        fs.stat(filePath, (statErr, stat) => {
+          if (statErr || !stat.isFile()) return;
+          if (stat.mtimeMs < cutoff) {
+            fs.unlink(filePath, () => {}); // best-effort
+          }
+        });
+      }
+    });
+  }, CLEANUP_INTERVAL_MS);
+}
 
 // ── GET / ─────────────────────────────────────────────────────────────────────
 
@@ -91,6 +158,7 @@ compilerRouter.get('/', (_req: Request, res: Response) => {
  */
 compilerRouter.post(
   '/compile',
+  buildQuotaMiddleware,
   upload.single('source'),
   asyncHandler(async (req: Request, res: Response) => {
     if (!req.file) {
@@ -99,16 +167,21 @@ compilerRouter.post(
         .json({ error: 'Source archive is required (multipart field: source)' });
     }
 
-    const toolchain = req.body.toolchain as string;
-    if (!toolchain) {
-      return res.status(400).json({ error: 'toolchain field is required' });
+    const schema = z.object({
+      toolchain: ToolchainEnum,
+    });
+
+    const parsed = schema.safeParse(req.body);
+    if (!parsed.success) {
+      await cleanupDir(req.file.path);
+      return res.status(400).json({ error: parsed.error.flatten() });
     }
 
-    const archivePath = req.file.path;
+    const { toolchain } = parsed.data;
     let workDir: string | null = null;
 
     try {
-      workDir = await extractArchive(archivePath, req.file.mimetype);
+      workDir = await extractArchive(req.file.path, req.file.mimetype);
       const result = await compileSandboxed(workDir, toolchain);
 
       res.json({
@@ -121,7 +194,7 @@ compilerRouter.post(
       res.status(400).json({ error: err.message });
     } finally {
       if (workDir) await cleanupDir(workDir);
-      await cleanupDir(archivePath);
+      await cleanupDir(req.file.path);
     }
   }),
 );
@@ -158,24 +231,27 @@ compilerRouter.post(
  */
 compilerRouter.post(
   '/verify',
+  buildQuotaMiddleware,
   upload.single('source'),
   asyncHandler(async (req: Request, res: Response) => {
     if (!req.file) {
       return res.status(400).json({ error: 'Source archive is required' });
     }
 
+    const archivePath = req.file.path;
+
     const schema = z.object({
-      toolchain: z.string().min(1),
+      toolchain: ToolchainEnum,
       expectedHash: z.string().length(64, 'Expected SHA-256 hash (64 hex chars)'),
     });
 
     const parsed = schema.safeParse(req.body);
     if (!parsed.success) {
+      await cleanupDir(archivePath);
       return res.status(400).json({ error: parsed.error.flatten() });
     }
 
     const { toolchain, expectedHash } = parsed.data;
-    const archivePath = req.file.path;
     let workDir: string | null = null;
 
     try {
@@ -247,5 +323,28 @@ compilerRouter.get('/toolchains', (_req: Request, res: Response) => {
       'Builds run in sandboxed temp directories',
       'Network access disabled during compilation (CARGO_NET_OFFLINE=true)',
     ],
+  });
+});
+
+// ── GET /metrics ───────────────────────────────────────────────────────────────
+
+/**
+ * @swagger
+ * /compiler/metrics:
+ *   get:
+ *     summary: Build queue metrics and resource usage
+ *     tags: [Compiler]
+ *     responses:
+ *       200:
+ *         description: Build queue metrics by tier
+ */
+compilerRouter.get('/metrics', (_req: Request, res: Response) => {
+  res.json({
+    queueMetrics: getQueueMetrics(),
+    quotas: {
+      developer: { concurrency: 2, memoryMb: 1024, timeoutSec: 120 },
+      pro: { concurrency: 5, memoryMb: 2048, timeoutSec: 180 },
+      enterprise: { concurrency: 10, memoryMb: 4096, timeoutSec: 240 },
+    },
   });
 });

@@ -18,8 +18,19 @@ export function attachPrivacyWebSocket(httpServer: Server): {
   privacyWss: WebSocketServer;
   alertWss: WebSocketServer;
 } {
-  const privacyWss = new WebSocketServer({ server: httpServer, path: '/ws/v1/privacy' });
-  const alertWss = new WebSocketServer({ server: httpServer, path: '/ws/v1/privacy/alerts' });
+  const privacyWss = new WebSocketServer({ noServer: true });
+  const alertWss = new WebSocketServer({ noServer: true });
+
+  httpServer.on('upgrade', (req: IncomingMessage, socket, head) => {
+    const pathname = (req.url ?? '').split('?')[0];
+    if (pathname === '/ws/v1/privacy/alerts') {
+      alertWss.handleUpgrade(req, socket, head, (ws) => alertWss.emit('connection', ws, req));
+    } else if (pathname === '/ws/v1/privacy') {
+      privacyWss.handleUpgrade(req, socket, head, (ws) => privacyWss.emit('connection', ws, req));
+    } else {
+      socket.destroy();
+    }
+  });
 
   privacyWss.on('connection', (ws: WebSocket, req: IncomingMessage) => {
     const url = new URL(req.url ?? '', 'http://localhost');

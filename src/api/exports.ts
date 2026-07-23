@@ -6,27 +6,40 @@
  */
 
 import fs from 'fs';
-import path from 'path';
 import { Router, Request, Response } from 'express';
 import { prismaRead as prisma } from '../db';
 import { enqueueExport } from '../indexer/csv-exporter';
 import { z } from 'zod';
 import { asyncHandler } from '../middleware/asyncHandler';
+import { apiKeyAuth, requireApiKey } from '../middleware/apiKeyAuth';
+import { ExportPathError, resolveExportFilePath } from '../exports/resolve-path';
 
 export const exportsRouter = Router();
 
-const EXPORT_DIR = process.env.EXPORT_DIR ?? '/tmp/soroban-exports';
+exportsRouter.use(apiKeyAuth, requireApiKey);
 
 const createSchema = z.object({
   exportType: z.enum(['transactions', 'events', 'wallet_history']),
   filters: z.record(z.unknown()).optional().default({}),
 });
 
+function ownedJobWhere(req: Request, jobId?: string) {
+  const where: { developerId: string; id?: string } = {
+    developerId: req.apiKey!.developerId,
+  };
+  if (jobId) where.id = jobId;
+  return where;
+}
+
 // POST /exports — enqueue
 exportsRouter.post('/', async (req: Request, res: Response) => {
   try {
     const body = createSchema.parse(req.body);
-    const jobId = await enqueueExport(body.exportType, body.filters as Record<string, unknown>);
+    const jobId = await enqueueExport(
+      body.exportType,
+      body.filters as Record<string, unknown>,
+      req.apiKey!.developerId,
+    );
     res.status(202).json({ jobId, status: 'pending' });
   } catch (e) {
     res.status(400).json({ error: String(e) });
@@ -36,8 +49,9 @@ exportsRouter.post('/', async (req: Request, res: Response) => {
 // GET /exports — list
 exportsRouter.get(
   '/',
-  asyncHandler(async (_req: Request, res: Response) => {
+  asyncHandler(async (req: Request, res: Response) => {
     const jobs = await prisma.exportJob.findMany({
+      where: { developerId: req.apiKey!.developerId },
       orderBy: { createdAt: 'desc' },
       take: 50,
       select: {
@@ -57,7 +71,9 @@ exportsRouter.get(
 exportsRouter.get(
   '/:id',
   asyncHandler(async (req: Request, res: Response) => {
-    const job = await prisma.exportJob.findUnique({ where: { id: req.params.id } });
+    const job = await prisma.exportJob.findFirst({
+      where: ownedJobWhere(req, req.params.id),
+    });
     if (!job) return res.status(404).json({ error: 'Job not found' });
     res.json(job);
   }),
@@ -67,15 +83,23 @@ exportsRouter.get(
 exportsRouter.get(
   '/:id/file',
   asyncHandler(async (req: Request, res: Response) => {
-    const job = await prisma.exportJob.findUnique({ where: { id: req.params.id } });
+    const job = await prisma.exportJob.findFirst({
+      where: ownedJobWhere(req, req.params.id),
+    });
     if (!job) return res.status(404).json({ error: 'Job not found' });
     if (job.status !== 'done' || !job.filePath) {
       return res.status(409).json({ error: `Export not ready (status: ${job.status})` });
     }
 
-    const absPath = path.isAbsolute(job.filePath)
-      ? job.filePath
-      : path.join(EXPORT_DIR, job.filePath);
+    let absPath: string;
+    try {
+      absPath = resolveExportFilePath(job.filePath);
+    } catch (err) {
+      if (err instanceof ExportPathError) {
+        return res.status(400).json({ error: err.message });
+      }
+      throw err;
+    }
 
     if (!fs.existsSync(absPath)) {
       return res.status(410).json({ error: 'Export file no longer available' });

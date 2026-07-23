@@ -1,0 +1,158 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`demo forecast models (seeded) > ArimaMock produces identical output for the same seed and input 1`] = `
+[
+  {
+    "lowerBound": 927.059883,
+    "predictedValue": 1028.979883,
+    "timestamp": "2024-06-02T00:00:00.000Z",
+    "upperBound": 1130.899883,
+  },
+  {
+    "lowerBound": 899.995731,
+    "predictedValue": 1044.132378,
+    "timestamp": "2024-06-03T00:00:00.000Z",
+    "upperBound": 1188.269024,
+  },
+  {
+    "lowerBound": 887.16224,
+    "predictedValue": 1063.692858,
+    "timestamp": "2024-06-04T00:00:00.000Z",
+    "upperBound": 1240.223477,
+  },
+  {
+    "lowerBound": 868.825514,
+    "predictedValue": 1072.665514,
+    "timestamp": "2024-06-05T00:00:00.000Z",
+    "upperBound": 1276.505514,
+  },
+  {
+    "lowerBound": 843.313807,
+    "predictedValue": 1071.213855,
+    "timestamp": "2024-06-06T00:00:00.000Z",
+    "upperBound": 1299.113903,
+  },
+]
+`;
+
+exports[`demo forecast models (seeded) > XgboostMock produces identical SHAP values for the same seed 1`] = `
+[
+  {
+    "predictedValue": 1039.209518,
+    "shapValues": {
+      "day_of_week": 0.07700515240430832,
+      "rolling_7d_avg": 0.1465351663529873,
+      "whale_activity": 0.16234899037517608,
+    },
+  },
+  {
+    "predictedValue": 1130.711737,
+    "shapValues": {
+      "day_of_week": 0.04537326840218157,
+      "rolling_7d_avg": 0.3046571493148804,
+      "whale_activity": 0.09537756424397231,
+    },
+  },
+  {
+    "predictedValue": 1157.256364,
+    "shapValues": {
+      "day_of_week": 0.012422479852102696,
+      "rolling_7d_avg": 0.2530049569904804,
+      "whale_activity": 0.17233150932006538,
+    },
+  },
+]
+`;
+
+exports[`demo forecast models (seeded) > demo ensemble snapshot is stable 1`] = `
+[
+  {
+    "lowerBound": 911.466551,
+    "predictedValue": 1136.887727,
+    "timestamp": "2024-06-02T00:00:00.000Z",
+    "upperBound": 1401.846859,
+  },
+  {
+    "lowerBound": 855.818251,
+    "predictedValue": 1161.702487,
+    "timestamp": "2024-06-03T00:00:00.000Z",
+    "upperBound": 1445.357846,
+  },
+  {
+    "lowerBound": 790.940317,
+    "predictedValue": 1180.987446,
+    "timestamp": "2024-06-04T00:00:00.000Z",
+    "upperBound": 1514.531153,
+  },
+  {
+    "lowerBound": 792.214382,
+    "predictedValue": 1203.908005,
+    "timestamp": "2024-06-05T00:00:00.000Z",
+    "upperBound": 1493.399896,
+  },
+]
+`;
+
+exports[`production forecast models > LinearTrendModel is fully deterministic 1`] = `
+[
+  {
+    "lowerBound": 1000,
+    "predictedValue": 1052,
+    "timestamp": "2024-06-02T00:00:00.000Z",
+    "upperBound": 1104,
+  },
+  {
+    "lowerBound": 1003.272727,
+    "predictedValue": 1055.272727,
+    "timestamp": "2024-06-03T00:00:00.000Z",
+    "upperBound": 1107.272727,
+  },
+  {
+    "lowerBound": 1006.545455,
+    "predictedValue": 1058.545455,
+    "timestamp": "2024-06-04T00:00:00.000Z",
+    "upperBound": 1110.545455,
+  },
+  {
+    "lowerBound": 1009.818182,
+    "predictedValue": 1061.818182,
+    "timestamp": "2024-06-05T00:00:00.000Z",
+    "upperBound": 1113.818182,
+  },
+  {
+    "lowerBound": 1013.090909,
+    "predictedValue": 1065.090909,
+    "timestamp": "2024-06-06T00:00:00.000Z",
+    "upperBound": 1117.090909,
+  },
+]
+`;
+
+exports[`production forecast models > production ensemble snapshot is stable 1`] = `
+[
+  {
+    "lowerBound": 1000,
+    "predictedValue": 1067.531789,
+    "timestamp": "2024-06-02T00:00:00.000Z",
+    "upperBound": 1137.216758,
+  },
+  {
+    "lowerBound": 1003.272727,
+    "predictedValue": 1087.157051,
+    "timestamp": "2024-06-03T00:00:00.000Z",
+    "upperBound": 1174.993444,
+  },
+  {
+    "lowerBound": 1006.545455,
+    "predictedValue": 1098.7765,
+    "timestamp": "2024-06-04T00:00:00.000Z",
+    "upperBound": 1195.957923,
+  },
+  {
+    "lowerBound": 1009.818182,
+    "predictedValue": 1100.412864,
+    "timestamp": "2024-06-05T00:00:00.000Z",
+    "upperBound": 1195.957923,
+  },
+]
+`;

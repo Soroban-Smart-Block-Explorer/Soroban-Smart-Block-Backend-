@@ -1,5 +1,6 @@
 import { prismaRead as prisma, prismaWrite } from '../db';
 import { resolveAddress } from '../middleware/sanitize';
+import { background } from '../utils/background';
 import {
   fetchHorizonAccount,
   fetchHorizonClaimableBalances,
@@ -357,7 +358,9 @@ export async function getUnifiedAccountView(rawAddress: string): Promise<Unified
 
   // Persist account snapshot asynchronously (fire-and-forget)
   if (horizonAccount) {
-    persistAccountSnapshot(address, horizonAccount, homeDomainVerified).catch(() => {});
+    background('accountAggregator.persistSnapshot', () =>
+      persistAccountSnapshot(address, horizonAccount, homeDomainVerified).then(() => {}),
+    );
   }
 
   return { classic, soroban, crossDomain, metadata };
@@ -514,9 +517,9 @@ export async function getBalanceHistory(
   days = 30,
 ): Promise<Array<{ date: string; xlmBalance: string }>> {
   const resolved = resolveAddress(address);
-  const account = await prisma.stellarAccount.findUnique({ where: { address: resolved } });
+  const dbAccount = await prisma.stellarAccount.findUnique({ where: { address: resolved } });
 
-  const currentBalance = account?.xlmBalance?.toString() ?? '0';
+  const currentBalance = dbAccount?.xlmBalance?.toString() ?? '0';
   const history: Array<{ date: string; xlmBalance: string }> = [];
 
   for (let i = days; i >= 0; i--) {
