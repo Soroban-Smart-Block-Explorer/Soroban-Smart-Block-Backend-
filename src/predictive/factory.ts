@@ -1,8 +1,5 @@
-import { config } from '../config';
 import { EnsembleForecaster } from './ensemble';
-import { generateDeterministicSeries } from './random';
-import { ArimaMock, XgboostMock, LstmMock } from './models';
-import { LinearTrendModel, SeasonalMeanModel } from './production-models';
+import { modelTrainingService } from './training-service';
 
 export type ForecastMode = 'demo' | 'production';
 
@@ -12,30 +9,38 @@ export interface ForecasterOptions {
 }
 
 let forecasterInstance: EnsembleForecaster | null = null;
+let isInitializing = false;
 
-export function createForecaster(options: ForecasterOptions = {}): EnsembleForecaster {
-  const mode = options.mode ?? config.forecastMode;
-  const seed = options.seed ?? config.forecastSeed;
-
-  const models =
-    mode === 'production'
-      ? [new LinearTrendModel(), new SeasonalMeanModel()]
-      : [new ArimaMock(seed), new XgboostMock(seed), new LstmMock(seed)];
-
-  const forecaster = new EnsembleForecaster(models);
-  forecaster.trainAll(generateDeterministicSeries(30, seed));
-  return forecaster;
+export async function createForecaster(
+  _options: ForecasterOptions = {},
+): Promise<EnsembleForecaster> {
+  // Use the training service to properly initialize and train models
+  return await modelTrainingService.initializeModels();
 }
 
-export function getForecaster(): EnsembleForecaster {
-  if (!forecasterInstance) {
-    forecasterInstance = createForecaster();
+export async function getForecaster(): Promise<EnsembleForecaster> {
+  if (!forecasterInstance || modelTrainingService.needsRetraining()) {
+    if (isInitializing) {
+      // Wait for initialization to complete
+      while (isInitializing) {
+        await new Promise((resolve) => setTimeout(resolve, 100));
+      }
+      return forecasterInstance!;
+    }
+
+    isInitializing = true;
+    try {
+      forecasterInstance = await createForecaster();
+    } finally {
+      isInitializing = false;
+    }
   }
   return forecasterInstance;
 }
 
 export function resetForecasterForTests(): void {
   forecasterInstance = null;
+  isInitializing = false;
 }
 
 /** Deterministic PSI values for drift monitoring (no Math.random). */
