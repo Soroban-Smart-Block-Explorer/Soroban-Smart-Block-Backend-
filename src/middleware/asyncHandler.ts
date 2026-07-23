@@ -1,7 +1,10 @@
 import { Request, Response, NextFunction } from 'express';
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-type AsyncRouteHandler = (req: Request, res: Response, next: NextFunction) => Promise<any>;
+type AsyncRouteHandler<T = void> = (
+  req: Request,
+  res: Response,
+  next: NextFunction,
+) => Promise<T>;
 
 /**
  * Wraps an async Express route handler so that any rejected promise (or thrown
@@ -31,5 +34,6 @@ type AsyncRouteHandler = (req: Request, res: Response, next: NextFunction) => Pr
  * @returns A standard Express `RequestHandler` that catches errors and calls `next`.
  */
 export const asyncHandler =
-  (fn: AsyncRouteHandler) => (req: Request, res: Response, next: NextFunction) =>
+  <T = void>(fn: AsyncRouteHandler<T>) =>
+  (req: Request, res: Response, next: NextFunction) =>
     Promise.resolve(fn(req, res, next)).catch(next);

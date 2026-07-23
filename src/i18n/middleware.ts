@@ -22,9 +22,10 @@ import {
   tAsync as translateAsync,
 } from './engine';
 
-// Extend Express Request type
+// Extend Express Request type.
+// eslint-disable-next-line @typescript-eslint/no-namespace -- required by TS for
+// augmenting third-party global namespaces (Express); no alternative syntax exists.
 declare global {
-  // eslint-disable-next-line @typescript-eslint/no-namespace
   namespace Express {
     interface Request {
       locale: SupportedLanguage;

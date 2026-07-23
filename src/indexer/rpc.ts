@@ -78,8 +78,7 @@ export async function fetchEvents(startLedger: number, endLedger: number): Promi
   const events: LedgerEvent[] = [];
   let cursor: string | undefined;
 
-  // eslint-disable-next-line no-constant-condition
-  while (true) {
+  for (;;) {
     const response = await fetchEventsPage(startLedger, cursor);
     const page = (response.events ?? []) as any[];
 
