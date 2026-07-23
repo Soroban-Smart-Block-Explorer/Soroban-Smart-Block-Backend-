@@ -151,7 +151,8 @@ class SorobanEventWorker {
     const payload = this.dataToString(data);
     if (!payload) return;
     try {
-      const message = JSON.parse(payload) as any;
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const message: any = JSON.parse(payload);
       const ledgerNumber = this.extractLedgerNumber(message);
       if (typeof ledgerNumber === 'number') {
         this.onLedgerClose(ledgerNumber).catch((err) =>
