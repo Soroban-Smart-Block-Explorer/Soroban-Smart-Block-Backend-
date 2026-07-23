@@ -80,7 +80,7 @@ export interface WebhookPayload {
   eventType: string;
   topicSymbol?: string | null;
   decoded: unknown;
-  ledger: number;
+  ledgerSequence: number;
   ledgerCloseTime: Date;
   transactionHash: string;
 }
@@ -235,14 +235,23 @@ async function deliverOnce(
     if (!row) return;
     eventId = row.eventId ?? '';
     const ev = await prisma.event.findUnique({ where: { id: eventId } });
-    if (!ev) return;
+    if (!ev) {
+      console.warn(
+        `[dispatcher] Delivery ${deliveryId}: retried event not found — marking as deleted_event`,
+      );
+      await prisma.webhookDelivery.update({
+        where: { id: deliveryId },
+        data: { status: 'deleted_event', processingStatus: 'done', leaseExpiresAt: null },
+      });
+      return;
+    }
     payload = {
       id: ev.id,
       contractAddress: ev.contractAddress,
       eventType: ev.eventType,
       topicSymbol: ev.topicSymbol,
       decoded: ev.decoded,
-      ledger: ev.ledgerSequence,
+      ledgerSequence: ev.ledgerSequence,
       ledgerCloseTime: ev.ledgerCloseTime,
       transactionHash: ev.transactionHash,
     };
