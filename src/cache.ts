@@ -10,6 +10,7 @@ interface MemoryEntry {
 }
 
 const memoryStore = new Map<string, MemoryEntry>();
+const MAX_MEMORY_ENTRIES = 10_000;
 let redisClient: RedisClientType | null = null;
 let redisAvailable = false;
 
@@ -108,10 +109,28 @@ export async function cacheSet<T>(
 ): Promise<void> {
   const normalizedKey = key;
   const payload = JSON.stringify(value);
-  memoryStore.set(normalizedKey, {
-    payload,
-    expiresAt: buildExpiry(ttlSeconds),
-  });
+  const expiresAt = buildExpiry(ttlSeconds);
+
+  if (expiresAt === null) {
+    console.warn(
+      `[cache] Entry "${normalizedKey}" set with no expiry (ttlSeconds=${ttlSeconds}) — will never expire`,
+    );
+  }
+
+  if (memoryStore.has(normalizedKey)) {
+    memoryStore.delete(normalizedKey);
+  }
+
+  memoryStore.set(normalizedKey, { payload, expiresAt });
+
+  if (memoryStore.size > MAX_MEMORY_ENTRIES) {
+    const keysToEvict = memoryStore.size - MAX_MEMORY_ENTRIES;
+    const iter = memoryStore.keys();
+    for (let i = 0; i < keysToEvict; i++) {
+      memoryStore.delete(iter.next().value as string);
+    }
+    console.warn(`[cache] Evicted ${keysToEvict} oldest entries, size now ${memoryStore.size}`);
+  }
 
   const client = await getRedisClient();
   if (!client) return;
