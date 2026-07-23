@@ -22,7 +22,7 @@ export function extractEventsFromMeta(metaXdr: string): Array<{
   // TransactionMeta v3 carries sorobanMeta with events
   if (meta.switch() !== 3) return [];
 
-  const sorobanMeta = (meta as any).v3().sorobanMeta();
+  const sorobanMeta = meta.v3().sorobanMeta();
   if (!sorobanMeta) return [];
 
   const diagnosticEvents: xdr.DiagnosticEvent[] = sorobanMeta.diagnosticEvents?.() ?? [];
@@ -38,8 +38,9 @@ export function extractEventsFromMeta(metaXdr: string): Array<{
       // contractId() returns null | Buffer — encode as hex string
       const contractIdBuf: Buffer | null = ev.contractId();
       const contractId = contractIdBuf ? contractIdBuf.toString('hex') : '';
-      const topics = (ev.body() as any).v0().topics().map((t: xdr.ScVal) => t.toXDR('base64'));
-      const data: string = (ev.body() as any).v0().data().toXDR('base64');
+      const bodyV0 = ev.body().v0();
+      const topics = bodyV0.topics().map((t: xdr.ScVal) => t.toXDR('base64'));
+      const data: string = bodyV0.data().toXDR('base64');
       return { contractId, topics, data };
     });
 }
@@ -96,7 +97,10 @@ async function storeEvent(event: LedgerEvent): Promise<number> {
   await prisma.contract.upsert({
     where: { address: event.contractId },
     update: {},
-    create: { address: event.contractId },
+    create: {
+      address: event.contractId,
+      name: `Unknown Contract (${event.contractId.slice(0, 8)}…)`,
+    },
   });
 
   // Ensure the transaction row exists (Event has a required FK to Transaction)
