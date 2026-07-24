@@ -1,4 +1,4 @@
-import { prisma } from '../db';
+import { prismaRead } from '../db';
 
 export interface CorpusEntry {
   functionName: string;
@@ -41,7 +41,7 @@ export function getBoundaryValues(type: string): unknown[] {
 }
 
 export async function buildCorpusFromHistory(contractAddress: string): Promise<TypedCorpus> {
-  const txs = await prisma.transaction.findMany({
+  const txs = await prismaRead.transaction.findMany({
     where: { contractAddress, functionArgs: { not: undefined } },
     select: { functionName: true, functionArgs: true, ledger: true, hash: true },
     orderBy: { ledger: 'desc' },

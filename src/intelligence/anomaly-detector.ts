@@ -1,4 +1,4 @@
-import { prisma } from '../db';
+import { prismaRead } from '../db';
 import { detectAnomalousPatterns, detectAdminFunctions } from './heuristic-classifier';
 
 export interface AnomalyReport {
@@ -72,7 +72,7 @@ async function checkImpersonation(
   flags: AnomalyFlag[],
 ): Promise<void> {
   try {
-    const knownContracts = await prisma.contract.findMany({
+    const knownContracts = await prismaRead.contract.findMany({
       where: { address: { not: address }, name: { not: null } },
       select: { address: true, name: true, abi: true },
       take: 50,

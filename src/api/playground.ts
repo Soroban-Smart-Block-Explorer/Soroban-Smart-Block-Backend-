@@ -6,7 +6,7 @@ import {
   buildSignableTransaction,
   submitTransaction,
 } from '../playground/tx-builder';
-import { prisma } from '../db';
+import { prismaRead } from '../db';
 
 export const playgroundRouter = Router({ mergeParams: true });
 
@@ -164,7 +164,7 @@ playgroundRouter.get(
     const fn = req.query.function as string | undefined;
 
     try {
-      const txs = await prisma.transaction.findMany({
+      const txs = await prismaRead.transaction.findMany({
         where: {
           contractAddress: address,
           ...(fn ? { functionName: fn } : {}),
