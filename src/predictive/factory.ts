@@ -1,7 +1,7 @@
 import { config } from '../config';
 import { EnsembleForecaster } from './ensemble';
 import { generateDeterministicSeries } from './random';
-import { ArimaMock, XgboostMock, LstmMock } from './models';
+import { ArimaSimulation, XgboostSimulation, LstmSimulation } from './models';
 import { LinearTrendModel, SeasonalMeanModel } from './production-models';
 
 export type ForecastMode = 'demo' | 'production';
@@ -20,7 +20,7 @@ export function createForecaster(options: ForecasterOptions = {}): EnsembleForec
   const models =
     mode === 'production'
       ? [new LinearTrendModel(), new SeasonalMeanModel()]
-      : [new ArimaMock(seed), new XgboostMock(seed), new LstmMock(seed)];
+      : [new ArimaSimulation(seed), new XgboostSimulation(seed), new LstmSimulation(seed)];
 
   const forecaster = new EnsembleForecaster(models);
   forecaster.trainAll(generateDeterministicSeries(30, seed));
