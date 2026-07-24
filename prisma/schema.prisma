@@ -76,7 +76,8 @@ model Transaction {
 
   ledger   Ledger    @relation(fields: [ledgerSequence], references: [sequence])
   contract Contract? @relation(fields: [contractAddress], references: [address])
-  events   Event[]
+  events               Event[]
+  signatureInspections SignatureInspection[]
 
   @@index([hash])
   @@index([ledgerSequence])
@@ -2978,6 +2979,8 @@ model SignatureInspection {
   pubKeyY         String?
   label           String?
   createdAt       DateTime @default(now())
+
+  transaction Transaction @relation(fields: [transactionHash], references: [hash])
 }
 
 model SignerSnapshot {

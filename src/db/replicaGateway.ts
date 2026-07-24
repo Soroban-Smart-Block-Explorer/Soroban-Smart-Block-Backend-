@@ -27,9 +27,15 @@ export async function measureReplicaLag(
   if (cachedLag !== null && now < cacheExpiresAt) return cachedLag;
 
   try {
-    const [primaryState, replicaState] = await Promise.all([
-      write.indexerState.findUnique({ where: { id: 'singleton' }, select: { lastLedger: true } }),
-      read.indexerState.findUnique({ where: { id: 'singleton' }, select: { lastLedger: true } }),
+    const QUERY_TIMEOUT_MS = 5_000;
+    const [primaryState, replicaState] = await Promise.race([
+      Promise.all([
+        write.indexerState.findUnique({ where: { id: 'singleton' }, select: { lastLedger: true } }),
+        read.indexerState.findUnique({ where: { id: 'singleton' }, select: { lastLedger: true } }),
+      ]),
+      new Promise<never>((_, reject) =>
+        setTimeout(() => reject(new Error('replica lag query timed out')), QUERY_TIMEOUT_MS),
+      ),
     ]);
 
     const primaryLedger = primaryState?.lastLedger ?? 0;
