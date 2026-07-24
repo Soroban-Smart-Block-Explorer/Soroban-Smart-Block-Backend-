@@ -259,18 +259,77 @@ async function getRecordCount(
   startTime: Date,
   endTime: Date,
 ): Promise<number> {
-  // In real implementation, this would query the actual data tables
-  const mockCounts: Record<string, number> = {
-    transactions: 100000,
-    events: 500000,
-    ledgers: 10000,
-    trades: 50000,
-    metrics: 5000,
-  };
+  const normalizedChannel = channelName.toLowerCase();
+  const queryStart = new Date(startTime);
+  const queryEnd = new Date(endTime);
 
-  const baseCount = mockCounts[channelName] || 10000;
-  const daysDiff = (endTime.getTime() - startTime.getTime()) / (1000 * 60 * 60 * 24);
-  return Math.round((baseCount * daysDiff) / 30); // Scale by month
+  if (normalizedChannel === 'transactions') {
+    return prisma.transaction.count({
+      where: {
+        ledgerCloseTime: {
+          gte: queryStart,
+          lte: queryEnd,
+        },
+      },
+    });
+  }
+
+  if (normalizedChannel === 'events') {
+    return prisma.event.count({
+      where: {
+        ledgerCloseTime: {
+          gte: queryStart,
+          lte: queryEnd,
+        },
+      },
+    });
+  }
+
+  if (normalizedChannel === 'ledgers') {
+    return prisma.ledger.count({
+      where: {
+        closeTime: {
+          gte: queryStart,
+          lte: queryEnd,
+        },
+      },
+    });
+  }
+
+  if (normalizedChannel === 'trades') {
+    return prisma.transaction.count({
+      where: {
+        ledgerCloseTime: {
+          gte: queryStart,
+          lte: queryEnd,
+        },
+        OR: [
+          { functionName: { in: ['swap', 'add_liquidity', 'remove_liquidity', 'trade'] } },
+          { humanReadable: { contains: 'swap', mode: 'insensitive' } },
+        ],
+      },
+    });
+  }
+
+  if (normalizedChannel === 'metrics') {
+    return prisma.ledger.count({
+      where: {
+        closeTime: {
+          gte: queryStart,
+          lte: queryEnd,
+        },
+      },
+    });
+  }
+
+  return prisma.transaction.count({
+    where: {
+      ledgerCloseTime: {
+        gte: queryStart,
+        lte: queryEnd,
+      },
+    },
+  });
 }
 
 function estimateFileSize(recordCount: number, format: string): number {
