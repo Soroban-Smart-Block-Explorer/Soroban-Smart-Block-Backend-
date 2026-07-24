@@ -347,7 +347,7 @@ export async function recordUpgradeWithIntelligence(input: RecordUpgradeInput) {
     upgrader,
   } = input;
 
-  const contract = await prismaWrite.contract.findUnique({
+  const contract = await prismaRead.contract.findUnique({
     where: { address: contractAddress },
     select: { wasmHash: true },
   });

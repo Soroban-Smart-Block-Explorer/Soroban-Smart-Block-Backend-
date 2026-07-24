@@ -26,7 +26,7 @@ function generateRsaKeyPair(): KeyPair {
   };
 }
 
-export async function getOrCreateKeyPair(): Promise<KeyPair> {
+export async function getOrCreateKeyPair(): Promise<forge.pki.KeyPair> {
   if (currentKeyPair) return currentKeyPair;
 
   const cached = await cacheGet<KeyPair>(KEYS_CACHE_KEY);
@@ -61,12 +61,8 @@ export async function rotateKeys(): Promise<KeyPair> {
 /** Convert PEM public key to JWKS JWK format */
 function pemToJwk(publicKeyPem: string, kid: string): object {
   const pubKey = forge.pki.publicKeyFromPem(publicKeyPem);
-  const n = forge.util.encode64(
-    forge.util.hexToBytes(pubKey.n.toString(16).padStart(2, '0'))
-  );
-  const e = forge.util.encode64(
-    forge.util.hexToBytes(pubKey.e.toString(16).padStart(2, '0'))
-  );
+  const n = forge.util.encode64(forge.util.hexToBytes(pubKey.n.toString(16).padStart(2, '0')));
+  const e = forge.util.encode64(forge.util.hexToBytes(pubKey.e.toString(16).padStart(2, '0')));
   // Convert to URL-safe base64
   const toB64Url = (b64: string) => b64.replace(/\+/g, '-').replace(/\//g, '_').replace(/=/g, '');
   return {

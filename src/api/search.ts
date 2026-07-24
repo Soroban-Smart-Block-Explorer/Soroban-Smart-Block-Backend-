@@ -1,6 +1,6 @@
 import { Router, Request, Response } from 'express';
 import { z } from 'zod';
-import { prismaRead as prisma, prismaWrite } from '../db';
+import { prismaRead, prismaWrite } from '../db';
 import { asyncHandler } from '../middleware/asyncHandler';
 import { safeString } from '../schemas/common';
 
@@ -73,7 +73,7 @@ searchRouter.get(
         .replace(/error:\w+/i, '')
         .trim();
 
-      const searchIndexEntries = await (prisma as any).searchIndexEntry.findMany({
+      const searchIndexEntries = await prismaRead.searchIndexEntry.findMany({
         where: {
           AND: [
             cleanQuery ? { content: { contains: cleanQuery, mode: 'insensitive' } } : undefined,
@@ -152,11 +152,12 @@ searchRouter.get(
 // GET /search/index — trigger re-indexing of all contracts
 searchRouter.get('/index', async (_req: Request, res: Response) => {
   try {
-    const sources = await (prisma as any).contractSource.findMany({
+    const sources = await prismaRead.contractSource.findMany({
       include: { functionDetails: true },
     });
 
-    await (prismaWrite as any).searchIndexEntry.deleteMany({});
+    // Clear existing index
+    await prismaWrite.searchIndexEntry.deleteMany({});
 
     let indexed = 0;
     for (const source of sources) {
@@ -176,8 +177,10 @@ searchRouter.get('/index', async (_req: Request, res: Response) => {
         indexed++;
       }
 
-      for (const imp of (source.imports as any[]) || []) {
-        await (prismaWrite as any).searchIndexEntry.create({
+      // Index imports
+      const imports = (source.imports as any[]) || [];
+      for (const imp of imports) {
+        await prismaWrite.searchIndexEntry.create({
           data: {
             contractAddress: source.contractAddress,
             contentType: 'import',
@@ -188,8 +191,10 @@ searchRouter.get('/index', async (_req: Request, res: Response) => {
         indexed++;
       }
 
-      for (const exp of (source.exports as any[]) || []) {
-        await (prismaWrite as any).searchIndexEntry.create({
+      // Index exports
+      const exports = (source.exports as any[]) || [];
+      for (const exp of exports) {
+        await prismaWrite.searchIndexEntry.create({
           data: {
             contractAddress: source.contractAddress,
             contentType: 'export',
@@ -200,40 +205,52 @@ searchRouter.get('/index', async (_req: Request, res: Response) => {
         indexed++;
       }
 
-      for (const evt of (source.events as any[]) || []) {
-        await (prismaWrite as any).searchIndexEntry.create({
-          data: {
-            contractAddress: source.contractAddress,
-            contentType: 'event',
-            content: JSON.stringify(evt),
-            metadata: evt,
-          },
-        });
-        indexed++;
+      // Index events
+      const events = (source.events as any[]) || [];
+      if (Array.isArray(events)) {
+        for (const evt of events) {
+          await prismaWrite.searchIndexEntry.create({
+            data: {
+              contractAddress: source.contractAddress,
+              contentType: 'event',
+              content: JSON.stringify(evt),
+              metadata: evt,
+            },
+          });
+          indexed++;
+        }
       }
 
-      for (const err of (source.errors as any[]) || []) {
-        await (prismaWrite as any).searchIndexEntry.create({
-          data: {
-            contractAddress: source.contractAddress,
-            contentType: 'error',
-            content: JSON.stringify(err),
-            metadata: err,
-          },
-        });
-        indexed++;
+      // Index errors
+      const errors = (source.errors as any[]) || [];
+      if (Array.isArray(errors)) {
+        for (const err of errors) {
+          await prismaWrite.searchIndexEntry.create({
+            data: {
+              contractAddress: source.contractAddress,
+              contentType: 'error',
+              content: JSON.stringify(err),
+              metadata: err,
+            },
+          });
+          indexed++;
+        }
       }
 
-      for (const stor of (source.storageVariables as any[]) || []) {
-        await (prismaWrite as any).searchIndexEntry.create({
-          data: {
-            contractAddress: source.contractAddress,
-            contentType: 'storage',
-            content: JSON.stringify(stor),
-            metadata: stor,
-          },
-        });
-        indexed++;
+      // Index storage variables
+      const storage = (source.storageVariables as any[]) || [];
+      if (Array.isArray(storage)) {
+        for (const stor of storage) {
+          await prismaWrite.searchIndexEntry.create({
+            data: {
+              contractAddress: source.contractAddress,
+              contentType: 'storage',
+              content: JSON.stringify(stor),
+              metadata: stor,
+            },
+          });
+          indexed++;
+        }
       }
     }
 

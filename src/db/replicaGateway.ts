@@ -11,6 +11,17 @@ const CACHE_TTL_MS = 5_000;
 let cachedLag: number | null = null;
 let cacheExpiresAt = 0;
 
+async function hasIndexerStateTable(client: PrismaClient): Promise<boolean> {
+  try {
+    const rows = await client.$queryRawUnsafe<Array<{ exists: boolean }>>(
+      "SELECT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'IndexerState') AS exists",
+    );
+    return Boolean(rows?.[0]?.exists);
+  } catch {
+    return false;
+  }
+}
+
 /**
  * Query the replica for its latest indexed ledger and compare to the primary.
  * Returns the lag in ledgers (primary − replica).
@@ -27,15 +38,18 @@ export async function measureReplicaLag(
   if (cachedLag !== null && now < cacheExpiresAt) return cachedLag;
 
   try {
-    const QUERY_TIMEOUT_MS = 5_000;
-    const [primaryState, replicaState] = await Promise.race([
-      Promise.all([
-        write.indexerState.findUnique({ where: { id: 'singleton' }, select: { lastLedger: true } }),
-        read.indexerState.findUnique({ where: { id: 'singleton' }, select: { lastLedger: true } }),
-      ]),
-      new Promise<never>((_, reject) =>
-        setTimeout(() => reject(new Error('replica lag query timed out')), QUERY_TIMEOUT_MS),
-      ),
+    const [primaryHasTable, replicaHasTable] = await Promise.all([
+      hasIndexerStateTable(write),
+      hasIndexerStateTable(read),
+    ]);
+
+    if (!primaryHasTable || !replicaHasTable) {
+      throw new Error('IndexerState table is unavailable');
+    }
+
+    const [primaryState, replicaState] = await Promise.all([
+      write.indexerState.findUnique({ where: { id: 'singleton' }, select: { lastLedger: true } }),
+      read.indexerState.findUnique({ where: { id: 'singleton' }, select: { lastLedger: true } }),
     ]);
 
     const primaryLedger = primaryState?.lastLedger ?? 0;
