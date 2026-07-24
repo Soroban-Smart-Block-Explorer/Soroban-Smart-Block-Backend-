@@ -9,18 +9,9 @@ import { Router, Request, Response } from 'express';
 import { z } from 'zod';
 import { prismaWrite as prisma } from '../db';
 import { invalidateFreezeCache } from '../indexer/freeze-scanner';
+import { adminAuth } from '../middleware/adminAuth';
 
 export const freezeRouter = Router();
-
-// Middleware to mock admin auth if needed
-const adminAuth = (req: Request, res: Response, next: any) => {
-  const actor = req.headers['x-admin-token'] || req.headers['x-actor'];
-  if (!actor) {
-    return res.status(401).json({ error: 'Unauthorized: admin token required' });
-  }
-  req.actor = typeof actor === 'string' ? actor : String(actor);
-  next();
-};
 
 const getActor = (req: Request) => req.actor ?? 'unknown';
 

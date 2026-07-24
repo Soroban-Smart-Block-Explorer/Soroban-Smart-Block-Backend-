@@ -3314,7 +3314,7 @@ model ZkpVerificationEvent {
   createdAt          DateTime @default(now())
 }
 
-// ─── Soroban Reentrancy Fortress (Issue #307) ────────────────────────────────
+// ── Soroban Reentrancy Fortress (Issue #307) ────────────────────────────────
 
 enum ReentrancyType {
   SIMPLE
