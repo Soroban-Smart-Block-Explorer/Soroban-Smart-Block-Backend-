@@ -266,7 +266,7 @@ function createPinnedLookup(hostname: string, pinnedIps: string[]): LookupFuncti
     }
 
     // Use the first pinned IP (prefer IPv4 for compatibility)
-    const ipv4 = pinnedIps.find(ip => net.isIPv4(ip));
+    const ipv4 = pinnedIps.find((ip) => net.isIPv4(ip));
     const ip = ipv4 || pinnedIps[0];
     const family = net.isIPv4(ip) ? 4 : 6;
 
@@ -284,7 +284,11 @@ function createPinnedLookup(hostname: string, pinnedIps: string[]): LookupFuncti
  *
  * The caller should pass `REQUEST_TIMEOUT_MS` as the timeout.
  */
-export function buildSafeAxios(timeoutMs: number, hostname: string, pinnedIps: string[]): AxiosInstance {
+export function buildSafeAxios(
+  timeoutMs: number,
+  hostname: string,
+  pinnedIps: string[],
+): AxiosInstance {
   const lookup = createPinnedLookup(hostname, pinnedIps);
 
   return axios.create({
@@ -292,11 +296,11 @@ export function buildSafeAxios(timeoutMs: number, hostname: string, pinnedIps: s
     maxRedirects: 0, // we follow manually below
     validateStatus: () => true,
     // Dedicated agents with pinned DNS lookup
-    httpAgent: new HttpAgent({ 
+    httpAgent: new HttpAgent({
       keepAlive: false,
       lookup: lookup as any, // Node's types are slightly different but compatible
     }),
-    httpsAgent: new HttpsAgent({ 
+    httpsAgent: new HttpsAgent({
       keepAlive: false,
       lookup: lookup as any,
     }),

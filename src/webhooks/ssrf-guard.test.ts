@@ -1,6 +1,6 @@
 /**
  * Tests for SSRF protection including DNS rebinding and redirect bypass scenarios.
- * 
+ *
  * These tests verify protection against:
  * 1. DNS rebinding attacks (TOCTOU vulnerabilities)
  * 2. Redirect-based SSRF bypasses
@@ -9,12 +9,7 @@
 
 import { describe, test, expect, beforeEach, afterEach, vi } from 'vitest';
 import dns from 'dns';
-import {
-  assertSafeUrl,
-  isBlockedIp,
-  SsrfBlockedError,
-  safePost,
-} from './ssrf-guard';
+import { assertSafeUrl, isBlockedIp, SsrfBlockedError, safePost } from './ssrf-guard';
 import axios from 'axios';
 
 // Mock dns module
@@ -80,9 +75,7 @@ describe('SSRF Guard - DNS Rebinding Protection', () => {
     mockResolve4.mockResolvedValue(['10.0.0.1']);
     mockResolve6.mockRejectedValue(new Error('No AAAA records'));
 
-    await expect(
-      assertSafeUrl('https://evil.com/webhook')
-    ).rejects.toThrow(SsrfBlockedError);
+    await expect(assertSafeUrl('https://evil.com/webhook')).rejects.toThrow(SsrfBlockedError);
 
     expect(mockResolve4).toHaveBeenCalledWith('evil.com');
   });
@@ -94,9 +87,7 @@ describe('SSRF Guard - DNS Rebinding Protection', () => {
     mockResolve4.mockResolvedValue(['169.254.169.254']);
     mockResolve6.mockRejectedValue(new Error('No AAAA records'));
 
-    await expect(
-      assertSafeUrl('https://metadata.example.com')
-    ).rejects.toThrow(SsrfBlockedError);
+    await expect(assertSafeUrl('https://metadata.example.com')).rejects.toThrow(SsrfBlockedError);
   });
 
   test('allows hostname that resolves to public IP', async () => {
@@ -118,9 +109,7 @@ describe('SSRF Guard - DNS Rebinding Protection', () => {
     mockResolve4.mockResolvedValue(['8.8.8.8', '10.0.0.1']);
     mockResolve6.mockRejectedValue(new Error('No AAAA records'));
 
-    await expect(
-      assertSafeUrl('https://evil.com/webhook')
-    ).rejects.toThrow(SsrfBlockedError);
+    await expect(assertSafeUrl('https://evil.com/webhook')).rejects.toThrow(SsrfBlockedError);
   });
 
   test('caches DNS results to prevent rebinding attacks', async () => {
@@ -144,27 +133,19 @@ describe('SSRF Guard - DNS Rebinding Protection', () => {
   });
 
   test('blocks direct IP in private range', async () => {
-    await expect(
-      assertSafeUrl('https://10.0.0.1/webhook')
-    ).rejects.toThrow(SsrfBlockedError);
+    await expect(assertSafeUrl('https://10.0.0.1/webhook')).rejects.toThrow(SsrfBlockedError);
 
-    await expect(
-      assertSafeUrl('https://169.254.169.254/latest/meta-data/')
-    ).rejects.toThrow(SsrfBlockedError);
+    await expect(assertSafeUrl('https://169.254.169.254/latest/meta-data/')).rejects.toThrow(
+      SsrfBlockedError,
+    );
   });
 
   test('blocks localhost and internal TLDs', async () => {
-    await expect(
-      assertSafeUrl('https://localhost/webhook')
-    ).rejects.toThrow(SsrfBlockedError);
+    await expect(assertSafeUrl('https://localhost/webhook')).rejects.toThrow(SsrfBlockedError);
 
-    await expect(
-      assertSafeUrl('https://internal.local/webhook')
-    ).rejects.toThrow(SsrfBlockedError);
+    await expect(assertSafeUrl('https://internal.local/webhook')).rejects.toThrow(SsrfBlockedError);
 
-    await expect(
-      assertSafeUrl('https://api.internal/webhook')
-    ).rejects.toThrow(SsrfBlockedError);
+    await expect(assertSafeUrl('https://api.internal/webhook')).rejects.toThrow(SsrfBlockedError);
   });
 });
 
@@ -184,9 +165,7 @@ describe('SSRF Guard - Redirect Protection', () => {
     const mockAxiosCreate = axios.create as ReturnType<typeof vi.fn>;
 
     // Initial URL resolves to public IP
-    mockResolve4
-      .mockResolvedValueOnce(['8.8.8.8'])
-      .mockResolvedValueOnce(['10.0.0.1']); // Redirect target resolves to private IP
+    mockResolve4.mockResolvedValueOnce(['8.8.8.8']).mockResolvedValueOnce(['10.0.0.1']); // Redirect target resolves to private IP
 
     mockResolve6.mockRejectedValue(new Error('No AAAA records'));
 
@@ -200,9 +179,9 @@ describe('SSRF Guard - Redirect Protection', () => {
       post: mockPost,
     });
 
-    await expect(
-      safePost('https://evil.com/webhook', '{}', {}, 5000)
-    ).rejects.toThrow(SsrfBlockedError);
+    await expect(safePost('https://evil.com/webhook', '{}', {}, 5000)).rejects.toThrow(
+      SsrfBlockedError,
+    );
 
     // Should have validated both URLs
     expect(mockResolve4).toHaveBeenCalledWith('evil.com');
@@ -215,13 +194,12 @@ describe('SSRF Guard - Redirect Protection', () => {
     const mockAxiosCreate = axios.create as ReturnType<typeof vi.fn>;
 
     // Both URLs resolve to public IPs
-    mockResolve4
-      .mockResolvedValueOnce(['8.8.8.8'])
-      .mockResolvedValueOnce(['1.1.1.1']);
+    mockResolve4.mockResolvedValueOnce(['8.8.8.8']).mockResolvedValueOnce(['1.1.1.1']);
 
     mockResolve6.mockRejectedValue(new Error('No AAAA records'));
 
-    const mockPost = vi.fn()
+    const mockPost = vi
+      .fn()
       .mockResolvedValueOnce({
         status: 302,
         headers: { location: 'https://redirect.com/final' },
@@ -261,9 +239,9 @@ describe('SSRF Guard - Redirect Protection', () => {
       post: mockPost,
     });
 
-    await expect(
-      safePost('https://evil.com/webhook', '{}', {}, 5000)
-    ).rejects.toThrow(SsrfBlockedError);
+    await expect(safePost('https://evil.com/webhook', '{}', {}, 5000)).rejects.toThrow(
+      SsrfBlockedError,
+    );
   });
 
   test('enforces maximum redirect limit', async () => {
@@ -285,9 +263,9 @@ describe('SSRF Guard - Redirect Protection', () => {
       post: mockPost,
     });
 
-    await expect(
-      safePost('https://loop.com/start', '{}', {}, 5000)
-    ).rejects.toThrow(/Exceeded maximum redirect limit/);
+    await expect(safePost('https://loop.com/start', '{}', {}, 5000)).rejects.toThrow(
+      /Exceeded maximum redirect limit/,
+    );
 
     // Should stop after MAX_REDIRECTS (5) + initial request = 6 calls
     expect(mockPost).toHaveBeenCalledTimes(6);
@@ -301,7 +279,8 @@ describe('SSRF Guard - Redirect Protection', () => {
     mockResolve4.mockResolvedValue(['8.8.8.8']);
     mockResolve6.mockRejectedValue(new Error('No AAAA records'));
 
-    const mockPost = vi.fn()
+    const mockPost = vi
+      .fn()
       .mockResolvedValueOnce({
         status: 302,
         headers: { location: '/redirected-path' }, // Relative URL
@@ -341,9 +320,9 @@ describe('SSRF Guard - Redirect Protection', () => {
       post: mockPost,
     });
 
-    await expect(
-      safePost('https://evil.com/webhook', '{}', {}, 5000)
-    ).rejects.toThrow(/missing Location header/);
+    await expect(safePost('https://evil.com/webhook', '{}', {}, 5000)).rejects.toThrow(
+      /missing Location header/,
+    );
   });
 });
 
@@ -355,9 +334,9 @@ describe('SSRF Guard - Protocol Validation', () => {
   test('blocks HTTP in production environment', async () => {
     process.env.NETWORK_PROFILE = 'mainnet';
 
-    await expect(
-      assertSafeUrl('http://example.com/webhook')
-    ).rejects.toThrow(/Plain HTTP is not permitted/);
+    await expect(assertSafeUrl('http://example.com/webhook')).rejects.toThrow(
+      /Plain HTTP is not permitted/,
+    );
 
     delete process.env.NETWORK_PROFILE;
   });
@@ -377,27 +356,19 @@ describe('SSRF Guard - Protocol Validation', () => {
   });
 
   test('blocks unsupported protocols', async () => {
-    await expect(
-      assertSafeUrl('ftp://example.com/webhook')
-    ).rejects.toThrow(/Protocol.*not allowed/);
+    await expect(assertSafeUrl('ftp://example.com/webhook')).rejects.toThrow(
+      /Protocol.*not allowed/,
+    );
 
-    await expect(
-      assertSafeUrl('file:///etc/passwd')
-    ).rejects.toThrow(/Protocol.*not allowed/);
+    await expect(assertSafeUrl('file:///etc/passwd')).rejects.toThrow(/Protocol.*not allowed/);
 
-    await expect(
-      assertSafeUrl('javascript:alert(1)')
-    ).rejects.toThrow(/Protocol.*not allowed/);
+    await expect(assertSafeUrl('javascript:alert(1)')).rejects.toThrow(/Protocol.*not allowed/);
   });
 
   test('blocks malformed URLs', async () => {
-    await expect(
-      assertSafeUrl('not a url')
-    ).rejects.toThrow(/Malformed URL/);
+    await expect(assertSafeUrl('not a url')).rejects.toThrow(/Malformed URL/);
 
-    await expect(
-      assertSafeUrl('://missing-protocol')
-    ).rejects.toThrow(/Malformed URL/);
+    await expect(assertSafeUrl('://missing-protocol')).rejects.toThrow(/Malformed URL/);
   });
 });
 
@@ -409,12 +380,13 @@ describe('SSRF Guard - DNS Pinning Integration', () => {
 
     // Simulate DNS rebinding attempt: same hostname returns different IPs
     mockResolve4
-      .mockResolvedValueOnce(['8.8.8.8'])     // First check
-      .mockResolvedValueOnce(['1.1.1.1']);    // Redirect target
+      .mockResolvedValueOnce(['8.8.8.8']) // First check
+      .mockResolvedValueOnce(['1.1.1.1']); // Redirect target
 
     mockResolve6.mockRejectedValue(new Error('No AAAA records'));
 
-    const mockPost = vi.fn()
+    const mockPost = vi
+      .fn()
       .mockResolvedValueOnce({
         status: 302,
         headers: { location: 'https://other.com/final' },
