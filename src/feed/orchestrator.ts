@@ -5,6 +5,7 @@ import { deliveryService } from './deliveryService';
 import { SubscriptionManager } from './subscriptionManager';
 import { FeedWebSocketServer } from './websocketServer';
 import { logger } from '../logger';
+import { getTokenMetadata } from '../indexer/token-metadata';
 
 export class FeedOrchestrator extends EventEmitter {
   private subscriptionManager = new SubscriptionManager();
@@ -169,12 +170,8 @@ export class FeedOrchestrator extends EventEmitter {
   }
 
   private async getTokenSymbol(address: string): Promise<string> {
-    // In real implementation, this would lookup token metadata
-    const tokenMap: Record<string, string> = {
-      native: 'XLM',
-      'CAQME...': 'USDC',
-    };
-    return tokenMap[address] || 'UNKNOWN';
+    const meta = await getTokenMetadata(address);
+    return meta?.symbol ?? 'UNKNOWN';
   }
 
   private startMetricsCollection() {
