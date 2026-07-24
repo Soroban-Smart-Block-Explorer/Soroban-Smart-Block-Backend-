@@ -264,7 +264,7 @@ export async function enqueueExport(
  * Process a single export job to completion.
  */
 export async function runExportJob(jobId: string): Promise<void> {
-  const job = await prismaWrite.exportJob.findUnique({ where: { id: jobId } });
+  const job = await prismaRead.exportJob.findUnique({ where: { id: jobId } });
   if (!job || job.status !== 'pending') return;
 
   await prismaWrite.exportJob.update({ where: { id: jobId }, data: { status: 'running' } });

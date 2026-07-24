@@ -160,7 +160,7 @@ export async function persistAnalysis(
   }
 
   // Upsert contract risk score
-  const previousScore = await prismaWrite.contractRiskScore.findUnique({
+  const previousScore = await prismaRead.contractRiskScore.findUnique({
     where: { contractAddress: riskScore.contractAddress },
     select: { riskScore: true },
   });
