@@ -3,7 +3,7 @@ import { createHash, randomBytes } from 'crypto';
 import { getOrCreateKeyPair } from './keys';
 
 export interface TokenPayload {
-  sub: string;       // wallet address
+  sub: string; // wallet address
   userId: string;
   role: string;
   tier: string;
@@ -21,7 +21,7 @@ export interface TokenPair {
   expiresAt: Date;
 }
 
-export const ACCESS_TOKEN_TTL = 24 * 3600;    // 24h
+export const ACCESS_TOKEN_TTL = 24 * 3600; // 24h
 export const REFRESH_TOKEN_TTL = 30 * 24 * 3600; // 30d
 
 export function hashToken(token: string): string {
@@ -37,7 +37,9 @@ export async function issueTokens(payload: Omit<TokenPayload, 'jti'>): Promise<T
   const opts: SignOptions = {
     algorithm: 'RS256',
     expiresIn: ACCESS_TOKEN_TTL,
-    header: { alg: 'RS256', kid } as Parameters<typeof jwt.sign>[2] extends SignOptions ? never : never,
+    header: { alg: 'RS256', kid } as Parameters<typeof jwt.sign>[2] extends SignOptions
+      ? never
+      : never,
   };
 
   const token = jwt.sign(claims, privateKeyPem, {

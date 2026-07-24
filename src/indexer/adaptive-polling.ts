@@ -31,7 +31,7 @@ const DEFAULT_CONFIG: AdaptivePollingConfig = {
   minInterval: 100,
   maxInterval: 5000,
   batchSize: 1,
-  processingQueueThreshold: 5000
+  processingQueueThreshold: 5000,
 };
 
 export class AdaptivePollingService {
@@ -57,7 +57,9 @@ export class AdaptivePollingService {
     // Rule 1: Many ledgers behind - speed up ingestion
     if (ledgersBehind > 100) {
       newInterval = this.currentInterval * 0.5; // halve
-      logger.debug(`Ledgers behind (${ledgersBehind}) > 100, reducing interval to ${newInterval}ms`);
+      logger.debug(
+        `Ledgers behind (${ledgersBehind}) > 100, reducing interval to ${newInterval}ms`,
+      );
     }
     // Rule 2: Caught up and idle - slow down
     else if (ledgersBehind === 0 && processingQueueDepth === 0) {
@@ -67,12 +69,16 @@ export class AdaptivePollingService {
     // Rule 3: Some backlog with available capacity - slight speedup
     else if (ledgersBehind > 0 && availableWorkers > 0) {
       newInterval = this.currentInterval * 0.9;
-      logger.debug(`Backlog (${ledgersBehind}) with ${availableWorkers} workers, reducing to ${newInterval}ms`);
+      logger.debug(
+        `Backlog (${ledgersBehind}) with ${availableWorkers} workers, reducing to ${newInterval}ms`,
+      );
     }
     // Rule 4: Queue overload - slow down ingestion
     else if (processingQueueDepth > this.config.processingQueueThreshold) {
       newInterval = Math.min(this.currentInterval * 1.5, this.config.maxInterval);
-      logger.debug(`Queue overload (${processingQueueDepth}), increasing interval to ${newInterval}ms`);
+      logger.debug(
+        `Queue overload (${processingQueueDepth}), increasing interval to ${newInterval}ms`,
+      );
     }
 
     // Clamp to valid range
@@ -86,7 +92,7 @@ export class AdaptivePollingService {
     await this.persistPollingState({
       pollingIntervalMs: Math.round(this.intervalEma),
       batchSize: this.currentBatchSize,
-      emaIntervalMs: Math.round(this.intervalEma)
+      emaIntervalMs: Math.round(this.intervalEma),
     });
 
     this.currentInterval = Math.round(this.intervalEma);
@@ -163,7 +169,7 @@ export class AdaptivePollingService {
       currentBatchSize: this.currentBatchSize,
       intervalEma: this.intervalEma,
       lastUpdateTime: this.lastUpdateTime,
-      config: this.config
+      config: this.config,
     };
   }
 
@@ -194,7 +200,7 @@ export class AdaptivePollingService {
           ema_interval_ms = $3,
           last_updated = NOW()
         `,
-        [state.pollingIntervalMs, state.batchSize, state.emaIntervalMs]
+        [state.pollingIntervalMs, state.batchSize, state.emaIntervalMs],
       );
     } catch (error) {
       logger.error('Failed to persist polling state', { error });
@@ -207,7 +213,9 @@ export class AdaptivePollingService {
    */
   async recoverState(): Promise<void> {
     try {
-      const result = await db.query('SELECT * FROM adaptive_polling_state ORDER BY id DESC LIMIT 1');
+      const result = await db.query(
+        'SELECT * FROM adaptive_polling_state ORDER BY id DESC LIMIT 1',
+      );
 
       if (result.rows.length > 0) {
         const state = result.rows[0];

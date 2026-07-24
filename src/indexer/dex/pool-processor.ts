@@ -55,7 +55,12 @@ function sumVolumeUsd(
  * relative to TVL) and reserve-value imbalance both raise the risk of
  * impermanent loss for liquidity providers.
  */
-export function ilRiskScore(tvl: number, volume24h: number, valueA: number, valueB: number): number {
+export function ilRiskScore(
+  tvl: number,
+  volume24h: number,
+  valueA: number,
+  valueB: number,
+): number {
   if (tvl <= 0) return 0;
   const turnover = Math.min(1, volume24h / tvl); // 0..1
   const balance = valueA + valueB > 0 ? Math.abs(valueA - valueB) / (valueA + valueB) : 0; // 0..1
@@ -69,8 +74,14 @@ export async function computePoolMetrics(poolAddress: string): Promise<void> {
   if (!pool) return;
 
   const [priceARow, priceBRow] = await Promise.all([
-    prismaRead.tokenPrice.findUnique({ where: { tokenAddress: pool.tokenA }, select: { priceUsd: true } }),
-    prismaRead.tokenPrice.findUnique({ where: { tokenAddress: pool.tokenB }, select: { priceUsd: true } }),
+    prismaRead.tokenPrice.findUnique({
+      where: { tokenAddress: pool.tokenA },
+      select: { priceUsd: true },
+    }),
+    prismaRead.tokenPrice.findUnique({
+      where: { tokenAddress: pool.tokenB },
+      select: { priceUsd: true },
+    }),
   ]);
   const priceA = priceARow?.priceUsd ?? null;
   const priceB = priceBRow?.priceUsd ?? null;
@@ -86,7 +97,15 @@ export async function computePoolMetrics(poolAddress: string): Promise<void> {
 
   const now = Date.now();
   const vol = (w: number) =>
-    sumVolumeUsd(swaps, now - w, pool.tokenA, pool.tokenADecimals, priceA, pool.tokenBDecimals, priceB);
+    sumVolumeUsd(
+      swaps,
+      now - w,
+      pool.tokenA,
+      pool.tokenADecimals,
+      priceA,
+      pool.tokenBDecimals,
+      priceB,
+    );
   const volume1h = vol(WINDOWS.h1);
   const volume24h = vol(WINDOWS.h24);
   const volume7d = vol(WINDOWS.d7);

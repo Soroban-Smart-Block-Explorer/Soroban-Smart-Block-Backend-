@@ -26,10 +26,7 @@
 import { Router, Request, Response } from 'express';
 import { z } from 'zod';
 import { prismaRead, prismaWrite } from '../db';
-import {
-  discoverFeeContracts,
-  computeApy,
-} from '../indexer/fee-classifier';
+import { discoverFeeContracts, computeApy } from '../indexer/fee-classifier';
 import { predictRevenue } from '../indexer/fee-aggregator';
 
 export const revenueRouter = Router();
@@ -45,7 +42,10 @@ function toNum(v: unknown): number {
 
 function periodParam(raw: unknown): 'HOUR' | 'DAY' | 'WEEK' | 'MONTH' {
   const map: Record<string, 'HOUR' | 'DAY' | 'WEEK' | 'MONTH'> = {
-    hour: 'HOUR', day: 'DAY', week: 'WEEK', month: 'MONTH',
+    hour: 'HOUR',
+    day: 'DAY',
+    week: 'WEEK',
+    month: 'MONTH',
   };
   return map[String(raw ?? 'day').toLowerCase()] ?? 'DAY';
 }
@@ -214,23 +214,23 @@ revenueRouter.get('/contracts/:address/breakdown', async (req: Request, res: Res
       timestamp: latest.timestamp,
       totalFees: total,
       feeTypeBreakdown: {
-        swap:           { amount: toNum(latest.swapFees),        pct: pct(latest.swapFees) },
-        withdrawal:     { amount: toNum(latest.withdrawFees),    pct: pct(latest.withdrawFees) },
-        performance:    { amount: toNum(latest.performanceFees), pct: pct(latest.performanceFees) },
-        protocol:       { amount: toNum(latest.protocolFees),    pct: pct(latest.protocolFees) },
-        liquidation:    { amount: toNum(latest.liquidationFees), pct: pct(latest.liquidationFees) },
-        interestSpread: { amount: toNum(latest.interestSpread),  pct: pct(latest.interestSpread) },
-        flashLoan:      { amount: toNum(latest.flashLoanFees),   pct: pct(latest.flashLoanFees) },
-        referral:       { amount: toNum(latest.referralFees),    pct: pct(latest.referralFees) },
+        swap: { amount: toNum(latest.swapFees), pct: pct(latest.swapFees) },
+        withdrawal: { amount: toNum(latest.withdrawFees), pct: pct(latest.withdrawFees) },
+        performance: { amount: toNum(latest.performanceFees), pct: pct(latest.performanceFees) },
+        protocol: { amount: toNum(latest.protocolFees), pct: pct(latest.protocolFees) },
+        liquidation: { amount: toNum(latest.liquidationFees), pct: pct(latest.liquidationFees) },
+        interestSpread: { amount: toNum(latest.interestSpread), pct: pct(latest.interestSpread) },
+        flashLoan: { amount: toNum(latest.flashLoanFees), pct: pct(latest.flashLoanFees) },
+        referral: { amount: toNum(latest.referralFees), pct: pct(latest.referralFees) },
       },
       destinationBreakdown: {
-        lpRewards:    { amount: toNum(latest.lpRewards),      pct: pct(latest.lpRewards) },
-        treasury:     { amount: toNum(latest.treasuryAmount), pct: pct(latest.treasuryAmount) },
-        buybackBurn:  { amount: toNum(latest.burnedAmount),   pct: pct(latest.burnedAmount) },
-        stakerRewards:{ amount: toNum(latest.stakerRewards),  pct: pct(latest.stakerRewards) },
-        insuranceFund:{ amount: toNum(latest.insuranceFund),  pct: pct(latest.insuranceFund) },
-        ecosystemFund:{ amount: toNum(latest.ecosystemFund),  pct: pct(latest.ecosystemFund) },
-        teamVesting:  { amount: toNum(latest.teamVesting),    pct: pct(latest.teamVesting) },
+        lpRewards: { amount: toNum(latest.lpRewards), pct: pct(latest.lpRewards) },
+        treasury: { amount: toNum(latest.treasuryAmount), pct: pct(latest.treasuryAmount) },
+        buybackBurn: { amount: toNum(latest.burnedAmount), pct: pct(latest.burnedAmount) },
+        stakerRewards: { amount: toNum(latest.stakerRewards), pct: pct(latest.stakerRewards) },
+        insuranceFund: { amount: toNum(latest.insuranceFund), pct: pct(latest.insuranceFund) },
+        ecosystemFund: { amount: toNum(latest.ecosystemFund), pct: pct(latest.ecosystemFund) },
+        teamVesting: { amount: toNum(latest.teamVesting), pct: pct(latest.teamVesting) },
       },
     });
   } catch (e) {
@@ -328,7 +328,7 @@ revenueRouter.get('/leaderboard', async (req: Request, res: Response) => {
 revenueRouter.get('/network', async (_req: Request, res: Response) => {
   try {
     const since24h = new Date(Date.now() - 24 * 60 * 60 * 1000);
-    const since7d  = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+    const since7d = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
     const since30d = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
 
     const [agg24h, agg7d, agg30d, protocolCount] = await Promise.all([
@@ -355,7 +355,7 @@ revenueRouter.get('/network', async (_req: Request, res: Response) => {
       network: 'soroban',
       revenue: {
         '24h': { totalFees: toNum(agg24h._sum.totalFees), usdValue: agg24h._sum.usdValue ?? 0 },
-        '7d':  { totalFees: toNum(agg7d._sum.totalFees),  usdValue: agg7d._sum.usdValue ?? 0 },
+        '7d': { totalFees: toNum(agg7d._sum.totalFees), usdValue: agg7d._sum.usdValue ?? 0 },
         '30d': { totalFees: toNum(agg30d._sum.totalFees), usdValue: agg30d._sum.usdValue ?? 0 },
       },
       activeProtocols: protocolCount.length,
@@ -757,23 +757,58 @@ revenueRouter.get('/export', async (req: Request, res: Response) => {
 
     if (q.format === 'csv') {
       const header = [
-        'contractAddress', 'protocolName', 'period', 'timestamp',
-        'totalFees', 'swapFees', 'withdrawFees', 'performanceFees',
-        'protocolFees', 'liquidationFees', 'interestSpread', 'flashLoanFees',
-        'referralFees', 'lpRewards', 'treasuryAmount', 'burnedAmount',
-        'stakerRewards', 'insuranceFund', 'ecosystemFund', 'teamVesting',
-        'feeToken', 'usdValue', 'txCount', 'uniqueUsers',
+        'contractAddress',
+        'protocolName',
+        'period',
+        'timestamp',
+        'totalFees',
+        'swapFees',
+        'withdrawFees',
+        'performanceFees',
+        'protocolFees',
+        'liquidationFees',
+        'interestSpread',
+        'flashLoanFees',
+        'referralFees',
+        'lpRewards',
+        'treasuryAmount',
+        'burnedAmount',
+        'stakerRewards',
+        'insuranceFund',
+        'ecosystemFund',
+        'teamVesting',
+        'feeToken',
+        'usdValue',
+        'txCount',
+        'uniqueUsers',
       ].join(',');
 
       const lines = rows.map((r) =>
         [
-          r.contractAddress, r.protocolName ?? '', r.period, r.timestamp.toISOString(),
-          r.totalFees, r.swapFees ?? '', r.withdrawFees ?? '', r.performanceFees ?? '',
-          r.protocolFees ?? '', r.liquidationFees ?? '', r.interestSpread ?? '',
-          r.flashLoanFees ?? '', r.referralFees ?? '', r.lpRewards ?? '',
-          r.treasuryAmount ?? '', r.burnedAmount ?? '', r.stakerRewards ?? '',
-          r.insuranceFund ?? '', r.ecosystemFund ?? '', r.teamVesting ?? '',
-          r.feeToken, r.usdValue ?? '', r.txCount, r.uniqueUsers ?? '',
+          r.contractAddress,
+          r.protocolName ?? '',
+          r.period,
+          r.timestamp.toISOString(),
+          r.totalFees,
+          r.swapFees ?? '',
+          r.withdrawFees ?? '',
+          r.performanceFees ?? '',
+          r.protocolFees ?? '',
+          r.liquidationFees ?? '',
+          r.interestSpread ?? '',
+          r.flashLoanFees ?? '',
+          r.referralFees ?? '',
+          r.lpRewards ?? '',
+          r.treasuryAmount ?? '',
+          r.burnedAmount ?? '',
+          r.stakerRewards ?? '',
+          r.insuranceFund ?? '',
+          r.ecosystemFund ?? '',
+          r.teamVesting ?? '',
+          r.feeToken,
+          r.usdValue ?? '',
+          r.txCount,
+          r.uniqueUsers ?? '',
         ].join(','),
       );
 

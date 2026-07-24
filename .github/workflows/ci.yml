@@ -48,6 +48,9 @@ jobs:
       - name: Lint
         run: npm run lint
 
+      - name: Check formatting
+        run: npm run format
+
       - name: Type-check (src)
         run: npm run build:strict || echo 'Type errors found (pre-existing)'
 

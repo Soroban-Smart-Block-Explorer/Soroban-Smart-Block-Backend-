@@ -103,9 +103,7 @@ export function validateProfile(profile: NetworkProfile): void {
 
   // ── Required fields ──────────────────────────────────────────────────────
   if (!databaseUrl) {
-    throw new Error(
-      `[${name}] databaseUrl is required. Set ${name.toUpperCase()}_DATABASE_URL.`,
-    );
+    throw new Error(`[${name}] databaseUrl is required. Set ${name.toUpperCase()}_DATABASE_URL.`);
   }
   if (!rpcUrl) {
     throw new Error(`[${name}] rpcUrl is required. Set ${name.toUpperCase()}_RPC_URL.`);
@@ -139,9 +137,7 @@ export function validateProfile(profile: NetworkProfile): void {
   // ── Network profile consistency ───────────────────────────────────────────
   if (name === 'mainnet') {
     if (rpcUrl.includes('testnet') || horizonUrl.includes('testnet')) {
-      throw new Error(
-        `[mainnet] rpcUrl or horizonUrl appears to point to testnet infrastructure.`,
-      );
+      throw new Error(`[mainnet] rpcUrl or horizonUrl appears to point to testnet infrastructure.`);
     }
   }
 }

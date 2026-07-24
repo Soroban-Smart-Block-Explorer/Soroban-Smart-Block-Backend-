@@ -140,12 +140,10 @@ identityRouter.post(
       where: { chain_address: { chain: parsed.data.chain, address: parsed.data.address } },
     });
     if (conflicting && conflicting.identityId !== req.params.id) {
-      return res
-        .status(409)
-        .json({
-          error: 'Address already linked to another identity',
-          conflictingIdentityId: conflicting.identityId,
-        });
+      return res.status(409).json({
+        error: 'Address already linked to another identity',
+        conflictingIdentityId: conflicting.identityId,
+      });
     }
 
     const chainAddress = await prisma.chainAddress.upsert({

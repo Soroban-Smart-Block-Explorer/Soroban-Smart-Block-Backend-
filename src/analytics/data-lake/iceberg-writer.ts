@@ -184,7 +184,12 @@ export async function writePartitionToS3(
 
   const ledgers = records.map((r) => r.ledger_sequence);
 
-  logger.info('Wrote Parquet partition to S3', { s3Key, rows: records.length, partition, tableName });
+  logger.info('Wrote Parquet partition to S3', {
+    s3Key,
+    rows: records.length,
+    partition,
+    tableName,
+  });
 
   return {
     s3Key,

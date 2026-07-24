@@ -37,9 +37,7 @@ function computeTotalValueAtRisk(
   return affectedCount * multiplier * avgTvl;
 }
 
-export async function persistPropagation(
-  input: PersistPropagationInput,
-): Promise<void> {
+export async function persistPropagation(input: PersistPropagationInput): Promise<void> {
   const advisory = await prisma.vulnerabilityAdvisory.findUnique({
     where: { id: input.advisoryId },
     select: { severity: true },

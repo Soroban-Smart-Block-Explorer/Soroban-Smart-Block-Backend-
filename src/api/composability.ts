@@ -1993,13 +1993,11 @@ composabilityRouter.post('/alerts', async (req: Request, res: Response) => {
         mitigationPatch: body.webhookUrl ? ({ webhookUrl: body.webhookUrl } as object) : undefined,
       },
     });
-    res
-      .status(201)
-      .json({
-        subscriptionId: alert.id,
-        contractAddress: body.contractAddress,
-        severity: body.severity ?? 'high',
-      });
+    res.status(201).json({
+      subscriptionId: alert.id,
+      contractAddress: body.contractAddress,
+      severity: body.severity ?? 'high',
+    });
   } catch (e: any) {
     if (e instanceof z.ZodError) return res.status(400).json({ error: e.errors });
     res.status(500).json({ error: String(e.message) });

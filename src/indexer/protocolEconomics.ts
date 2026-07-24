@@ -89,9 +89,7 @@ export async function runProtocolEconomics(): Promise<void> {
   }
 }
 
-export function startProtocolEconomicsScheduler(
-  intervalMs = BUCKET_MS.hour,
-): NodeJS.Timeout {
+export function startProtocolEconomicsScheduler(intervalMs = BUCKET_MS.hour): NodeJS.Timeout {
   runProtocolEconomics().catch((err) =>
     console.error('[protocolEconomics] initial run failed:', err),
   );

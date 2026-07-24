@@ -52,7 +52,10 @@ export function pairKeyOf(t0: string, t1: string): string {
  * reported spread is net of both legs' fees, and the trade size is bounded so
  * the price impact stays within the edge.
  */
-export function findArbitrageOpportunities(pools: ArbPool[], opts: ArbOptions = {}): ArbitrageOpportunity[] {
+export function findArbitrageOpportunities(
+  pools: ArbPool[],
+  opts: ArbOptions = {},
+): ArbitrageOpportunity[] {
   const minSpreadPct = opts.minSpreadPct ?? 0.3;
   const groups = new Map<string, ArbPool[]>();
   for (const p of pools) {

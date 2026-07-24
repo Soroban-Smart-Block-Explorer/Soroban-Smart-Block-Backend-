@@ -178,10 +178,16 @@ export async function markRefundInitiated(
     data: { refundStatus: 'initiated', refundAmount, metadata: { refundId } },
   });
   const order = await prismaRead.rampOrder.findUnique({ where: { id: orderId } });
-  await appendEvent(orderId, order?.status as OrderStatus | null, order?.status as OrderStatus ?? 'completed', 'user', {
-    refundId,
-    refundAmount,
-  });
+  await appendEvent(
+    orderId,
+    order?.status as OrderStatus | null,
+    (order?.status as OrderStatus) ?? 'completed',
+    'user',
+    {
+      refundId,
+      refundAmount,
+    },
+  );
 }
 
 // ── Audit log ─────────────────────────────────────────────────────────────────
@@ -205,10 +211,10 @@ async function appendEvent(
 // ── Transition table ──────────────────────────────────────────────────────────
 
 const ALLOWED_TRANSITIONS: Record<OrderStatus, OrderStatus[]> = {
-  pending:    ['processing', 'failed', 'cancelled'],
+  pending: ['processing', 'failed', 'cancelled'],
   processing: ['completed', 'failed'],
-  completed:  ['refunded'],
-  failed:     [],
-  refunded:   [],
-  cancelled:  [],
+  completed: ['refunded'],
+  failed: [],
+  refunded: [],
+  cancelled: [],
 };

@@ -14,12 +14,12 @@ const mlops = getMlopsService();
 // Zod schemas for validation
 const analyzeSchema = z.object({
   entityId: z.string(),
-  alertType: z.enum(['MEV', 'WASH_TRADING', 'SYBIL', 'SMART_CONTRACT_EXPLOIT'])
+  alertType: z.enum(['MEV', 'WASH_TRADING', 'SYBIL', 'SMART_CONTRACT_EXPLOIT']),
 });
 
 const feedbackSchema = z.object({
   transactionHash: z.string(),
-  label: z.enum(['MEV', 'WASH_TRADING', 'SYBIL', 'SMART_CONTRACT_EXPLOIT'])
+  label: z.enum(['MEV', 'WASH_TRADING', 'SYBIL', 'SMART_CONTRACT_EXPLOIT']),
 });
 
 // POST /fraud/analyze
@@ -32,7 +32,7 @@ fraudRouter.post('/analyze', async (req: Request, res: Response) => {
 
     const { entityId, alertType } = parsed.data;
     const alert = await alertSystem.analyzeAndAct(entityId, alertType);
-    
+
     res.status(200).json(alert);
   } catch (error: any) {
     res.status(500).json({ error: error.message });
@@ -53,7 +53,7 @@ fraudRouter.get('/alerts', async (req: Request, res: Response) => {
       where,
       take: limit,
       skip: offset,
-      orderBy: { createdAt: 'desc' }
+      orderBy: { createdAt: 'desc' },
     });
 
     const total = await prismaRead.fraudAlert.count({ where });
@@ -78,7 +78,7 @@ fraudRouter.get('/features/:entityId', async (req: Request, res: Response) => {
 fraudRouter.get('/models', async (req: Request, res: Response) => {
   try {
     const models = await prismaRead.modelRegistryEntry.findMany({
-      orderBy: { name: 'asc' }
+      orderBy: { name: 'asc' },
     });
     res.json(models);
   } catch (error: any) {
@@ -90,7 +90,7 @@ fraudRouter.get('/models', async (req: Request, res: Response) => {
 fraudRouter.patch('/models/:id/status', async (req: Request, res: Response) => {
   try {
     const statusSchema = z.object({
-      status: z.enum(['ACTIVE', 'SHADOW', 'CANDIDATE'])
+      status: z.enum(['ACTIVE', 'SHADOW', 'CANDIDATE']),
     });
     const parsed = statusSchema.safeParse(req.body);
     if (!parsed.success) {
@@ -99,7 +99,7 @@ fraudRouter.patch('/models/:id/status', async (req: Request, res: Response) => {
 
     const updated = await prismaWrite.modelRegistryEntry.update({
       where: { id: req.params.id },
-      data: { status: parsed.data.status }
+      data: { status: parsed.data.status },
     });
 
     res.json(updated);

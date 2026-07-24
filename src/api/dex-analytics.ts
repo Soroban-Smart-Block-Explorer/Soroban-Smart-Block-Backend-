@@ -59,7 +59,9 @@ dexAnalyticsRouter.get('/pools', async (req: Request, res: Response) => {
       take: q.limit,
       skip: q.offset,
     });
-    const total = await prisma.dexPool.count({ where: q.protocol ? { protocol: q.protocol } : undefined });
+    const total = await prisma.dexPool.count({
+      where: q.protocol ? { protocol: q.protocol } : undefined,
+    });
     res.json({
       data: pools.map((p) => ({
         poolAddress: p.poolAddress,
@@ -103,8 +105,20 @@ dexAnalyticsRouter.get('/pools/:address', async (req: Request, res: Response) =>
       poolType: pool.poolType,
       feeBps: pool.feeBps,
       tokens: {
-        a: { address: pool.tokenA, symbol: pool.tokenASymbol, decimals: pool.tokenADecimals, reserve: a, priceUsd: pool.priceAUsd },
-        b: { address: pool.tokenB, symbol: pool.tokenBSymbol, decimals: pool.tokenBDecimals, reserve: b, priceUsd: pool.priceBUsd },
+        a: {
+          address: pool.tokenA,
+          symbol: pool.tokenASymbol,
+          decimals: pool.tokenADecimals,
+          reserve: a,
+          priceUsd: pool.priceAUsd,
+        },
+        b: {
+          address: pool.tokenB,
+          symbol: pool.tokenBSymbol,
+          decimals: pool.tokenBDecimals,
+          reserve: b,
+          priceUsd: pool.priceBUsd,
+        },
       },
       composition:
         totalValue > 0
@@ -153,7 +167,15 @@ dexAnalyticsRouter.get('/pools/:address/history', async (req: Request, res: Resp
       },
       orderBy: { snapshotAt: 'desc' },
       take: q.limit,
-      select: { snapshotAt: true, tvlUsd: true, volume24hUsd: true, fees24hUsd: true, aprPct: true, priceAUsd: true, priceBUsd: true },
+      select: {
+        snapshotAt: true,
+        tvlUsd: true,
+        volume24hUsd: true,
+        fees24hUsd: true,
+        aprPct: true,
+        priceAUsd: true,
+        priceBUsd: true,
+      },
     });
     res.json({ data: snapshots.reverse(), count: snapshots.length });
   } catch (e) {
@@ -174,13 +196,21 @@ dexAnalyticsRouter.get('/pools/:address/slippage', async (req: Request, res: Res
     if (!pool) return res.status(404).json({ error: 'Pool not found' });
     const { a, b } = reservesHuman(pool);
     const [reserveIn, reserveOut] = q.side === 'a' ? [a, b] : [b, a];
-    if (reserveIn <= 0 || reserveOut <= 0) return res.status(409).json({ error: 'Pool has no liquidity' });
+    if (reserveIn <= 0 || reserveOut <= 0)
+      return res.status(409).json({ error: 'Pool has no liquidity' });
 
     if (q.amountIn != null) {
-      return res.json({ side: q.side, ...simulateSwap(q.amountIn, reserveIn, reserveOut, pool.feeBps) });
+      return res.json({
+        side: q.side,
+        ...simulateSwap(q.amountIn, reserveIn, reserveOut, pool.feeBps),
+      });
     }
     const sizes = defaultCurveSizes(reserveIn);
-    res.json({ side: q.side, feeBps: pool.feeBps, curve: slippageCurve(reserveIn, reserveOut, pool.feeBps, sizes) });
+    res.json({
+      side: q.side,
+      feeBps: pool.feeBps,
+      curve: slippageCurve(reserveIn, reserveOut, pool.feeBps, sizes),
+    });
   } catch (e) {
     res.status(400).json({ error: String(e) });
   }
@@ -209,12 +239,20 @@ dexAnalyticsRouter.get('/pools/:address/impermanent-loss', async (req: Request, 
     const q = ilSchema.parse(req.query);
     if (q.priceRatio != null) {
       const pct = impermanentLossPct(q.priceRatio);
-      return res.json({ priceRatio: q.priceRatio, impermanentLossPct: pct, severity: impermanentLossSeverity(pct) });
+      return res.json({
+        priceRatio: q.priceRatio,
+        impermanentLossPct: pct,
+        severity: impermanentLossSeverity(pct),
+      });
     }
     // Default curve across common price moves.
     const ratios = [0.25, 0.5, 0.75, 1, 1.25, 1.5, 2, 3, 4, 5];
     res.json({
-      curve: ratios.map((r) => ({ priceRatio: r, impermanentLossPct: impermanentLossPct(r), severity: impermanentLossSeverity(impermanentLossPct(r)) })),
+      curve: ratios.map((r) => ({
+        priceRatio: r,
+        impermanentLossPct: impermanentLossPct(r),
+        severity: impermanentLossSeverity(impermanentLossPct(r)),
+      })),
     });
   } catch (e) {
     res.status(400).json({ error: String(e) });

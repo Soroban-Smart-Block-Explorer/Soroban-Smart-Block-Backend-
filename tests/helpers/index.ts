@@ -51,14 +51,12 @@ export function makePrisma(overrides: Record<string, unknown> = {}) {
       createMany: vi.fn().mockResolvedValue({ count: 0 }),
     },
     exportJob: {
-      create: vi
-        .fn()
-        .mockResolvedValue({
-          id: 'job-1',
-          exportType: 'transactions',
-          filters: {},
-          status: 'pending',
-        }),
+      create: vi.fn().mockResolvedValue({
+        id: 'job-1',
+        exportType: 'transactions',
+        filters: {},
+        status: 'pending',
+      }),
       findUnique: vi.fn().mockResolvedValue(null),
       update: vi.fn().mockResolvedValue({}),
     },

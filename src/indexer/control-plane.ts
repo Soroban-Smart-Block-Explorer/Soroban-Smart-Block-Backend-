@@ -49,25 +49,25 @@ router.get('/status', async (req: Request, res: Response) => {
         ingester: parseInt(process.env.INDEXER_REPLICAS || '4'),
         decoder: parseInt(process.env.DECODER_REPLICAS || '4'),
         enrichment: parseInt(process.env.ENRICHMENT_REPLICAS || '4'),
-        analytics: parseInt(process.env.ANALYTICS_REPLICAS || '2')
+        analytics: parseInt(process.env.ANALYTICS_REPLICAS || '2'),
       },
       queueDepths: {
         raw: queueDepths['RAW_LEDGERS'] || 0,
         decoded: queueDepths['DECODED_TRANSACTIONS'] || 0,
         enriched: queueDepths['ENRICHED_EVENTS'] || 0,
-        backfill: queueDepths['BACKFILL_LEDGERS'] || 0
+        backfill: queueDepths['BACKFILL_LEDGERS'] || 0,
       },
       degradation: {
         currentLevel: degradationStats.currentLevel,
         skippedEventsTotal: degradationStats.skippedEventsTotal,
-        backfillQueueSize: degradationStats.backfillQueueSize
+        backfillQueueSize: degradationStats.backfillQueueSize,
       },
       prediction: {
         horizon: 5,
         throughput: 450,
         confidence: 0.92,
-        lastPredictionTime: new Date().toISOString()
-      }
+        lastPredictionTime: new Date().toISOString(),
+      },
     });
   } catch (error) {
     logger.error('Failed to get status', { error });
@@ -93,8 +93,8 @@ router.get('/metrics', async (req: Request, res: Response) => {
         rmse: modelMetrics.rmse,
         accuracy: modelMetrics.accuracy,
         lastTraining: new Date(modelMetrics.lastTraining).toISOString(),
-        predictionsCount: modelMetrics.predictionsCount
-      }
+        predictionsCount: modelMetrics.predictionsCount,
+      },
     });
   } catch (error) {
     logger.error('Failed to get metrics', { error });
@@ -119,7 +119,7 @@ router.post('/mode', async (req: Request, res: Response) => {
       realtime: 100,
       balanced: 500,
       backlog: 2000,
-      catchup: 5000
+      catchup: 5000,
     };
 
     const newInterval = intervals[mode as keyof typeof intervals];
@@ -159,7 +159,7 @@ router.post('/degradation', async (req: Request, res: Response) => {
     res.json({
       level,
       override,
-      appliedAt: new Date().toISOString()
+      appliedAt: new Date().toISOString(),
     });
   } catch (error) {
     logger.error('Failed to set degradation level', { error });
@@ -176,13 +176,13 @@ router.post('/backfill', async (req: Request, res: Response) => {
     const degradationService = getGracefulDegradationService();
 
     // Start backfill in background
-    degradationService.startBackfillProcess().catch(error => {
+    degradationService.startBackfillProcess().catch((error) => {
       logger.error('Backfill failed', { error });
     });
 
     res.json({
       status: 'backfill_started',
-      startedAt: new Date().toISOString()
+      startedAt: new Date().toISOString(),
     });
   } catch (error) {
     logger.error('Failed to start backfill', { error });
@@ -220,10 +220,10 @@ router.get('/predictions', async (req: Request, res: Response) => {
         trained: new Date(metrics.lastTraining).toISOString(),
         rmse: metrics.rmse,
         accuracy: metrics.accuracy,
-        nextRetrain: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString()
+        nextRetrain: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
       },
       recent: recentPredictions.slice(0, 10),
-      history: historyResult.rows
+      history: historyResult.rows,
     });
   } catch (error) {
     logger.error('Failed to get predictions', { error });
@@ -263,18 +263,18 @@ router.get('/cost-analytics', async (req: Request, res: Response) => {
       workerCost: {
         current: estimatedWorkerCost,
         optimal: 6 * 0.05,
-        estimated_monthly_savings: (estimatedWorkerCost - 6 * 0.05) * 730 // hours per month
+        estimated_monthly_savings: (estimatedWorkerCost - 6 * 0.05) * 730, // hours per month
       },
       optimizations: [
         {
           recommendation: 'Scale down to 6 workers (current: 8)',
-          savings: (estimatedWorkerCost - 6 * 0.05) * 730
+          savings: (estimatedWorkerCost - 6 * 0.05) * 730,
         },
         {
           recommendation: 'Enable Level 1 graceful degradation during off-hours',
-          savings: 200
-        }
-      ]
+          savings: 200,
+        },
+      ],
     });
   } catch (error) {
     logger.error('Failed to get cost analytics', { error });
@@ -297,7 +297,9 @@ router.get('/health', async (req: Request, res: Response) => {
       res.status(503).json({ status: 'unhealthy' });
     }
   } catch (error) {
-    res.status(503).json({ status: 'error', error: error instanceof Error ? error.message : 'Unknown error' });
+    res
+      .status(503)
+      .json({ status: 'error', error: error instanceof Error ? error.message : 'Unknown error' });
   }
 });
 
