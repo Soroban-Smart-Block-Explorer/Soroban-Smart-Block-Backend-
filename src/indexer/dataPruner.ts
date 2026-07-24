@@ -1,5 +1,6 @@
 import { prismaWrite as prisma } from '../db';
 import { archiveRawXdr } from '../archival/archiver';
+import { logger } from '../logger';
 
 const PRUNE_INTERVAL_MS = parseInt(process.env.PRUNE_INTERVAL_MS ?? '86400000'); // 24h default
 const FAILED_ITEM_RETENTION_DAYS = parseInt(process.env.FAILED_ITEM_RETENTION_DAYS ?? '7');
@@ -9,7 +10,7 @@ export async function schedulePruner() {
     try {
       await pruneExpiredData();
     } catch (err) {
-      console.error('[Pruner] Error during pruning:', err);
+      logger.error('[Pruner] Error during pruning:', err);
     }
   }, PRUNE_INTERVAL_MS);
 
@@ -19,7 +20,7 @@ export async function schedulePruner() {
 
 async function pruneExpiredData() {
   const startTime = Date.now();
-  console.log('[Pruner] Starting data pruning cycle');
+  logger.info('[Pruner] Starting data pruning cycle');
 
   try {
     // Archive raw XDR to S3 before pruning (only when S3 bucket is configured)
@@ -37,7 +38,7 @@ async function pruneExpiredData() {
         createdAt: { lt: failedItemCutoff },
       },
     });
-    console.log(`[Pruner] Deleted ${deletedFailedItems.count} expired failed items`);
+    logger.info(`[Pruner] Deleted ${deletedFailedItems.count} expired failed items`);
 
     // Prune verification jobs older than 90 days
     const verificationJobCutoff = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000);
@@ -47,12 +48,12 @@ async function pruneExpiredData() {
         createdAt: { lt: verificationJobCutoff },
       },
     });
-    console.log(`[Pruner] Deleted ${deletedVerificationJobs.count} expired verification jobs`);
+    logger.info(`[Pruner] Deleted ${deletedVerificationJobs.count} expired verification jobs`);
 
     const elapsed = Date.now() - startTime;
-    console.log(`[Pruner] Pruning cycle completed in ${elapsed}ms`);
+    logger.info(`[Pruner] Pruning cycle completed in ${elapsed}ms`);
   } catch (err) {
-    console.error('[Pruner] Fatal error during pruning:', err);
+    logger.error('[Pruner] Fatal error during pruning:', err);
     throw err;
   }
 }

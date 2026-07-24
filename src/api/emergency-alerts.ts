@@ -5,6 +5,7 @@ import https from 'https';
 import http from 'http';
 import { requireAuth, requireRole } from '../auth/middleware';
 import { asyncHandler } from '../middleware/asyncHandler';
+import { logger } from '../logger';
 
 export const alertConfigRouter = Router();
 
@@ -239,7 +240,7 @@ async function deliverAlert(
     case 'telegram':
     case 'pagerduty':
       // Log only — external integrations require API keys not available in this env
-      console.info(`[Alert] ${channel.type} delivery: ${JSON.stringify(payload)}`);
+      logger.info(`[Alert] ${channel.type} delivery: ${JSON.stringify(payload)}`);
       break;
   }
 }

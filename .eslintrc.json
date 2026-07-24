@@ -22,7 +22,7 @@
       "warn",
       { "vars": "all", "varsIgnorePattern": "^_", "args": "after-used", "argsIgnorePattern": "^_" }
     ],
-    "no-console": "off",
+    "no-console": "error",
     "prefer-const": "error",
     "no-var": "error",
     "error-handling/require-async-handler": "error",

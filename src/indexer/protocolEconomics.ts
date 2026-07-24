@@ -11,6 +11,7 @@
  */
 
 import { prismaRead, prismaWrite } from '../db';
+import { logger } from '../logger';
 
 type Bucket = 'hour' | 'day' | 'week';
 
@@ -91,11 +92,11 @@ export async function runProtocolEconomics(): Promise<void> {
 
 export function startProtocolEconomicsScheduler(intervalMs = BUCKET_MS.hour): NodeJS.Timeout {
   runProtocolEconomics().catch((err) =>
-    console.error('[protocolEconomics] initial run failed:', err),
+    logger.error('[protocolEconomics] initial run failed:', err),
   );
   return setInterval(() => {
     runProtocolEconomics().catch((err) =>
-      console.error('[protocolEconomics] scheduled run failed:', err),
+      logger.error('[protocolEconomics] scheduled run failed:', err),
     );
   }, intervalMs);
 }

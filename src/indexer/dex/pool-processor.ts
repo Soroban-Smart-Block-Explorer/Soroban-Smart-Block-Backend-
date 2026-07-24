@@ -12,6 +12,7 @@ import { prismaWrite, prismaRead } from '../../db';
 import { aprPct, toHuman, tvlUsd } from './pool-math';
 import { refreshTokenPrices } from './pricing';
 import { scanArbitrage } from './arbitrage';
+import { logger } from '../../logger';
 
 const INTERVAL_MS = Number(process.env.DEX_ANALYTICS_INTERVAL_MS ?? 60_000);
 const WINDOWS = {
@@ -159,19 +160,19 @@ export async function runDexAnalytics(): Promise<void> {
   const pools = await prismaRead.dexPool.findMany({ select: { poolAddress: true } });
   for (const p of pools) {
     await computePoolMetrics(p.poolAddress).catch((e) =>
-      console.error(`[dex-analytics] metrics failed for ${p.poolAddress}:`, e),
+      logger.error(`[dex-analytics] metrics failed for ${p.poolAddress}:`, e),
     );
   }
-  await scanArbitrage().catch((e) => console.error('[dex-analytics] arbitrage scan failed:', e));
+  await scanArbitrage().catch((e) => logger.error('[dex-analytics] arbitrage scan failed:', e));
 }
 
 /** Schedule the analytics processor: run immediately, then every interval. */
 export function scheduleDexAnalytics(): void {
   if (timer) return;
-  console.log('[dex-analytics] scheduled every', INTERVAL_MS, 'ms');
-  runDexAnalytics().catch((e) => console.error('[dex-analytics] run error:', e));
+  logger.info('[dex-analytics] scheduled every', INTERVAL_MS, 'ms');
+  runDexAnalytics().catch((e) => logger.error('[dex-analytics] run error:', e));
   timer = setInterval(() => {
-    runDexAnalytics().catch((e) => console.error('[dex-analytics] run error:', e));
+    runDexAnalytics().catch((e) => logger.error('[dex-analytics] run error:', e));
   }, INTERVAL_MS);
 }
 

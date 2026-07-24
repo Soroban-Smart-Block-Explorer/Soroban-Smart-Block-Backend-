@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { prismaRead as prisma } from '../db';
 import { ChannelManager } from '../feed/channelManager';
 import { asyncHandler } from '../middleware/asyncHandler';
+import { logger } from '../logger';
 
 const router = Router();
 
@@ -72,7 +73,9 @@ router.post(
       });
 
       // Queue backfill job (in real implementation, this would use a job queue)
-      processBackfillRequest(backfillRequest.id).catch(console.error);
+      processBackfillRequest(backfillRequest.id).catch((err) =>
+        logger.error('processBackfillRequest error:', err),
+      );
 
       res.status(202).json({
         requestId: backfillRequest.id,
@@ -83,7 +86,7 @@ router.post(
       if (error instanceof z.ZodError) {
         return res.status(400).json({ error: 'Invalid request data', details: error.errors });
       }
-      console.error('Failed to create backfill request:', error);
+      logger.error('Failed to create backfill request:', error);
       res.status(500).json({ error: 'Internal server error' });
     }
   }),
@@ -137,7 +140,7 @@ router.get(
 
       res.json(response);
     } catch (error) {
-      console.error('Failed to fetch backfill request:', error);
+      logger.error('Failed to fetch backfill request:', error);
       res.status(500).json({ error: 'Internal server error' });
     }
   }),
@@ -187,7 +190,7 @@ router.get(
         },
       });
     } catch (error) {
-      console.error('Failed to fetch backfill requests:', error);
+      logger.error('Failed to fetch backfill requests:', error);
       res.status(500).json({ error: 'Internal server error' });
     }
   }),
@@ -253,7 +256,7 @@ async function processBackfillRequest(requestId: string) {
       // TODO: Send completion callback
     }
   } catch (error) {
-    console.error(`Backfill processing failed for ${requestId}:`, error);
+    logger.error(`Backfill processing failed for ${requestId}:`, error);
 
     await prisma.backfillRequest.update({
       where: { id: requestId },

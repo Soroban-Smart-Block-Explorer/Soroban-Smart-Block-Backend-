@@ -4,6 +4,7 @@ import { ChannelManager } from '../feed/channelManager';
 import { SubscriptionManager } from '../feed/subscriptionManager';
 import { prismaRead as prisma } from '../db';
 import { asyncHandler } from '../middleware/asyncHandler';
+import { logger } from '../logger';
 
 const router = Router();
 
@@ -47,7 +48,7 @@ router.get(
         })),
       });
     } catch (error) {
-      console.error('Failed to fetch channels:', error);
+      logger.error('Failed to fetch channels:', error);
       res.status(500).json({ error: 'Internal server error' });
     }
   }),
@@ -81,7 +82,7 @@ router.post(
       if (error instanceof z.ZodError) {
         return res.status(400).json({ error: 'Invalid request data', details: error.errors });
       }
-      console.error('Failed to create subscription:', error);
+      logger.error('Failed to create subscription:', error);
       res.status(500).json({ error: 'Internal server error' });
     }
   }),
@@ -108,7 +109,7 @@ router.get(
         })),
       });
     } catch (error) {
-      console.error('Failed to fetch subscriptions:', error);
+      logger.error('Failed to fetch subscriptions:', error);
       res.status(500).json({ error: 'Internal server error' });
     }
   }),
@@ -127,7 +128,7 @@ router.get(
 
       res.json(subscription);
     } catch (error) {
-      console.error('Failed to fetch subscription:', error);
+      logger.error('Failed to fetch subscription:', error);
       res.status(500).json({ error: 'Internal server error' });
     }
   }),
@@ -143,7 +144,7 @@ router.put(
 
       res.json(subscription);
     } catch (error) {
-      console.error('Failed to update subscription:', error);
+      logger.error('Failed to update subscription:', error);
       res.status(500).json({ error: 'Internal server error' });
     }
   }),
@@ -157,7 +158,7 @@ router.delete(
       await subscriptionManager.deleteSubscription(req.params.id);
       res.status(204).send();
     } catch (error) {
-      console.error('Failed to delete subscription:', error);
+      logger.error('Failed to delete subscription:', error);
       res.status(500).json({ error: 'Internal server error' });
     }
   }),
@@ -192,7 +193,7 @@ router.get(
         lastError: subscription.lastError,
       });
     } catch (error) {
-      console.error('Failed to fetch subscription status:', error);
+      logger.error('Failed to fetch subscription status:', error);
       res.status(500).json({ error: 'Internal server error' });
     }
   }),
@@ -206,7 +207,7 @@ router.post(
       const subscription = await subscriptionManager.pauseSubscription(req.params.id);
       res.json({ status: subscription.status });
     } catch (error) {
-      console.error('Failed to pause subscription:', error);
+      logger.error('Failed to pause subscription:', error);
       res.status(500).json({ error: 'Internal server error' });
     }
   }),
@@ -220,7 +221,7 @@ router.post(
       const subscription = await subscriptionManager.resumeSubscription(req.params.id);
       res.json({ status: subscription.status });
     } catch (error) {
-      console.error('Failed to resume subscription:', error);
+      logger.error('Failed to resume subscription:', error);
       res.status(500).json({ error: 'Internal server error' });
     }
   }),
@@ -244,7 +245,7 @@ router.post(
 
       res.json({ message: 'Test payload sent', data: testMessage });
     } catch (error) {
-      console.error('Failed to send test payload:', error);
+      logger.error('Failed to send test payload:', error);
       res.status(500).json({ error: 'Internal server error' });
     }
   }),
