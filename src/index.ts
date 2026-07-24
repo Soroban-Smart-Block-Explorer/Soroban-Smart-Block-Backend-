@@ -39,7 +39,6 @@ import { feedOrchestrator } from './feed/orchestrator';
 import { startAuditPipeline } from './indexer/audit-pipeline';
 import { startAuditScheduler } from './indexer/audit-scheduler';
 import { startContinuousAuditMonitor } from './indexer/audit-monitor';
-import { attachAuditWebSocket } from './ws/auditBroadcaster';
 import { startAuditExpiryChecker } from './indexer/audit-expiry-checker';
 import { startAuditDigestScheduler } from './indexer/audit-digest-scheduler';
 import { startPriceUpdater, stopPriceUpdater } from './services/pricing';
@@ -458,13 +457,6 @@ async function main() {
     disabledServices.push('arbitrageWS');
     logger.debug('Arbitrage WebSocket disabled (ENABLE_ARBITRAGE_WS not set)');
   }
-
-  const httpServer = createServer(app);
-  attachWebSocketServer(httpServer);
-  attachPrivacyWebSocket(httpServer);
-  attachComposabilityWebSocket(httpServer);
-  attachArbitrageWebSocket(httpServer);
-  attachAuditWebSocket(httpServer); // /ws/audit — score alerts, finding alerts, signals
 
   if (!process.env.DISABLE_INDEXER) {
     if (ENABLE_POOL_MONITOR) {
