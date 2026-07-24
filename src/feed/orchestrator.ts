@@ -4,6 +4,7 @@ import { feedPublisher } from './publisher';
 import { deliveryService } from './deliveryService';
 import { SubscriptionManager } from './subscriptionManager';
 import { FeedWebSocketServer } from './websocketServer';
+import { prismaRead } from '../db';
 
 export class FeedOrchestrator extends EventEmitter {
   private subscriptionManager = new SubscriptionManager();
@@ -188,8 +189,6 @@ export class FeedOrchestrator extends EventEmitter {
   }
 
   private async collectSystemMetrics() {
-    const now = new Date();
-
     // Connection metrics
     const connectionCount = this.wsServer?.getConnectionCount() || 0;
     await this.publishMetric('websocket_connections', connectionCount, '1m');
@@ -203,10 +202,82 @@ export class FeedOrchestrator extends EventEmitter {
     const channels = this.wsServer?.getActiveChannels() || [];
     await this.publishMetric('active_channels', channels.length, '1m');
 
-    // Mock additional metrics (in real implementation, these would come from actual data)
-    await this.publishMetric('gas_price_avg', Math.random() * 200 + 100, '1m');
-    await this.publishMetric('transactions_per_second', Math.random() * 50 + 10, '1m');
-    await this.publishMetric('active_accounts_24h', Math.floor(Math.random() * 10000) + 5000, '1m');
+    // Real metrics pulled from the indexed database (read replica)
+    const [gasPriceAvg, tps, activeAccounts24h] = await Promise.all([
+      this.queryGasPriceAvg(),
+      this.queryTransactionsPerSecond(),
+      this.queryActiveAccounts24h(),
+    ]);
+
+    await this.publishMetric('gas_price_avg', gasPriceAvg, '1m');
+    await this.publishMetric('transactions_per_second', tps, '1m');
+    await this.publishMetric('active_accounts_24h', activeAccounts24h, '1m');
+  }
+
+  /**
+   * Average fee (in stroops) over the last 100 indexed transactions.
+   * Returns 0 when no data is available.
+   */
+  private async queryGasPriceAvg(): Promise<number> {
+    try {
+      const txs = await prismaRead.transaction.findMany({
+        select: { feeCharged: true },
+        orderBy: { ledgerSequence: 'desc' },
+        take: 100,
+      });
+      if (!txs.length) return 0;
+
+      const fees = txs
+        .map((t) => t.feeCharged?.trim() || '')
+        .filter((s) => s !== '' && s !== '0')
+        .map((s) => BigInt(s));
+      if (!fees.length) return 0;
+
+      const sum = fees.reduce((acc, f) => acc + f, 0n);
+      return Number(sum / BigInt(fees.length));
+    } catch (err) {
+      console.error('Failed to query gas price avg:', err);
+      return 0;
+    }
+  }
+
+  /**
+   * Transactions per second computed from ledgers closed in the last
+   * 60 seconds.  Returns 0 when no ledgers are found.
+   */
+  private async queryTransactionsPerSecond(): Promise<number> {
+    try {
+      const since = new Date(Date.now() - 60_000);
+      const ledgers = await prismaRead.ledger.findMany({
+        select: { txCount: true },
+        where: { closeTime: { gte: since } },
+      });
+      if (!ledgers.length) return 0;
+
+      const totalTx = ledgers.reduce((sum, l) => sum + l.txCount, 0);
+      return Math.round((totalTx / 60) * 100) / 100;
+    } catch (err) {
+      console.error('Failed to query TPS:', err);
+      return 0;
+    }
+  }
+
+  /**
+   * Distinct source accounts that submitted at least one transaction
+   * in the last 24 hours.
+   */
+  private async queryActiveAccounts24h(): Promise<number> {
+    try {
+      const since = new Date(Date.now() - 24 * 60 * 60 * 1000);
+      const result = await prismaRead.transaction.groupBy({
+        by: ['sourceAccount'],
+        where: { ledgerCloseTime: { gte: since } },
+      });
+      return result.length;
+    } catch (err) {
+      console.error('Failed to query active accounts:', err);
+      return 0;
+    }
   }
 
   getStats() {
