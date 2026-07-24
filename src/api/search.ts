@@ -150,98 +150,101 @@ searchRouter.get(
 );
 
 // GET /search/index — trigger re-indexing of all contracts
-searchRouter.get('/index', async (_req: Request, res: Response) => {
-  try {
-    const sources = await (prisma as any).contractSource.findMany({
-      include: { functionDetails: true },
-    });
+searchRouter.get(
+  '/index',
+  asyncHandler(async (_req: Request, res: Response) => {
+    try {
+      const sources = await (prisma as any).contractSource.findMany({
+        include: { functionDetails: true },
+      });
 
-    await (prismaWrite as any).searchIndexEntry.deleteMany({});
+      await (prismaWrite as any).searchIndexEntry.deleteMany({});
 
-    let indexed = 0;
-    for (const source of sources) {
-      for (const fn of source.functionDetails || []) {
-        await (
-          prismaWrite as unknown as {
-            searchIndexEntry: { create: (args: unknown) => Promise<unknown> };
-          }
-        ).searchIndexEntry.create({
-          data: {
-            contractAddress: source.contractAddress,
-            contentType: 'function',
-            content: `${fn.name} ${fn.pseudoCode || ''} ${(fn.params || []).join(' ')} ${(fn.returns || []).join(' ')}`,
-            metadata: { selector: fn.selector, complexity: fn.complexity },
-          },
-        });
-        indexed++;
+      let indexed = 0;
+      for (const source of sources) {
+        for (const fn of source.functionDetails || []) {
+          await (
+            prismaWrite as unknown as {
+              searchIndexEntry: { create: (args: unknown) => Promise<unknown> };
+            }
+          ).searchIndexEntry.create({
+            data: {
+              contractAddress: source.contractAddress,
+              contentType: 'function',
+              content: `${fn.name} ${fn.pseudoCode || ''} ${(fn.params || []).join(' ')} ${(fn.returns || []).join(' ')}`,
+              metadata: { selector: fn.selector, complexity: fn.complexity },
+            },
+          });
+          indexed++;
+        }
+
+        for (const imp of (source.imports as any[]) || []) {
+          await (prismaWrite as any).searchIndexEntry.create({
+            data: {
+              contractAddress: source.contractAddress,
+              contentType: 'import',
+              content: `${imp.module} ${imp.name}`,
+              metadata: { kind: imp.kind, host: imp.host },
+            },
+          });
+          indexed++;
+        }
+
+        for (const exp of (source.exports as any[]) || []) {
+          await (prismaWrite as any).searchIndexEntry.create({
+            data: {
+              contractAddress: source.contractAddress,
+              contentType: 'export',
+              content: exp.name,
+              metadata: { kind: exp.kind, index: exp.index },
+            },
+          });
+          indexed++;
+        }
+
+        for (const evt of (source.events as any[]) || []) {
+          await (prismaWrite as any).searchIndexEntry.create({
+            data: {
+              contractAddress: source.contractAddress,
+              contentType: 'event',
+              content: JSON.stringify(evt),
+              metadata: evt,
+            },
+          });
+          indexed++;
+        }
+
+        for (const err of (source.errors as any[]) || []) {
+          await (prismaWrite as any).searchIndexEntry.create({
+            data: {
+              contractAddress: source.contractAddress,
+              contentType: 'error',
+              content: JSON.stringify(err),
+              metadata: err,
+            },
+          });
+          indexed++;
+        }
+
+        for (const stor of (source.storageVariables as any[]) || []) {
+          await (prismaWrite as any).searchIndexEntry.create({
+            data: {
+              contractAddress: source.contractAddress,
+              contentType: 'storage',
+              content: JSON.stringify(stor),
+              metadata: stor,
+            },
+          });
+          indexed++;
+        }
       }
 
-      for (const imp of (source.imports as any[]) || []) {
-        await (prismaWrite as any).searchIndexEntry.create({
-          data: {
-            contractAddress: source.contractAddress,
-            contentType: 'import',
-            content: `${imp.module} ${imp.name}`,
-            metadata: { kind: imp.kind, host: imp.host },
-          },
-        });
-        indexed++;
-      }
-
-      for (const exp of (source.exports as any[]) || []) {
-        await (prismaWrite as any).searchIndexEntry.create({
-          data: {
-            contractAddress: source.contractAddress,
-            contentType: 'export',
-            content: exp.name,
-            metadata: { kind: exp.kind, index: exp.index },
-          },
-        });
-        indexed++;
-      }
-
-      for (const evt of (source.events as any[]) || []) {
-        await (prismaWrite as any).searchIndexEntry.create({
-          data: {
-            contractAddress: source.contractAddress,
-            contentType: 'event',
-            content: JSON.stringify(evt),
-            metadata: evt,
-          },
-        });
-        indexed++;
-      }
-
-      for (const err of (source.errors as any[]) || []) {
-        await (prismaWrite as any).searchIndexEntry.create({
-          data: {
-            contractAddress: source.contractAddress,
-            contentType: 'error',
-            content: JSON.stringify(err),
-            metadata: err,
-          },
-        });
-        indexed++;
-      }
-
-      for (const stor of (source.storageVariables as any[]) || []) {
-        await (prismaWrite as any).searchIndexEntry.create({
-          data: {
-            contractAddress: source.contractAddress,
-            contentType: 'storage',
-            content: JSON.stringify(stor),
-            metadata: stor,
-          },
-        });
-        indexed++;
-      }
+      return res.json({
+        indexed,
+        message: `Reindexed ${indexed} entries from ${sources.length} contracts`,
+      });
+    } catch (err: any) {
+      return res.status(500).json({ error: 'Indexing failed', detail: String(err) });
     }
-
-    return res.json({
-      indexed,
-      message: `Reindexed ${indexed} entries from ${sources.length} contracts`,
-    });
-  } catch (err: any) {
-    return res.status(500).json({ error: 'Indexing failed', detail: String(err) });
-  }
-});
+  }),
+);

@@ -7,6 +7,7 @@ import {
   submitTransaction,
 } from '../playground/tx-builder';
 import { prismaRead } from '../db';
+import { asyncHandler } from '../middleware/asyncHandler';
 
 export const playgroundRouter = Router({ mergeParams: true });
 

@@ -3,6 +3,7 @@ import { createHmac, randomBytes } from 'crypto';
 import axios from 'axios';
 import { prismaWrite as prisma } from '../db';
 import { requireAuth } from '../auth/middleware';
+import { asyncHandler } from '../middleware/asyncHandler';
 
 export const authWebhooksRouter = Router();
 

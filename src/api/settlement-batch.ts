@@ -24,57 +24,66 @@ const listSchema = z.object({
 });
 
 // GET /settlement-batch
-settlementBatchRouter.get('/', async (req: Request, res: Response) => {
-  try {
-    const q = listSchema.parse(req.query);
-    const where = {
-      ...(q.contractAddress && { contractAddress: q.contractAddress }),
-      ...((q.ledgerMin !== undefined || q.ledgerMax !== undefined) && {
-        ledgerMin: {
-          ...(q.ledgerMin !== undefined && { gte: q.ledgerMin }),
-          ...(q.ledgerMax !== undefined && { lte: q.ledgerMax }),
-        },
-      }),
-    };
-    const skip = (q.page - 1) * q.limit;
-    const [data, total] = await Promise.all([
-      prisma.settlementBatchSummary.findMany({
-        where,
-        orderBy: { ledgerMin: 'desc' },
-        skip,
-        take: q.limit,
-      }),
-      prisma.settlementBatchSummary.count({ where }),
-    ]);
-    res.json({ data, total, page: q.page, limit: q.limit, pages: Math.ceil(total / q.limit) });
-  } catch (e) {
-    res.status(400).json({ error: String(e) });
-  }
-});
+settlementBatchRouter.get(
+  '/',
+  asyncHandler(async (req: Request, res: Response) => {
+    try {
+      const q = listSchema.parse(req.query);
+      const where = {
+        ...(q.contractAddress && { contractAddress: q.contractAddress }),
+        ...((q.ledgerMin !== undefined || q.ledgerMax !== undefined) && {
+          ledgerMin: {
+            ...(q.ledgerMin !== undefined && { gte: q.ledgerMin }),
+            ...(q.ledgerMax !== undefined && { lte: q.ledgerMax }),
+          },
+        }),
+      };
+      const skip = (q.page - 1) * q.limit;
+      const [data, total] = await Promise.all([
+        prisma.settlementBatchSummary.findMany({
+          where,
+          orderBy: { ledgerMin: 'desc' },
+          skip,
+          take: q.limit,
+        }),
+        prisma.settlementBatchSummary.count({ where }),
+      ]);
+      res.json({ data, total, page: q.page, limit: q.limit, pages: Math.ceil(total / q.limit) });
+    } catch (e) {
+      res.status(400).json({ error: String(e) });
+    }
+  }),
+);
 
 // GET /settlement-batch/contract/:address
-settlementBatchRouter.get('/contract/:address', async (req: Request, res: Response) => {
-  try {
-    const data = await prisma.settlementBatchSummary.findMany({
-      where: { contractAddress: req.params.address },
-      orderBy: { ledgerMin: 'desc' },
-      take: 50,
-    });
-    res.json({ contractAddress: req.params.address, count: data.length, data });
-  } catch (e) {
-    res.status(400).json({ error: String(e) });
-  }
-});
+settlementBatchRouter.get(
+  '/contract/:address',
+  asyncHandler(async (req: Request, res: Response) => {
+    try {
+      const data = await prisma.settlementBatchSummary.findMany({
+        where: { contractAddress: req.params.address },
+        orderBy: { ledgerMin: 'desc' },
+        take: 50,
+      });
+      res.json({ contractAddress: req.params.address, count: data.length, data });
+    } catch (e) {
+      res.status(400).json({ error: String(e) });
+    }
+  }),
+);
 
 // POST /settlement-batch/compact — on-demand compaction trigger
-settlementBatchRouter.post('/compact', async (_req: Request, res: Response) => {
-  try {
-    await runCompactor();
-    res.json({ ok: true, message: 'Compaction run completed' });
-  } catch (e) {
-    res.status(500).json({ error: String(e) });
-  }
-});
+settlementBatchRouter.post(
+  '/compact',
+  asyncHandler(async (_req: Request, res: Response) => {
+    try {
+      await runCompactor();
+      res.json({ ok: true, message: 'Compaction run completed' });
+    } catch (e) {
+      res.status(500).json({ error: String(e) });
+    }
+  }),
+);
 
 // GET /settlement-batch/:id
 settlementBatchRouter.get(

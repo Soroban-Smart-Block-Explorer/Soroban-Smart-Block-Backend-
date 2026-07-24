@@ -1,6 +1,7 @@
 import { Router, Request, Response } from 'express';
 import { z } from 'zod';
 import { prismaWrite as prisma, prismaRead } from '../db';
+import { asyncHandler } from '../middleware/asyncHandler';
 
 export const identityRouter = Router();
 
