@@ -3,6 +3,7 @@ import { ChannelManager } from '../feed/channelManager';
 import { SubscriptionManager } from '../feed/subscriptionManager';
 import { feedOrchestrator } from '../feed/orchestrator';
 import { prismaRead as prisma } from '../db';
+import { logger } from '../logger';
 
 const router = Router();
 
@@ -62,7 +63,7 @@ router.get('/', (req, res) => {
   };
 
   connections.set(connectionId, connection);
-  console.log(`SSE connected: ${connectionId}, channels: ${channels.join(', ')}`);
+  logger.info(`SSE connected: ${connectionId}, channels: ${channels.join(', ')}`);
 
   // Keep connection alive
   const heartbeat = setInterval(() => {
@@ -73,12 +74,12 @@ router.get('/', (req, res) => {
   req.on('close', () => {
     clearInterval(heartbeat);
     connections.delete(connectionId);
-    console.log(`SSE disconnected: ${connectionId}`);
+    logger.info(`SSE disconnected: ${connectionId}`);
   });
 
   // Handle reconnection with replay
   if (connection.lastEventId) {
-    replayMissedEvents(connection).catch(console.error);
+    replayMissedEvents(connection).catch((err) => logger.error('replayMissedEvents error:', err));
   }
 });
 
@@ -122,7 +123,7 @@ function broadcastToSSE(message: any) {
         message.sequence?.toString(),
       );
     } catch (error) {
-      console.error(`Failed to send SSE to ${connection.id}:`, error);
+      logger.error(`Failed to send SSE to ${connection.id}:`, error);
       connections.delete(connection.id);
     }
   }
@@ -167,7 +168,7 @@ async function replayMissedEvents(connection: SSEConnection) {
       });
     }
   } catch (error) {
-    console.error(`Failed to replay events for ${connection.id}:`, error);
+    logger.error(`Failed to replay events for ${connection.id}:`, error);
     sendSSE(connection.response, 'error', {
       message: 'Failed to replay missed events',
       timestamp: new Date().toISOString(),

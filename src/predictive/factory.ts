@@ -1,5 +1,7 @@
 import { EnsembleForecaster } from './ensemble';
-import { modelTrainingService } from './training-service';
+import { generateDeterministicSeries } from './random';
+import { ArimaSimulation, XgboostSimulation, LstmSimulation } from './models';
+import { LinearTrendModel, SeasonalMeanModel } from './production-models';
 
 export type ForecastMode = 'demo' | 'production';
 
@@ -11,11 +13,18 @@ export interface ForecasterOptions {
 let forecasterInstance: EnsembleForecaster | null = null;
 let isInitializing = false;
 
-export async function createForecaster(
-  _options: ForecasterOptions = {},
-): Promise<EnsembleForecaster> {
-  // Use the training service to properly initialize and train models
-  return await modelTrainingService.initializeModels();
+export function createForecaster(options: ForecasterOptions = {}): EnsembleForecaster {
+  const mode = options.mode ?? config.forecastMode;
+  const seed = options.seed ?? config.forecastSeed;
+
+  const models =
+    mode === 'production'
+      ? [new LinearTrendModel(), new SeasonalMeanModel()]
+      : [new ArimaSimulation(seed), new XgboostSimulation(seed), new LstmSimulation(seed)];
+
+  const forecaster = new EnsembleForecaster(models);
+  forecaster.trainAll(generateDeterministicSeries(30, seed));
+  return forecaster;
 }
 
 export async function getForecaster(): Promise<EnsembleForecaster> {

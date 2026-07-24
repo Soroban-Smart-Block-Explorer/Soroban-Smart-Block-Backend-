@@ -97,10 +97,7 @@ export async function fetchAndStoreItemMetadata(itemId: string): Promise<void> {
   if (!item?.metadataUri) return;
 
   // Check TTL
-  if (
-    item.metadataFetchedAt &&
-    Date.now() - item.metadataFetchedAt.getTime() < METADATA_TTL_MS
-  ) {
+  if (item.metadataFetchedAt && Date.now() - item.metadataFetchedAt.getTime() < METADATA_TTL_MS) {
     return;
   }
 
@@ -175,7 +172,10 @@ export async function fetchCollectionMetadataFromChain(
       const ledgerKey = xdr.LedgerKey.contractData(
         new xdr.LedgerKeyContractData({
           contract: xdr.ScAddress.scAddressTypeContract(
-            xdr.Hash.fromXDR(contractAddress.startsWith('C') ? contractAddress : contractAddress, 'base64'),
+            xdr.Hash.fromXDR(
+              contractAddress.startsWith('C') ? contractAddress : contractAddress,
+              'base64',
+            ),
           ),
           key,
           durability: xdr.ContractDataDurability.persistent(),

@@ -1,6 +1,6 @@
 // Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
 
-exports[`demo forecast models (seeded) > ArimaMock produces identical output for the same seed and input 1`] = `
+exports[`demo forecast models (seeded) > ArimaSimulation produces identical output for the same seed and input 1`] = `
 [
   {
     "lowerBound": 927.059883,
@@ -35,7 +35,7 @@ exports[`demo forecast models (seeded) > ArimaMock produces identical output for
 ]
 `;
 
-exports[`demo forecast models (seeded) > XgboostMock produces identical SHAP values for the same seed 1`] = `
+exports[`demo forecast models (seeded) > XgboostSimulation produces identical SHAP values for the same seed 1`] = `
 [
   {
     "predictedValue": 1039.209518,

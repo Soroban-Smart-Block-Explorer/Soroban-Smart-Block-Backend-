@@ -2,6 +2,7 @@ import { Router, Request, Response } from 'express';
 import { prismaRead, prismaWrite } from '../db';
 import { z } from 'zod';
 import { requireAuth, requireRole } from '../auth/middleware';
+import { asyncHandler } from '../middleware/asyncHandler';
 
 export const incidentRouter = Router();
 
@@ -35,113 +36,127 @@ const updateSchema = z.object({
 });
 
 // POST /emergency/incidents  [privileged]
-incidentRouter.post('/', requireAuth, requireRole('admin'), async (req: Request, res: Response) => {
-  try {
-    const data = createSchema.parse(req.body);
-    const incident = await prismaWrite.incidentReport.create({
-      data: {
-        contractAddress: data.contractAddress,
-        severity: data.severity,
-        title: data.title,
-        description: data.description,
-        pauseEventId: data.pauseEventId,
-        affectedUsersEstimate: data.affectedUsersEstimate,
-        affectedTvlEstimate: data.affectedTvlEstimate,
-        timeline: [
-          { timestamp: new Date().toISOString(), event: 'created', detail: 'Incident created' },
-        ],
-      },
-    });
-    res.status(201).json(incident);
-  } catch (err: any) {
-    res.status(400).json({ error: err.message ?? String(err) });
-  }
-});
+incidentRouter.post(
+  '/',
+  requireAuth,
+  requireRole('admin'),
+  asyncHandler(async (req: Request, res: Response) => {
+    try {
+      const data = createSchema.parse(req.body);
+      const incident = await prismaWrite.incidentReport.create({
+        data: {
+          contractAddress: data.contractAddress,
+          severity: data.severity,
+          title: data.title,
+          description: data.description,
+          pauseEventId: data.pauseEventId,
+          affectedUsersEstimate: data.affectedUsersEstimate,
+          affectedTvlEstimate: data.affectedTvlEstimate,
+          timeline: [
+            { timestamp: new Date().toISOString(), event: 'created', detail: 'Incident created' },
+          ],
+        },
+      });
+      res.status(201).json(incident);
+    } catch (err: any) {
+      res.status(400).json({ error: err.message ?? String(err) });
+    }
+  }),
+);
 
 // GET /emergency/incidents
-incidentRouter.get('/', async (req: Request, res: Response) => {
-  try {
-    const { status, severity, contract, from, to, page, limit } = listSchema.parse(req.query);
-    const skip = (page - 1) * limit;
-    const where: any = {
-      ...(status ? { status } : {}),
-      ...(severity ? { severity } : {}),
-      ...(contract ? { contractAddress: contract } : {}),
-      ...(from || to
-        ? {
-            createdAt: {
-              ...(from ? { gte: new Date(from) } : {}),
-              ...(to ? { lte: new Date(to) } : {}),
-            },
-          }
-        : {}),
-    };
+incidentRouter.get(
+  '/',
+  asyncHandler(async (req: Request, res: Response) => {
+    try {
+      const { status, severity, contract, from, to, page, limit } = listSchema.parse(req.query);
+      const skip = (page - 1) * limit;
+      const where: any = {
+        ...(status ? { status } : {}),
+        ...(severity ? { severity } : {}),
+        ...(contract ? { contractAddress: contract } : {}),
+        ...(from || to
+          ? {
+              createdAt: {
+                ...(from ? { gte: new Date(from) } : {}),
+                ...(to ? { lte: new Date(to) } : {}),
+              },
+            }
+          : {}),
+      };
 
-    const [data, total] = await Promise.all([
-      prismaRead.incidentReport.findMany({
-        where,
-        orderBy: { createdAt: 'desc' },
-        skip,
-        take: limit,
-        include: { _count: { select: { incidentComments: true } } },
-      }),
-      prismaRead.incidentReport.count({ where }),
-    ]);
+      const [data, total] = await Promise.all([
+        prismaRead.incidentReport.findMany({
+          where,
+          orderBy: { createdAt: 'desc' },
+          skip,
+          take: limit,
+          include: { _count: { select: { incidentComments: true } } },
+        }),
+        prismaRead.incidentReport.count({ where }),
+      ]);
 
-    res.json({ data, total, page, limit });
-  } catch (err) {
-    res.status(500).json({ error: String(err) });
-  }
-});
+      res.json({ data, total, page, limit });
+    } catch (err) {
+      res.status(500).json({ error: String(err) });
+    }
+  }),
+);
 
 // GET /emergency/incidents/stats
-incidentRouter.get('/stats', async (_req: Request, res: Response) => {
-  try {
-    const [bySeverity, byStatus, resolved] = await Promise.all([
-      prismaRead.incidentReport.groupBy({ by: ['severity'], _count: { id: true } }),
-      prismaRead.incidentReport.groupBy({ by: ['status'], _count: { id: true } }),
-      prismaRead.incidentReport.findMany({
-        where: { resolvedAt: { not: null } },
-        select: { createdAt: true, resolvedAt: true },
-      }),
-    ]);
+incidentRouter.get(
+  '/stats',
+  asyncHandler(async (_req: Request, res: Response) => {
+    try {
+      const [bySeverity, byStatus, resolved] = await Promise.all([
+        prismaRead.incidentReport.groupBy({ by: ['severity'], _count: { id: true } }),
+        prismaRead.incidentReport.groupBy({ by: ['status'], _count: { id: true } }),
+        prismaRead.incidentReport.findMany({
+          where: { resolvedAt: { not: null } },
+          select: { createdAt: true, resolvedAt: true },
+        }),
+      ]);
 
-    const mttrMs = resolved.length
-      ? resolved.reduce((sum, r) => sum + (r.resolvedAt!.getTime() - r.createdAt.getTime()), 0) /
-        resolved.length
-      : null;
+      const mttrMs = resolved.length
+        ? resolved.reduce((sum, r) => sum + (r.resolvedAt!.getTime() - r.createdAt.getTime()), 0) /
+          resolved.length
+        : null;
 
-    res.json({
-      bySeverity: Object.fromEntries(bySeverity.map((b) => [b.severity, b._count.id])),
-      byStatus: Object.fromEntries(byStatus.map((b) => [b.status, b._count.id])),
-      meanTimeToResolveHours: mttrMs ? Math.round((mttrMs / 3600_000) * 10) / 10 : null,
-      totalResolved: resolved.length,
-    });
-  } catch (err) {
-    res.status(500).json({ error: String(err) });
-  }
-});
+      res.json({
+        bySeverity: Object.fromEntries(bySeverity.map((b) => [b.severity, b._count.id])),
+        byStatus: Object.fromEntries(byStatus.map((b) => [b.status, b._count.id])),
+        meanTimeToResolveHours: mttrMs ? Math.round((mttrMs / 3600_000) * 10) / 10 : null,
+        totalResolved: resolved.length,
+      });
+    } catch (err) {
+      res.status(500).json({ error: String(err) });
+    }
+  }),
+);
 
 // GET /emergency/incidents/:id
-incidentRouter.get('/:id', async (req: Request, res: Response) => {
-  try {
-    const incident = await prismaRead.incidentReport.findUnique({
-      where: { id: req.params.id },
-      include: { incidentComments: { orderBy: { createdAt: 'asc' } } },
-    });
-    if (!incident) return res.status(404).json({ error: 'Not found' });
-    res.json(incident);
-  } catch (err) {
-    res.status(500).json({ error: String(err) });
-  }
-});
+incidentRouter.get(
+  '/:id',
+  asyncHandler(async (req: Request, res: Response) => {
+    try {
+      const incident = await prismaRead.incidentReport.findUnique({
+        where: { id: req.params.id },
+        include: { incidentComments: { orderBy: { createdAt: 'asc' } } },
+      });
+      if (!incident) return res.status(404).json({ error: 'Not found' });
+      res.json(incident);
+    } catch (err) {
+      res.status(500).json({ error: String(err) });
+    }
+  }),
+);
 
 // PATCH /emergency/incidents/:id  [privileged]
 incidentRouter.patch(
   '/:id',
   requireAuth,
   requireRole('admin'),
-  async (req: Request, res: Response) => {
+  asyncHandler(async (req: Request, res: Response) => {
     try {
       const data = updateSchema.parse(req.body);
 
@@ -177,7 +192,7 @@ incidentRouter.patch(
       if (err.code === 'P2025') return res.status(404).json({ error: 'Not found' });
       res.status(400).json({ error: String(err) });
     }
-  },
+  }),
 );
 
 // POST /emergency/incidents/:id/comments  [privileged]
@@ -185,7 +200,7 @@ incidentRouter.post(
   '/:id/comments',
   requireAuth,
   requireRole('admin'),
-  async (req: Request, res: Response) => {
+  asyncHandler(async (req: Request, res: Response) => {
     try {
       const { author, body } = z
         .object({ author: z.string().min(1), body: z.string().min(1) })
@@ -197,7 +212,7 @@ incidentRouter.post(
     } catch (err: any) {
       res.status(400).json({ error: String(err) });
     }
-  },
+  }),
 );
 
 // POST /emergency/incidents/:id/resolve  [privileged]
@@ -205,7 +220,7 @@ incidentRouter.post(
   '/:id/resolve',
   requireAuth,
   requireRole('admin'),
-  async (req: Request, res: Response) => {
+  asyncHandler(async (req: Request, res: Response) => {
     try {
       const { resolutionNotes } = z
         .object({ resolutionNotes: z.string().optional() })
@@ -238,5 +253,5 @@ incidentRouter.post(
       if (err.code === 'P2025') return res.status(404).json({ error: 'Not found' });
       res.status(400).json({ error: String(err) });
     }
-  },
+  }),
 );

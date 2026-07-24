@@ -23,6 +23,7 @@ import {
 } from '../indexer/audit-engine';
 import { cacheGet, cacheSet } from '../cache';
 import { incidentSignatureFailure } from '../lib/incident-dispatcher';
+import { asyncHandler } from '../middleware/asyncHandler';
 
 export const auditVerifyRouter = Router();
 
@@ -80,227 +81,230 @@ function recomputeHash(cert: {
 
 // ── GET /verify/:certificateId ────────────────────────────────────────────────
 
-auditVerifyRouter.get('/:certificateId', async (req: Request, res: Response) => {
-  try {
-    const { certificateId } = req.params;
+auditVerifyRouter.get(
+  '/:certificateId',
+  asyncHandler(async (req: Request, res: Response) => {
+    try {
+      const { certificateId } = req.params;
 
-    // Accept both the opaque cuid (certificateId) and raw SHA-256 hash
-    const cert = await prismaRead.auditCertificate.findFirst({
-      where: {
-        OR: [{ id: certificateId }, { certificateHash: certificateId }],
-      },
-      orderBy: { version: 'desc' },
-    });
+      // Accept both the opaque cuid (certificateId) and raw SHA-256 hash
+      const cert = await prismaRead.auditCertificate.findFirst({
+        where: {
+          OR: [{ id: certificateId }, { certificateHash: certificateId }],
+        },
+        orderBy: { version: 'desc' },
+      });
 
-    const steps: VerificationStep[] = [];
-    let overallResult: VerificationResult;
+      const steps: VerificationStep[] = [];
+      let overallResult: VerificationResult;
 
-    if (!cert) {
+      if (!cert) {
+        steps.push({
+          step: 'registry_lookup',
+          passed: false,
+          detail: 'Certificate ID / hash not found in the audit registry.',
+        });
+        overallResult = 'not_found';
+
+        await prismaWrite.auditVerificationRecord.create({
+          data: {
+            certificateHash: certificateId,
+            verifierIp: req.ip ?? null,
+            verifierKey: (req.headers['x-api-key'] as string) ?? null,
+            result: 'invalid',
+          },
+        });
+
+        return res.status(404).json({
+          certificateId,
+          result: overallResult,
+          verifiedAt: new Date().toISOString(),
+          steps,
+        });
+      }
+
+      // ── Step 1: Registry lookup ──────────────────────────────────────────────
       steps.push({
         step: 'registry_lookup',
-        passed: false,
-        detail: 'Certificate ID / hash not found in the audit registry.',
+        passed: true,
+        detail: `Certificate found — contract ${cert.contractAddress}, version ${cert.version}.`,
       });
-      overallResult = 'not_found';
 
+      // ── Step 2: Hash integrity check ─────────────────────────────────────────
+      // Recompute the SHA-256 from stored columns and compare against stored hash
+      const recomputed = recomputeHash(cert);
+      const hashMatch = recomputed === cert.certificateHash;
+      steps.push({
+        step: 'hash_integrity',
+        passed: hashMatch,
+        detail: hashMatch
+          ? 'Recomputed SHA-256 matches stored certificateHash — content unmodified.'
+          : `Hash mismatch: stored=${cert.certificateHash.slice(0, 16)}… computed=${recomputed.slice(0, 16)}…`,
+      });
+
+      // ── Step 3: Signature verification ───────────────────────────────────────
+      const sigValid = verifyCertificateSignature(cert.certificateHash, cert.signature);
+      steps.push({
+        step: 'signature_verification',
+        passed: sigValid,
+        detail: sigValid
+          ? `HMAC-SHA256 signature verified against public key "${cert.publicKey}".`
+          : 'Signature verification failed — certificate may have been tampered with.',
+      });
+
+      // Fire PagerDuty/Opsgenie P2 incident when a published cert's signature fails
+      if (!sigValid) {
+        incidentSignatureFailure(cert.contractAddress, cert.id, cert.certificateHash).catch(() => {
+          /* non-fatal — incident dispatch errors are logged inside */
+        });
+      }
+
+      // ── Step 4: Expiry check ──────────────────────────────────────────────────
+      const now = new Date();
+      const isExpired = !!cert.expiresAt && cert.expiresAt < now;
+      const daysLeft = cert.expiresAt
+        ? Math.max(0, Math.ceil((cert.expiresAt.getTime() - now.getTime()) / 86400000))
+        : null;
+      steps.push({
+        step: 'expiry_check',
+        passed: !isExpired,
+        detail: isExpired
+          ? `Certificate expired on ${cert.expiresAt?.toISOString()}.`
+          : cert.expiresAt
+            ? `Valid — expires in ${daysLeft} day(s) on ${cert.expiresAt.toISOString()}.`
+            : 'No expiry set — certificate does not expire.',
+      });
+
+      // ── Step 5: Revocation check ──────────────────────────────────────────────
+      const isRevoked = cert.status === 'revoked';
+      steps.push({
+        step: 'revocation_check',
+        passed: !isRevoked,
+        detail: isRevoked ? 'Certificate has been revoked.' : 'Not revoked.',
+      });
+
+      // ── Step 6: On-chain anchor verification (if anchored) ───────────────────
+      let onChainStep: VerificationStep | null = null;
+      if (cert.anchorTxHash) {
+        // Deterministic anchor: recompute what the anchor hash should be and compare
+        const expectedAnchor = crypto
+          .createHash('sha256')
+          .update(`audit-anchor:${cert.contractAddress}:${cert.id}:${cert.certificateHash}`)
+          .digest('hex');
+        const anchorMatch = cert.anchorTxHash === expectedAnchor;
+        onChainStep = {
+          step: 'on_chain_anchor',
+          passed: anchorMatch,
+          detail: anchorMatch
+            ? `On-chain anchor verified — tx: ${cert.anchorTxHash}.`
+            : `Anchor hash mismatch — expected ${expectedAnchor.slice(0, 16)}… stored ${cert.anchorTxHash.slice(0, 16)}…`,
+        };
+        steps.push(onChainStep);
+      } else {
+        steps.push({
+          step: 'on_chain_anchor',
+          passed: true, // not required, so not a failure
+          detail: 'Certificate has not been anchored on-chain (optional step).',
+        });
+      }
+
+      // ── Determine overall result ──────────────────────────────────────────────
+      if (!hashMatch || !sigValid) {
+        overallResult = 'invalid';
+      } else if (isRevoked) {
+        overallResult = 'revoked';
+      } else if (isExpired) {
+        overallResult = 'expired';
+      } else {
+        overallResult = 'valid';
+      }
+
+      // Record attempt
       await prismaWrite.auditVerificationRecord.create({
         data: {
-          certificateHash: certificateId,
+          certificateHash: cert.certificateHash,
           verifierIp: req.ip ?? null,
           verifierKey: (req.headers['x-api-key'] as string) ?? null,
-          result: 'invalid',
+          result: overallResult,
         },
       });
 
-      return res.status(404).json({
-        certificateId,
-        result: overallResult,
-        verifiedAt: new Date().toISOString(),
-        steps,
-      });
-    }
+      // Pull verification stats
+      const [totalVerifications, recentVerifications] = await Promise.all([
+        prismaRead.auditVerificationRecord.count({
+          where: { certificateHash: cert.certificateHash },
+        }),
+        prismaRead.auditVerificationRecord.count({
+          where: {
+            certificateHash: cert.certificateHash,
+            checkedAt: { gte: new Date(Date.now() - 86400000) },
+          },
+        }),
+      ]);
 
-    // ── Step 1: Registry lookup ──────────────────────────────────────────────
-    steps.push({
-      step: 'registry_lookup',
-      passed: true,
-      detail: `Certificate found — contract ${cert.contractAddress}, version ${cert.version}.`,
-    });
-
-    // ── Step 2: Hash integrity check ─────────────────────────────────────────
-    // Recompute the SHA-256 from stored columns and compare against stored hash
-    const recomputed = recomputeHash(cert);
-    const hashMatch = recomputed === cert.certificateHash;
-    steps.push({
-      step: 'hash_integrity',
-      passed: hashMatch,
-      detail: hashMatch
-        ? 'Recomputed SHA-256 matches stored certificateHash — content unmodified.'
-        : `Hash mismatch: stored=${cert.certificateHash.slice(0, 16)}… computed=${recomputed.slice(0, 16)}…`,
-    });
-
-    // ── Step 3: Signature verification ───────────────────────────────────────
-    const sigValid = verifyCertificateSignature(cert.certificateHash, cert.signature);
-    steps.push({
-      step: 'signature_verification',
-      passed: sigValid,
-      detail: sigValid
-        ? `HMAC-SHA256 signature verified against public key "${cert.publicKey}".`
-        : 'Signature verification failed — certificate may have been tampered with.',
-    });
-
-    // Fire PagerDuty/Opsgenie P2 incident when a published cert's signature fails
-    if (!sigValid) {
-      incidentSignatureFailure(cert.contractAddress, cert.id, cert.certificateHash).catch(() => {
-        /* non-fatal — incident dispatch errors are logged inside */
-      });
-    }
-
-    // ── Step 4: Expiry check ──────────────────────────────────────────────────
-    const now = new Date();
-    const isExpired = !!cert.expiresAt && cert.expiresAt < now;
-    const daysLeft = cert.expiresAt
-      ? Math.max(0, Math.ceil((cert.expiresAt.getTime() - now.getTime()) / 86400000))
-      : null;
-    steps.push({
-      step: 'expiry_check',
-      passed: !isExpired,
-      detail: isExpired
-        ? `Certificate expired on ${cert.expiresAt?.toISOString()}.`
-        : cert.expiresAt
-          ? `Valid — expires in ${daysLeft} day(s) on ${cert.expiresAt.toISOString()}.`
-          : 'No expiry set — certificate does not expire.',
-    });
-
-    // ── Step 5: Revocation check ──────────────────────────────────────────────
-    const isRevoked = cert.status === 'revoked';
-    steps.push({
-      step: 'revocation_check',
-      passed: !isRevoked,
-      detail: isRevoked ? 'Certificate has been revoked.' : 'Not revoked.',
-    });
-
-    // ── Step 6: On-chain anchor verification (if anchored) ───────────────────
-    let onChainStep: VerificationStep | null = null;
-    if (cert.anchorTxHash) {
-      // Deterministic anchor: recompute what the anchor hash should be and compare
-      const expectedAnchor = crypto
-        .createHash('sha256')
-        .update(`audit-anchor:${cert.contractAddress}:${cert.id}:${cert.certificateHash}`)
-        .digest('hex');
-      const anchorMatch = cert.anchorTxHash === expectedAnchor;
-      onChainStep = {
-        step: 'on_chain_anchor',
-        passed: anchorMatch,
-        detail: anchorMatch
-          ? `On-chain anchor verified — tx: ${cert.anchorTxHash}.`
-          : `Anchor hash mismatch — expected ${expectedAnchor.slice(0, 16)}… stored ${cert.anchorTxHash.slice(0, 16)}…`,
-      };
-      steps.push(onChainStep);
-    } else {
-      steps.push({
-        step: 'on_chain_anchor',
-        passed: true, // not required, so not a failure
-        detail: 'Certificate has not been anchored on-chain (optional step).',
-      });
-    }
-
-    // ── Determine overall result ──────────────────────────────────────────────
-    if (!hashMatch || !sigValid) {
-      overallResult = 'invalid';
-    } else if (isRevoked) {
-      overallResult = 'revoked';
-    } else if (isExpired) {
-      overallResult = 'expired';
-    } else {
-      overallResult = 'valid';
-    }
-
-    // Record attempt
-    await prismaWrite.auditVerificationRecord.create({
-      data: {
+      res.json({
+        certificateId: cert.id,
         certificateHash: cert.certificateHash,
-        verifierIp: req.ip ?? null,
-        verifierKey: (req.headers['x-api-key'] as string) ?? null,
         result: overallResult,
-      },
-    });
+        verifiedAt: now.toISOString(),
 
-    // Pull verification stats
-    const [totalVerifications, recentVerifications] = await Promise.all([
-      prismaRead.auditVerificationRecord.count({
-        where: { certificateHash: cert.certificateHash },
-      }),
-      prismaRead.auditVerificationRecord.count({
-        where: {
+        // Full certificate content
+        certificate: {
+          contractAddress: cert.contractAddress,
+          version: cert.version,
+          status: cert.status,
+          overallScore: cert.overallScore,
+          grade: scoreGrade(cert.overallScore),
+          riskLevel: riskLabel(cert.overallScore),
+          scores: {
+            security: cert.securityScore,
+            governance: cert.governanceScore,
+            economic: cert.economicScore,
+            compliance: cert.complianceScore,
+            liquidity: cert.liquidityScore,
+          },
+          findings: {
+            total: cert.totalFindings,
+            critical: cert.criticalFindings,
+            high: cert.highFindings,
+            medium: cert.mediumFindings,
+            low: cert.lowFindings,
+            open: cert.openFindings,
+          },
+          generatedAt: cert.generatedAt,
+          expiresAt: cert.expiresAt,
+          daysRemaining: daysLeft,
+        },
+
+        // Cryptographic details
+        cryptography: {
+          algorithm: cert.signatureAlgorithm,
+          publicKey: cert.publicKey,
+          signature: cert.signature,
           certificateHash: cert.certificateHash,
-          checkedAt: { gte: new Date(Date.now() - 86400000) },
+          hashIntegrity: hashMatch,
+          signatureValid: sigValid,
+          anchored: !!cert.anchorTxHash,
+          anchorTxHash: cert.anchorTxHash,
         },
-      }),
-    ]);
 
-    res.json({
-      certificateId: cert.id,
-      certificateHash: cert.certificateHash,
-      result: overallResult,
-      verifiedAt: now.toISOString(),
+        // Step-by-step audit trail
+        verificationSteps: steps,
 
-      // Full certificate content
-      certificate: {
-        contractAddress: cert.contractAddress,
-        version: cert.version,
-        status: cert.status,
-        overallScore: cert.overallScore,
-        grade: scoreGrade(cert.overallScore),
-        riskLevel: riskLabel(cert.overallScore),
-        scores: {
-          security: cert.securityScore,
-          governance: cert.governanceScore,
-          economic: cert.economicScore,
-          compliance: cert.complianceScore,
-          liquidity: cert.liquidityScore,
+        // Usage stats
+        verificationStats: {
+          totalVerifications,
+          verificationsLast24h: recentVerifications,
         },
-        findings: {
-          total: cert.totalFindings,
-          critical: cert.criticalFindings,
-          high: cert.highFindings,
-          medium: cert.mediumFindings,
-          low: cert.lowFindings,
-          open: cert.openFindings,
-        },
-        generatedAt: cert.generatedAt,
-        expiresAt: cert.expiresAt,
-        daysRemaining: daysLeft,
-      },
 
-      // Cryptographic details
-      cryptography: {
-        algorithm: cert.signatureAlgorithm,
-        publicKey: cert.publicKey,
-        signature: cert.signature,
-        certificateHash: cert.certificateHash,
-        hashIntegrity: hashMatch,
-        signatureValid: sigValid,
-        anchored: !!cert.anchorTxHash,
-        anchorTxHash: cert.anchorTxHash,
-      },
-
-      // Step-by-step audit trail
-      verificationSteps: steps,
-
-      // Usage stats
-      verificationStats: {
-        totalVerifications,
-        verificationsLast24h: recentVerifications,
-      },
-
-      proofUrl: `/api/v1/audit/verify/${cert.id}/proof`,
-      qrUrl: `/api/v1/audit/verify/${cert.id}/qr`,
-    });
-  } catch (e) {
-    res.status(500).json({ error: String(e) });
-  }
-});
+        proofUrl: `/api/v1/audit/verify/${cert.id}/proof`,
+        qrUrl: `/api/v1/audit/verify/${cert.id}/qr`,
+      });
+    } catch (e) {
+      res.status(500).json({ error: String(e) });
+    }
+  }),
+);
 
 // ── GET /verify/:certificateId/proof — Merkle proof ──────────────────────────
 
@@ -377,86 +381,89 @@ function getMerkleProof(
   return proof;
 }
 
-auditVerifyRouter.get('/:certificateId/proof', async (req: Request, res: Response) => {
-  try {
-    const { certificateId } = req.params;
-    const cacheKey = `audit:proof:${certificateId}`;
-    const cached = await cacheGet(cacheKey);
-    if (cached) return res.json(cached);
+auditVerifyRouter.get(
+  '/:certificateId/proof',
+  asyncHandler(async (req: Request, res: Response) => {
+    try {
+      const { certificateId } = req.params;
+      const cacheKey = `audit:proof:${certificateId}`;
+      const cached = await cacheGet(cacheKey);
+      if (cached) return res.json(cached);
 
-    const cert = await prismaRead.auditCertificate.findFirst({
-      where: {
-        OR: [{ id: certificateId }, { certificateHash: certificateId }],
-      },
-      select: {
-        id: true,
-        contractAddress: true,
-        version: true,
-        certificateHash: true,
-        generatedAt: true,
-        overallScore: true,
-        signature: true,
-        anchorTxHash: true,
-        status: true,
-      },
-    });
+      const cert = await prismaRead.auditCertificate.findFirst({
+        where: {
+          OR: [{ id: certificateId }, { certificateHash: certificateId }],
+        },
+        select: {
+          id: true,
+          contractAddress: true,
+          version: true,
+          certificateHash: true,
+          generatedAt: true,
+          overallScore: true,
+          signature: true,
+          anchorTxHash: true,
+          status: true,
+        },
+      });
 
-    if (!cert) {
-      return res.status(404).json({ error: 'Certificate not found.' });
+      if (!cert) {
+        return res.status(404).json({ error: 'Certificate not found.' });
+      }
+
+      // Build the 4 canonical leaves
+      const leaves = [
+        sha256hex(cert.contractAddress),
+        sha256hex(String(cert.version)),
+        sha256hex(cert.certificateHash),
+        sha256hex(cert.generatedAt.toISOString()),
+      ];
+
+      const { root, layers } = buildMerkleTree(leaves);
+
+      // Generate proof for each leaf (all 4 — let the caller pick the leaf
+      // they want to verify by index)
+      const proofs = leaves.map((leaf, i) => ({
+        leafIndex: i,
+        leafLabel: ['contractAddress', 'version', 'certificateHash', 'generatedAt'][i],
+        leafHash: leaf,
+        proof: getMerkleProof(leaves, i, layers),
+      }));
+
+      // Verify the root against the stored certificate hash for completeness
+      const rootMatchesCertHash = root === sha256hex(cert.certificateHash);
+
+      const result = {
+        certificateId: cert.id,
+        contractAddress: cert.contractAddress,
+        version: cert.version,
+        merkleRoot: root,
+        treeDepth: layers.length - 1,
+        leafCount: leaves.length,
+        leaves: proofs,
+        // Full layered tree for independent verification
+        layers: layers,
+        // Cross-check: root hashed against certificateHash to bind the two
+        rootMatchesCertHash,
+        // On-chain anchor (if present) should embed this merkleRoot
+        anchored: !!cert.anchorTxHash,
+        anchorTxHash: cert.anchorTxHash,
+        algorithm: 'SHA-256 with canonical sibling sort',
+        verifyInstructions: [
+          '1. Take the leaf hash for the field you want to verify.',
+          '2. Walk up the tree using the sibling hashes in proof[].',
+          '3. At each step: sort([currentHash, siblingHash]) then SHA-256 the concatenation.',
+          '4. The final result must equal merkleRoot.',
+        ],
+      };
+
+      await cacheSet(cacheKey, result, 3600); // 1-hour cache — proof is deterministic
+      res.json(result);
+    } catch (e) {
+      res.status(500).json({ error: String(e) });
     }
-
-    // Build the 4 canonical leaves
-    const leaves = [
-      sha256hex(cert.contractAddress),
-      sha256hex(String(cert.version)),
-      sha256hex(cert.certificateHash),
-      sha256hex(cert.generatedAt.toISOString()),
-    ];
-
-    const { root, layers } = buildMerkleTree(leaves);
-
-    // Generate proof for each leaf (all 4 — let the caller pick the leaf
-    // they want to verify by index)
-    const proofs = leaves.map((leaf, i) => ({
-      leafIndex: i,
-      leafLabel: ['contractAddress', 'version', 'certificateHash', 'generatedAt'][i],
-      leafHash: leaf,
-      proof: getMerkleProof(leaves, i, layers),
-    }));
-
-    // Verify the root against the stored certificate hash for completeness
-    const rootMatchesCertHash = root === sha256hex(cert.certificateHash);
-
-    const result = {
-      certificateId: cert.id,
-      contractAddress: cert.contractAddress,
-      version: cert.version,
-      merkleRoot: root,
-      treeDepth: layers.length - 1,
-      leafCount: leaves.length,
-      leaves: proofs,
-      // Full layered tree for independent verification
-      layers: layers,
-      // Cross-check: root hashed against certificateHash to bind the two
-      rootMatchesCertHash,
-      // On-chain anchor (if present) should embed this merkleRoot
-      anchored: !!cert.anchorTxHash,
-      anchorTxHash: cert.anchorTxHash,
-      algorithm: 'SHA-256 with canonical sibling sort',
-      verifyInstructions: [
-        '1. Take the leaf hash for the field you want to verify.',
-        '2. Walk up the tree using the sibling hashes in proof[].',
-        '3. At each step: sort([currentHash, siblingHash]) then SHA-256 the concatenation.',
-        '4. The final result must equal merkleRoot.',
-      ],
-    };
-
-    await cacheSet(cacheKey, result, 3600); // 1-hour cache — proof is deterministic
-    res.json(result);
-  } catch (e) {
-    res.status(500).json({ error: String(e) });
-  }
-});
+  }),
+);
 
 // ── QR Code generator (pure TypeScript, no external deps) ────────────────────
 // Implements QR Code Model 2 (Version 1–10) using Reed-Solomon error correction.
@@ -722,59 +729,62 @@ function matrixToSvg(
 
 // ── GET /verify/:certificateId/qr ────────────────────────────────────────────
 
-auditVerifyRouter.get('/:certificateId/qr', async (req: Request, res: Response) => {
-  try {
-    const { certificateId } = req.params;
-    const size = Math.min(600, Math.max(100, parseInt(req.query.size as string) || 300));
-    const darkColor = (req.query.dark as string) || '#000000';
-    const lightColor = (req.query.light as string) || '#ffffff';
+auditVerifyRouter.get(
+  '/:certificateId/qr',
+  asyncHandler(async (req: Request, res: Response) => {
+    try {
+      const { certificateId } = req.params;
+      const size = Math.min(600, Math.max(100, parseInt(req.query.size as string) || 300));
+      const darkColor = (req.query.dark as string) || '#000000';
+      const lightColor = (req.query.light as string) || '#ffffff';
 
-    const cacheKey = `audit:qr:${certificateId}:${size}`;
-    const cached = await cacheGet<string>(cacheKey);
-    if (cached) {
+      const cacheKey = `audit:qr:${certificateId}:${size}`;
+      const cached = await cacheGet<string>(cacheKey);
+      if (cached) {
+        res.setHeader('Content-Type', 'image/svg+xml');
+        res.setHeader('Cache-Control', 'public, max-age=86400');
+        return res.send(cached);
+      }
+
+      // Resolve cert to get canonical URL
+      const cert = await prismaRead.auditCertificate.findFirst({
+        where: {
+          OR: [{ id: certificateId }, { certificateHash: certificateId }],
+        },
+        select: { id: true, contractAddress: true, certificateHash: true },
+      });
+
+      if (!cert) {
+        return res.status(404).json({ error: 'Certificate not found.' });
+      }
+
+      // Build the verification URL that the QR code encodes
+      const baseUrl = process.env.PUBLIC_API_BASE_URL ?? 'https://explorer.soroban.network';
+      const verifyUrl = `${baseUrl}/api/v1/audit/verify/${cert.id}`;
+
+      // Truncate URL if too long for version 3 (max 47 bytes)
+      const encodable =
+        verifyUrl.length <= 47 ? verifyUrl : `${baseUrl}/verify/${cert.id.slice(0, 20)}`;
+
+      let svg: string;
+      try {
+        const matrix = encodeQR(encodable);
+        svg = matrixToSvg(matrix, { size, lightColor, darkColor, margin: 16 });
+      } catch {
+        // QR encoding can fail for very long strings on version 3 — fall back
+        // to a minimal URL using just the certificate hash prefix
+        const fallback = `${baseUrl}/v/${cert.certificateHash.slice(0, 20)}`;
+        const matrix = encodeQR(fallback);
+        svg = matrixToSvg(matrix, { size, lightColor, darkColor, margin: 16 });
+      }
+
+      await cacheSet(cacheKey, svg, 86400); // cache for 1 day
       res.setHeader('Content-Type', 'image/svg+xml');
       res.setHeader('Cache-Control', 'public, max-age=86400');
-      return res.send(cached);
+      res.setHeader('Content-Disposition', `inline; filename="audit-qr-${cert.id}.svg"`);
+      res.send(svg);
+    } catch (e) {
+      res.status(500).json({ error: String(e) });
     }
-
-    // Resolve cert to get canonical URL
-    const cert = await prismaRead.auditCertificate.findFirst({
-      where: {
-        OR: [{ id: certificateId }, { certificateHash: certificateId }],
-      },
-      select: { id: true, contractAddress: true, certificateHash: true },
-    });
-
-    if (!cert) {
-      return res.status(404).json({ error: 'Certificate not found.' });
-    }
-
-    // Build the verification URL that the QR code encodes
-    const baseUrl = process.env.PUBLIC_API_BASE_URL ?? 'https://explorer.soroban.network';
-    const verifyUrl = `${baseUrl}/api/v1/audit/verify/${cert.id}`;
-
-    // Truncate URL if too long for version 3 (max 47 bytes)
-    const encodable =
-      verifyUrl.length <= 47 ? verifyUrl : `${baseUrl}/verify/${cert.id.slice(0, 20)}`;
-
-    let svg: string;
-    try {
-      const matrix = encodeQR(encodable);
-      svg = matrixToSvg(matrix, { size, lightColor, darkColor, margin: 16 });
-    } catch {
-      // QR encoding can fail for very long strings on version 3 — fall back
-      // to a minimal URL using just the certificate hash prefix
-      const fallback = `${baseUrl}/v/${cert.certificateHash.slice(0, 20)}`;
-      const matrix = encodeQR(fallback);
-      svg = matrixToSvg(matrix, { size, lightColor, darkColor, margin: 16 });
-    }
-
-    await cacheSet(cacheKey, svg, 86400); // cache for 1 day
-    res.setHeader('Content-Type', 'image/svg+xml');
-    res.setHeader('Cache-Control', 'public, max-age=86400');
-    res.setHeader('Content-Disposition', `inline; filename="audit-qr-${cert.id}.svg"`);
-    res.send(svg);
-  } catch (e) {
-    res.status(500).json({ error: String(e) });
-  }
-});
+  }),
+);

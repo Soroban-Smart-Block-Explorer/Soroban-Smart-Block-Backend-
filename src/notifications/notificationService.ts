@@ -1,4 +1,3 @@
-
 interface PushDevice {
   token: string;
   platform: 'ios' | 'android' | 'web';

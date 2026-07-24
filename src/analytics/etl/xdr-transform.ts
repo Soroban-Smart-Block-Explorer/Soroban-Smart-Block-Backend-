@@ -148,8 +148,7 @@ export async function transformRecord(
 
   const row = raw.after as Record<string, unknown>;
   const contractId = (row.contractId as string) ?? (row.contract_id as string) ?? '';
-  const walletAddress =
-    (row.sourceAccount as string) ?? (row.source_account as string) ?? '';
+  const walletAddress = (row.sourceAccount as string) ?? (row.source_account as string) ?? '';
 
   // Parallel enrichment lookups
   const [contractMeta, tokenMeta] = await Promise.all([
@@ -263,9 +262,7 @@ export function computeAggregates(
       unique_wallets: new Set(recs.map((r) => r.wallet_address)).size,
       total_fee_charged: String(total),
       avg_fee_charged: recs.length ? String(total / recs.length) : '0',
-      total_volume: recs
-        .reduce((s, r) => s + Number(r.transfer_amount ?? 0), 0)
-        .toString(),
+      total_volume: recs.reduce((s, r) => s + Number(r.transfer_amount ?? 0), 0).toString(),
       p10_fee: pct(0.1),
       p50_fee: pct(0.5),
       p90_fee: pct(0.9),

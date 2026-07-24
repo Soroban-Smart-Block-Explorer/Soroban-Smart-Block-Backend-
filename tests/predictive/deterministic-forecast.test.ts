@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { ArimaMock, XgboostMock } from '../../src/predictive/models';
+import { ArimaSimulation, XgboostSimulation } from '../../src/predictive/models';
 import { EnsembleForecaster } from '../../src/predictive/ensemble';
 import { createForecaster } from '../../src/predictive/factory';
 import { LinearTrendModel, SeasonalMeanModel } from '../../src/predictive/production-models';
@@ -26,9 +26,9 @@ describe('demo forecast models (seeded)', () => {
     vi.useRealTimers();
   });
 
-  it('ArimaMock produces identical output for the same seed and input', () => {
-    const a = new ArimaMock(42);
-    const b = new ArimaMock(42);
+  it('ArimaSimulation produces identical output for the same seed and input', () => {
+    const a = new ArimaSimulation(42);
+    const b = new ArimaSimulation(42);
     a.train(SAMPLE_DATA);
     b.train(SAMPLE_DATA);
 
@@ -39,8 +39,8 @@ describe('demo forecast models (seeded)', () => {
     expect(runA).toEqual(normalizeForecast(a.predict(5, SAMPLE_DATA, undefined, FIXED_NOW)));
   });
 
-  it('XgboostMock produces identical SHAP values for the same seed', () => {
-    const model = new XgboostMock(99);
+  it('XgboostSimulation produces identical SHAP values for the same seed', () => {
+    const model = new XgboostSimulation(99);
     model.train(SAMPLE_DATA);
     const results = model.predict(3, SAMPLE_DATA, undefined, FIXED_NOW);
 

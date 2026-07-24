@@ -7,6 +7,7 @@
  */
 
 import { prismaRead, prismaWrite } from '../db';
+import { logger } from '../logger';
 
 type Bucket = 'hour' | 'day' | 'week';
 
@@ -83,8 +84,8 @@ export async function runGasAnalytics(): Promise<void> {
  */
 export function startGasAnalyticsScheduler(intervalMs = BUCKET_MS.hour): NodeJS.Timeout {
   // Run once immediately, then on interval
-  runGasAnalytics().catch((err) => console.error('[gasAnalytics] initial run failed:', err));
+  runGasAnalytics().catch((err) => logger.error('[gasAnalytics] initial run failed:', err));
   return setInterval(() => {
-    runGasAnalytics().catch((err) => console.error('[gasAnalytics] scheduled run failed:', err));
+    runGasAnalytics().catch((err) => logger.error('[gasAnalytics] scheduled run failed:', err));
   }, intervalMs);
 }

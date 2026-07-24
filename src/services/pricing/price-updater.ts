@@ -2,6 +2,7 @@ import { prismaRead, prismaWrite } from '../../db';
 import { computeCompositePrice } from './composite-price';
 import { updateStablecoinMonitoring, autoDetectStablecoin } from './stablecoin-peg';
 import { discoverExternalPrice } from './external-api-source';
+import { logger } from '../../logger';
 
 let isRunning = false;
 let activeInterval: ReturnType<typeof setInterval> | null = null;
@@ -38,7 +39,7 @@ export async function runActivePriceUpdate(): Promise<void> {
       WHERE "updatedAt" < NOW() - INTERVAL '5 minutes'
     `);
   } catch (err) {
-    console.error('[PriceUpdater] Active update error:', err);
+    logger.error('[PriceUpdater] Active update error:', err);
   } finally {
     isRunning = false;
   }
@@ -57,7 +58,7 @@ export async function runSlowPriceUpdate(): Promise<void> {
       await Promise.allSettled(batch.map((t) => computeCompositePrice(t.address, t.tokenSymbol)));
     }
   } catch (err) {
-    console.error('[PriceUpdater] Slow update error:', err);
+    logger.error('[PriceUpdater] Slow update error:', err);
   }
 }
 
@@ -106,12 +107,12 @@ export async function runExternalApiUpdate(): Promise<void> {
       }
     }
   } catch (err) {
-    console.error('[PriceUpdater] External API update error:', err);
+    logger.error('[PriceUpdater] External API update error:', err);
   }
 }
 
 export async function startPriceUpdater(): Promise<void> {
-  console.log('[PriceUpdater] Starting background price updates...');
+  logger.info('[PriceUpdater] Starting background price updates...');
 
   if (activeInterval) clearInterval(activeInterval);
   if (slowInterval) clearInterval(slowInterval);
@@ -126,7 +127,7 @@ export async function startPriceUpdater(): Promise<void> {
   externalInterval = setInterval(runExternalApiUpdate, EXTERNAL_API_INTERVAL_MS);
   setTimeout(() => runExternalApiUpdate(), 10_000);
 
-  console.log('[PriceUpdater] Background price updates started');
+  logger.info('[PriceUpdater] Background price updates started');
 }
 
 export async function runStablecoinUpdate(): Promise<void> {
@@ -158,7 +159,7 @@ export async function runStablecoinUpdate(): Promise<void> {
       }
     }
   } catch (err) {
-    console.error('[PriceUpdater] Stablecoin update error:', err);
+    logger.error('[PriceUpdater] Stablecoin update error:', err);
   }
 }
 
@@ -179,5 +180,5 @@ export function stopPriceUpdater(): void {
     clearInterval(externalInterval);
     externalInterval = null;
   }
-  console.log('[PriceUpdater] Background price updates stopped');
+  logger.info('[PriceUpdater] Background price updates stopped');
 }

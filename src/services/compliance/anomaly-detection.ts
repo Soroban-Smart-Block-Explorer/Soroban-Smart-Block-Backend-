@@ -124,10 +124,12 @@ export async function detectAnomalies(address?: string): Promise<Anomaly[]> {
       take: 200,
     });
 
-    const addressesToCheck = address ? [address] : [...new Set(txs.map(t => t.sourceAccount))].slice(0, 50);
+    const addressesToCheck = address
+      ? [address]
+      : [...new Set(txs.map((t) => t.sourceAccount))].slice(0, 50);
 
     for (const addr of addressesToCheck) {
-      const addrTxs = txs.filter(t => t.sourceAccount === addr);
+      const addrTxs = txs.filter((t) => t.sourceAccount === addr);
 
       const structuring = detectStructuring(addr, addrTxs);
       if (structuring) {
@@ -161,7 +163,7 @@ export function listAnomalies(
 ): { anomalies: Anomaly[]; total: number } {
   let filtered = [...anomalies];
   if (status) {
-    filtered = filtered.filter(a => a.status === status);
+    filtered = filtered.filter((a) => a.status === status);
   }
   filtered.sort((a, b) => new Date(b.detectedAt).getTime() - new Date(a.detectedAt).getTime());
 
@@ -177,7 +179,7 @@ export function reviewAnomaly(
   reviewedBy?: string,
   notes?: string,
 ): Anomaly | null {
-  const index = anomalies.findIndex(a => a.id === id);
+  const index = anomalies.findIndex((a) => a.id === id);
   if (index === -1) return null;
 
   anomalies[index] = {

@@ -16,8 +16,13 @@ export function isValidStellarAddress(addr: string): boolean {
  */
 export function resolveAddress(addr: string): string {
   const translated = translateAddress(addr);
-  if (translated.kind === 'muxed' && translated.masterKey) {
-    return translated.masterKey;
+  if (translated.kind === 'muxed') {
+    if (translated.masterKey) {
+      return translated.masterKey;
+    }
+    throw Object.assign(new Error(`Muxed address ${addr} has no resolvable master key`), {
+      statusCode: 400,
+    });
   }
   return addr;
 }

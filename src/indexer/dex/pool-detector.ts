@@ -31,7 +31,13 @@ const PROTOCOL_SIGNATURES: Record<Exclude<DexProtocol, 'unknown'>, Set<string>> 
 /** Symbols that indicate a swap/trade across protocols. */
 const SWAP_SYMBOLS = new Set(['swap', 'trade', 'swapexacttokensfortokens']);
 /** Symbols that add liquidity. */
-const ADD_LIQUIDITY_SYMBOLS = new Set(['deposit', 'add_liquidity', 'provide_liquidity', 'join_pool', 'joinpool']);
+const ADD_LIQUIDITY_SYMBOLS = new Set([
+  'deposit',
+  'add_liquidity',
+  'provide_liquidity',
+  'join_pool',
+  'joinpool',
+]);
 /** Symbols that remove liquidity. */
 const REMOVE_LIQUIDITY_SYMBOLS = new Set([
   'withdraw',
@@ -61,7 +67,10 @@ export function looksLikePoolEvent(eventType: string | null, topicSymbol: string
 }
 
 /** Classify the originating protocol from an event symbol. */
-export function classifyProtocol(topicSymbol: string | null, eventType: string | null): DexProtocol {
+export function classifyProtocol(
+  topicSymbol: string | null,
+  eventType: string | null,
+): DexProtocol {
   const s = norm(topicSymbol) || norm(eventType);
   for (const [protocol, sigs] of Object.entries(PROTOCOL_SIGNATURES)) {
     if (protocol !== 'soroswap' && sigs.has(s)) return protocol as DexProtocol;
@@ -189,7 +198,13 @@ async function ensurePool(
   pair: [string, string] | null,
   protocol: DexProtocol,
   ledgerSequence: number,
-): Promise<{ tokenA: string; tokenB: string; reserveA: bigint; reserveB: bigint; feeBps: number } | null> {
+): Promise<{
+  tokenA: string;
+  tokenB: string;
+  reserveA: bigint;
+  reserveB: bigint;
+  feeBps: number;
+} | null> {
   const existing = await prisma.dexPool.findUnique({ where: { poolAddress } });
   if (existing) {
     return {
@@ -254,7 +269,13 @@ export async function processPoolEvent(input: PoolEventInput): Promise<void> {
   let { reserveA, reserveB } = pool;
 
   if (action === 'swap' && swap) {
-    ({ reserveA, reserveB } = applySwap(pool, pool.tokenA, swap.tokenIn, swap.amountIn, swap.amountOut));
+    ({ reserveA, reserveB } = applySwap(
+      pool,
+      pool.tokenA,
+      swap.tokenIn,
+      swap.amountIn,
+      swap.amountOut,
+    ));
     await prisma.poolSwap.create({
       data: {
         poolAddress,
