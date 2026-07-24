@@ -2862,6 +2862,12 @@ model SandboxAccount {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
+  // The @@unique DSL constraint is intentionally kept so Prisma generates the
+  // `sessionId_publicKey` compound-key helper used by fundAccount's `where`
+  // clause.  The actual database index is replaced by a UNIQUE NULLS NOT
+  // DISTINCT index in migration 20260724000000_sandbox_account_nulls_not_distinct
+  // so that two rows with the same sessionId and publicKey = NULL are correctly
+  // rejected on PostgreSQL 16+ (the project's stated minimum, see CONTRIBUTING.md).
   @@unique([sessionId, publicKey])
 }
 
