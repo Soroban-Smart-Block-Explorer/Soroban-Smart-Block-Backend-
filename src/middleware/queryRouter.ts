@@ -65,7 +65,7 @@ export class QueryRouter {
       /HOPS?\s*\(/i,
     ];
 
-    return pathPatterns.some(pattern => pattern.test(query));
+    return pathPatterns.some((pattern) => pattern.test(query));
   }
 
   /**
@@ -79,21 +79,13 @@ export class QueryRouter {
    * Check if query has relationship-heavy JOINs
    */
   private hasRelationshipJoins(query: string): boolean {
-    const relationshipTables = [
-      'TRANSACTION',
-      'CONTRACT',
-      'EVENT',
-      'WALLET',
-      'TOKEN',
-    ];
+    const relationshipTables = ['TRANSACTION', 'CONTRACT', 'EVENT', 'WALLET', 'TOKEN'];
 
     const joinCount = (query.match(/JOIN/gi) || []).length;
-    
+
     // If multiple JOINs on relationship tables, route to graph
     if (joinCount >= 2) {
-      const hasRelationshipJoin = relationshipTables.some(table => 
-        query.includes(table)
-      );
+      const hasRelationshipJoin = relationshipTables.some((table) => query.includes(table));
       return hasRelationshipJoin;
     }
 
@@ -111,8 +103,9 @@ export class QueryRouter {
       /GROUP\s+BY\s+\w+\s*\.\s*\w+/i,
     ];
 
-    return aggregationPatterns.some(pattern => pattern.test(query)) && 
-           this.hasRelationshipJoins(query);
+    return (
+      aggregationPatterns.some((pattern) => pattern.test(query)) && this.hasRelationshipJoins(query)
+    );
   }
 
   /**
@@ -124,8 +117,7 @@ export class QueryRouter {
       /SELECT\s+\w+(?:,\s*\w+)*\s+FROM\s+\w+\s+WHERE\s+\w+\s*=\s*['"]?\w+['"]?/i,
     ];
 
-    return simplePatterns.some(pattern => pattern.test(query)) && 
-           !query.includes('JOIN');
+    return simplePatterns.some((pattern) => pattern.test(query)) && !query.includes('JOIN');
   }
 
   /**
@@ -168,16 +160,19 @@ export class QueryRouter {
   /**
    * Get routing decision with explanation
    */
-  getRoutingDecision(query: string, context: Partial<QueryContext> = {}): {
+  getRoutingDecision(
+    query: string,
+    context: Partial<QueryContext> = {},
+  ): {
     target: QueryTarget;
     reason: string;
     complexity: number;
   } {
     const target = this.routeQuery(query, context);
     const complexity = this.estimateComplexity(query);
-    
+
     let reason = '';
-    
+
     switch (target) {
       case 'graph':
         if (this.isPathBasedQuery(query)) {

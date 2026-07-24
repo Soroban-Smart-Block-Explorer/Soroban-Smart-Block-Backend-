@@ -83,8 +83,8 @@ function makeStorage(location: string): StorageDescriptor {
       },
     },
     Parameters: {
-      'classification': 'json',
-      'compressionType': 'none',
+      classification: 'json',
+      compressionType: 'none',
       'iceberg.catalog': 'glue',
       'write.format.default': 'parquet',
       'write.target-file-size-bytes': String(512 * 1024 * 1024),
@@ -99,7 +99,8 @@ function makeStorage(location: string): StorageDescriptor {
 export const GLUE_TABLE_DEFINITIONS: TableInput[] = [
   {
     Name: 'transactions',
-    Description: 'Soroban transactions partitioned by network_id + month. Z-order: contract_id, wallet_address.',
+    Description:
+      'Soroban transactions partitioned by network_id + month. Z-order: contract_id, wallet_address.',
     StorageDescriptor: makeStorage(`s3://${BUCKET}/${PREFIX}/transactions`),
     PartitionKeys: [
       { Name: 'network_id', Type: 'string' },
@@ -115,13 +116,14 @@ export const GLUE_TABLE_DEFINITIONS: TableInput[] = [
       'projection.month.interval': '1',
       'projection.month.interval.unit': 'MONTHS',
       'storage.location.template': `s3://${BUCKET}/${PREFIX}/transactions/network_id=$\{network_id}/month=$\{month}`,
-      'table_type': 'ICEBERG',
-      'format': 'parquet',
+      table_type: 'ICEBERG',
+      format: 'parquet',
     },
   },
   {
     Name: 'events',
-    Description: 'Soroban events partitioned by network_id + contract_id + date. Z-order: contract_id, wallet_address.',
+    Description:
+      'Soroban events partitioned by network_id + contract_id + date. Z-order: contract_id, wallet_address.',
     StorageDescriptor: makeStorage(`s3://${BUCKET}/${PREFIX}/events`),
     PartitionKeys: [
       { Name: 'network_id', Type: 'string' },
@@ -139,8 +141,8 @@ export const GLUE_TABLE_DEFINITIONS: TableInput[] = [
       'projection.date.interval': '1',
       'projection.date.interval.unit': 'DAYS',
       'storage.location.template': `s3://${BUCKET}/${PREFIX}/events/network_id=$\{network_id}/contract_id=$\{contract_id}/date=$\{date}`,
-      'table_type': 'ICEBERG',
-      'format': 'parquet',
+      table_type: 'ICEBERG',
+      format: 'parquet',
     },
   },
   {
@@ -161,8 +163,8 @@ export const GLUE_TABLE_DEFINITIONS: TableInput[] = [
       'projection.month.interval': '1',
       'projection.month.interval.unit': 'MONTHS',
       'storage.location.template': `s3://${BUCKET}/${PREFIX}/token_transfers/network_id=$\{network_id}/month=$\{month}`,
-      'table_type': 'ICEBERG',
-      'format': 'parquet',
+      table_type: 'ICEBERG',
+      format: 'parquet',
     },
   },
   {
@@ -183,8 +185,8 @@ export const GLUE_TABLE_DEFINITIONS: TableInput[] = [
       'projection.month.interval': '1',
       'projection.month.interval.unit': 'MONTHS',
       'storage.location.template': `s3://${BUCKET}/${PREFIX}/contract_calls/network_id=$\{network_id}/month=$\{month}`,
-      'table_type': 'ICEBERG',
-      'format': 'parquet',
+      table_type: 'ICEBERG',
+      format: 'parquet',
     },
   },
 ];

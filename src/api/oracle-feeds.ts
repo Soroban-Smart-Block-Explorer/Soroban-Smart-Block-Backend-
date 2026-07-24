@@ -7,8 +7,53 @@
  */
 import { Router, Request, Response } from 'express';
 import { z } from 'zod';
+import axios from 'axios';
+import { logger } from '../logger';
 
 export const oracleFeedsRouter = Router();
+
+const COINGECKO_API = 'https://api.coingecko.com/api/v3';
+
+const COINGECKO_IDS: Record<string, string> = {
+  'XLM/USD': 'stellar',
+  'BTC/USD': 'bitcoin',
+  'ETH/USD': 'ethereum',
+  'USDC/USD': 'usd-coin',
+};
+
+const cachedPrices: Record<string, { price: number; timestamp: number }> = {};
+let cacheTimestamp = 0;
+const CACHE_TTL_MS = 30_000;
+
+async function fetchLivePrices(): Promise<void> {
+  const ids = Object.values(COINGECKO_IDS).join(',');
+  const vsCurrencies = 'usd';
+  try {
+    const { data } = await axios.get<Record<string, { usd: number }>>(
+      `${COINGECKO_API}/simple/price?ids=${ids}&vs_currencies=${vsCurrencies}`,
+      { timeout: 5000 },
+    );
+    const now = Date.now();
+    for (const [pair, id] of Object.entries(COINGECKO_IDS)) {
+      const price = data[id]?.usd;
+      if (price) {
+        cachedPrices[pair] = { price, timestamp: now };
+      }
+    }
+    cacheTimestamp = now;
+  } catch (err) {
+    logger.warn('[oracle-feeds] CoinGecko API error, using cached prices:', err);
+  }
+}
+
+async function getPrice(pair: string): Promise<{ price: number; timestamp: string } | null> {
+  if (Date.now() - cacheTimestamp > CACHE_TTL_MS) {
+    await fetchLivePrices();
+  }
+  const entry = cachedPrices[pair];
+  if (!entry) return null;
+  return { price: entry.price, timestamp: new Date(entry.timestamp).toISOString() };
+}
 
 // ── GET / ─────────────────────────────────────────────────────────────────────
 
@@ -95,21 +140,18 @@ oracleFeedsRouter.get('/assets/:assetPair/price', (req: Request, res: Response) 
       .json({ error: `Asset pair ${assetPair} not supported. Supported: ${supported.join(', ')}` });
   }
 
-  const mockPrices: Record<string, number> = {
-    'XLM/USD': 0.12,
-    'BTC/USD': 65000,
-    'ETH/USD': 3500,
-    'USDC/USD': 1.0,
-  };
+  const result = await getPrice(assetPair);
+  if (!result) {
+    return res.status(503).json({ error: 'Price data temporarily unavailable. Try again later.' });
+  }
 
   res.json({
     pair: assetPair,
-    price: mockPrices[assetPair],
+    price: result.price,
     currency: 'USD',
-    source: 'aggregated',
-    confidence: 0.99,
-    timestamp: new Date().toISOString(),
-    note: 'Demo price. Connect oracle providers for live data.',
+    source: 'coingecko',
+    confidence: 0.95,
+    timestamp: result.timestamp,
   });
 });
 

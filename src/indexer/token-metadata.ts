@@ -22,6 +22,7 @@ import { prismaRead } from '../db';
 import { config } from '../config';
 import { formatAmount } from './args-decoder';
 import { cacheGet, cacheSet, cacheDelete, cacheClear } from '../cache';
+import { logger } from '../logger';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -391,7 +392,7 @@ export async function warmTokenMetadataCache(): Promise<void> {
     }
   }
 
-  console.log(
+  logger.info(
     `[token-metadata] Cache warmed: ${tokens.length} tokens, ${sacMappings.length} SAC mappings`,
   );
 }

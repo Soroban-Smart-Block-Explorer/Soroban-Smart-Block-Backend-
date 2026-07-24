@@ -93,11 +93,14 @@ describe('Health Endpoints Integration', () => {
     app = express();
 
     // Mock the health endpoints similar to index.ts
-    app.get('/health', asyncHandler(async (_req, res) => {
-      const healthStatus = await getHealthStatus();
-      const statusCode = healthStatus.status === 'unhealthy' ? 503 : 200;
-      res.status(statusCode).json(healthStatus);
-    }));
+    app.get(
+      '/health',
+      asyncHandler(async (_req, res) => {
+        const healthStatus = await getHealthStatus();
+        const statusCode = healthStatus.status === 'unhealthy' ? 503 : 200;
+        res.status(statusCode).json(healthStatus);
+      }),
+    );
 
     app.get('/livez', (_req, res) => {
       const liveness = getLivenessStatus(Date.now() - 10000);

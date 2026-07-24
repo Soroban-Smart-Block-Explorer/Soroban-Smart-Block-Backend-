@@ -1,5 +1,6 @@
 import { prismaRead as prisma } from '../db';
 import { buildSystemDependencyGraph, computeSystemicRiskIndex } from './systemicRisk';
+import { logger } from '../logger';
 
 interface HealthSignal {
   type: 'oracle_deviation' | 'tvl_drop' | 'volume_spike' | 'pause_event' | 'governance_attack';
@@ -219,7 +220,7 @@ async function updateRiskIndex(): Promise<void> {
       });
     }
   } catch (e) {
-    console.error('[systemic-monitor] Failed to update risk index:', e);
+    logger.error('[systemic-monitor] Failed to update risk index:', e);
   }
 }
 
@@ -242,13 +243,13 @@ async function runHealthCheck(): Promise<HealthSignal[]> {
     if (allSignals.length > 0) {
       const criticalSignals = allSignals.filter((s) => s.severity === 'critical');
       if (criticalSignals.length > 0) {
-        console.warn(
+        logger.warn(
           `[systemic-monitor] ${criticalSignals.length} critical health signals detected`,
         );
       }
     }
   } catch (e) {
-    console.error('[systemic-monitor] Health check failed:', e);
+    logger.error('[systemic-monitor] Health check failed:', e);
   }
 
   await updateRiskIndex();
@@ -262,16 +263,14 @@ export function startSystemicMonitor(): void {
   if (isRunning) return;
   isRunning = true;
 
-  console.log('[systemic-monitor] Starting systemic risk monitor...');
+  logger.info('[systemic-monitor] Starting systemic risk monitor...');
 
   // Immediate first check
-  runHealthCheck().catch((e) =>
-    console.error('[systemic-monitor] Initial health check failed:', e),
-  );
+  runHealthCheck().catch((e) => logger.error('[systemic-monitor] Initial health check failed:', e));
 
   monitorInterval = setInterval(() => {
     runHealthCheck().catch((e) =>
-      console.error('[systemic-monitor] Periodic health check failed:', e),
+      logger.error('[systemic-monitor] Periodic health check failed:', e),
     );
   }, CHECK_INTERVAL_MS);
 }

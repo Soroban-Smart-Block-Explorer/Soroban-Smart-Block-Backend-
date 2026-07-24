@@ -1,5 +1,6 @@
 import { prismaWrite as prisma } from '../db';
 import { uploadToS3 } from './s3Client';
+import { logger } from '../logger';
 
 // Transactions older than this many days have their rawXdr archived to S3
 const RAW_XDR_RETENTION_DAYS = parseInt(process.env.RAW_XDR_RETENTION_DAYS ?? '90');
@@ -23,7 +24,7 @@ export async function archiveRawXdr(): Promise<ArchivalResult> {
   const cutoff = new Date(Date.now() - RAW_XDR_RETENTION_DAYS * 24 * 60 * 60 * 1000);
   const result: ArchivalResult = { archived: 0, nullified: 0, errors: 0 };
 
-  console.log(`[Archiver] Archiving rawXdr older than ${cutoff.toISOString()} to S3`);
+  logger.info(`[Archiver] Archiving rawXdr older than ${cutoff.toISOString()} to S3`);
 
   let cursor: string | undefined;
 
@@ -70,7 +71,7 @@ export async function archiveRawXdr(): Promise<ArchivalResult> {
           toNullify.push(tx.id);
           result.archived++;
         } catch (err) {
-          console.error(`[Archiver] Failed to upload ${tx.hash}:`, err);
+          logger.error(`[Archiver] Failed to upload ${tx.hash}:`, err);
           result.errors++;
         }
       }),
@@ -85,7 +86,7 @@ export async function archiveRawXdr(): Promise<ArchivalResult> {
     }
   }
 
-  console.log(
+  logger.info(
     `[Archiver] Done — archived: ${result.archived}, nullified: ${result.nullified}, errors: ${result.errors}`,
   );
   return result;

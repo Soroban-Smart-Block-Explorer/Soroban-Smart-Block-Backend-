@@ -407,11 +407,9 @@ tokenPricesRouter.get(
     });
 
     if (history.length < 20) {
-      return res
-        .status(400)
-        .json({
-          error: 'Insufficient price history for indicators (need at least 20 data points)',
-        });
+      return res.status(400).json({
+        error: 'Insufficient price history for indicators (need at least 20 data points)',
+      });
     }
 
     const prices = history.map((h) => Number(h.priceUsd));

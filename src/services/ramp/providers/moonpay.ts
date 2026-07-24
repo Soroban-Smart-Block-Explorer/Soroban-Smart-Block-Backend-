@@ -55,19 +55,13 @@ const PAYMENT_MAP: Record<PaymentMethod, string> = {
 
 function signUrl(url: string): string {
   if (!SECRET_KEY) return url;
-  const sig = crypto
-    .createHmac('sha256', SECRET_KEY)
-    .update(new URL(url).search)
-    .digest('base64');
+  const sig = crypto.createHmac('sha256', SECRET_KEY).update(new URL(url).search).digest('base64');
   const encoded = encodeURIComponent(sig);
   const sep = url.includes('?') ? '&' : '?';
   return `${url}${sep}signature=${encoded}`;
 }
 
-async function moonpayFetch<T>(
-  path: string,
-  opts: RequestInit = {},
-): Promise<T> {
+async function moonpayFetch<T>(path: string, opts: RequestInit = {}): Promise<T> {
   const url = `${BASE_URL}${path}${path.includes('?') ? '&' : '?'}apiKey=${API_KEY}`;
   const signed = signUrl(url);
 
@@ -107,9 +101,7 @@ export class MoonPayAdapter implements RampProviderAdapter {
 
   async isAvailable(country: string, _paymentMethod: PaymentMethod): Promise<boolean> {
     // FATF grey/black-listed and US-restricted countries not supported
-    const BLOCKED = new Set([
-      'IR', 'KP', 'SY', 'CU', 'SD', 'MM', 'RU', 'BY', 'VE',
-    ]);
+    const BLOCKED = new Set(['IR', 'KP', 'SY', 'CU', 'SD', 'MM', 'RU', 'BY', 'VE']);
     return !BLOCKED.has(country.toUpperCase());
   }
 
@@ -175,7 +167,7 @@ export class MoonPayAdapter implements RampProviderAdapter {
         const providerFee = data.feeAmount ?? 0;
         const networkFee = data.networkFeeAmount ?? 0;
         const platformFee = fiatAmount * PLATFORM_FEE_PCT;
-        const totalCost = (data.baseCurrencyAmount ?? 0);
+        const totalCost = data.baseCurrencyAmount ?? 0;
 
         return {
           provider: this.name,

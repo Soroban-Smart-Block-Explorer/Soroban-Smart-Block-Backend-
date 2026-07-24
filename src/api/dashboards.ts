@@ -2,6 +2,7 @@ import { Router, Request, Response } from 'express';
 import { z } from 'zod';
 import crypto from 'crypto';
 import { prismaWrite as prisma, prismaRead } from '../db';
+import { asyncHandler } from '../middleware/asyncHandler';
 
 export const dashboardRouter = Router();
 
