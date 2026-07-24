@@ -102,11 +102,6 @@ freezeRouter.post('/keys', adminAuth, async (req: Request, res: Response) => {
         frozenAtLedger,
         frozenAtTime: new Date(),
         reason,
-<<<<<<< HEAD
-=======
-        frozenBy: actor,
-        metadata: metadata ? metadata : undefined,
->>>>>>> cb58bb6 (fix: replace mock admin auth with proper admin authentication middleware)
       },
     });
 
@@ -238,11 +233,6 @@ freezeRouter.patch('/violations/:id', adminAuth, async (req: Request, res: Respo
       data: {
         resolution: parsed.data.resolution,
         ...(parsed.data.severity && { severity: parsed.data.severity }),
-<<<<<<< HEAD
-=======
-        resolvedBy: actor,
-        resolvedAt: new Date(),
->>>>>>> cb58bb6 (fix: replace mock admin auth with proper admin authentication middleware)
       },
     });
 
@@ -299,11 +289,7 @@ freezeRouter.get('/audit-log', async (req: Request, res: Response) => {
       where,
       take: limit,
       skip: offset,
-<<<<<<< HEAD
       orderBy: { createdAt: 'desc' },
-=======
-      orderBy: { timestamp: 'desc' },
->>>>>>> cb58bb6 (fix: replace mock admin auth with proper admin authentication middleware)
     });
 
     const total = await prisma.auditLog.count({ where });
