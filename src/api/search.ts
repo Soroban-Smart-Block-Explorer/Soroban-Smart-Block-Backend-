@@ -1,6 +1,6 @@
 import { Router, Request, Response } from 'express';
 import { z } from 'zod';
-import { prismaRead as prisma, prismaWrite } from '../db';
+import { prismaRead, prismaWrite } from '../db';
 import { asyncHandler } from '../middleware/asyncHandler';
 import { safeString } from '../schemas/common';
 
@@ -251,7 +251,6 @@ searchRouter.get('/index', async (_req: Request, res: Response) => {
           });
           indexed++;
         }
-      }
       }
     }
 
