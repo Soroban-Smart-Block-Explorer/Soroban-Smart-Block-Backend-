@@ -185,7 +185,7 @@ interface AbstractState {
   values: Map<string, 'top' | 'bot' | Expr>;
 }
 
-interface ConcolicValue {
+interface _ConcolicValue {
   symbolic: SymbolicValue;
   concrete: number | bigint;
 }
@@ -471,7 +471,7 @@ export class SymbolicExecutor {
       symbolic: boolean;
       concreteValue?: number | bigint;
     }>,
-    invs?: string[],
+    _invs?: string[],
   ): Promise<AnalysisResult> {
     const symbolicArgs: SymbolicValue[] = args.map((arg, i) => {
       if (arg.symbolic) {
@@ -1084,17 +1084,17 @@ export class SymbolicExecutor {
   }
 
   private inferLoopInvariant(
-    loop: { label: string; body: WasmInstr[] },
-    execState: SymbolicState,
-    state: ExecutionState,
+    _loop: { label: string; body: WasmInstr[] },
+    _execState: SymbolicState,
+    _state: ExecutionState,
   ): Expr | null {
     return null;
   }
 
   private executeContinuation(
-    body: WasmInstr[],
-    state: ExecutionState,
-    allPaths: ExecutionPath[],
+    _body: WasmInstr[],
+    _state: ExecutionState,
+    _allPaths: ExecutionPath[],
   ): ExecutionState | null {
     return null;
   }
@@ -1139,7 +1139,7 @@ export class SymbolicExecutor {
     width: string,
     state: SymbolicState,
     allPaths: ExecutionPath[],
-    funcName: string,
+    _funcName: string,
   ): Promise<void> {
     const is32 = width === 'i32';
 
@@ -1167,7 +1167,7 @@ export class SymbolicExecutor {
         break;
       }
       case 'mul': {
-        const negOne = is32 ? bv32Val(0xffffffff) : bv64Val(0xffffffffffffffffn);
+        const _negOne = is32 ? bv32Val(0xffffffff) : bv64Val(0xffffffffffffffffn);
         const result = mul(l.expr, r.expr);
         overflowCond = and_(
           neq(l.expr, intVal(0)),
@@ -1191,7 +1191,7 @@ export class SymbolicExecutor {
     divisor: SymbolicValue,
     state: SymbolicState,
     allPaths: ExecutionPath[],
-    funcName: string,
+    _funcName: string,
   ): Promise<void> {
     const zeroExpr = divisor.type === 'i32' ? bv32Val(0) : bv64Val(0n);
     const path = this.makeStubPath(
@@ -1244,7 +1244,7 @@ export class SymbolicExecutor {
       }
       case 'call_contract': {
         const callee = state.stack.pop();
-        const calleeFn = state.stack.pop();
+        const _calleeFn = state.stack.pop();
         state.callDepth++;
         state.reentrantCalls.add(callee ? this.compiler.compileExpr(callee.expr) : 'unknown');
 
@@ -1291,13 +1291,13 @@ export class SymbolicExecutor {
         break;
       }
       case 'transfer': {
-        const from = state.stack.pop();
-        const to = state.stack.pop();
-        const amount = state.stack.pop();
+        const _from = state.stack.pop();
+        const _to = state.stack.pop();
+        const _amount = state.stack.pop();
         break;
       }
       case 'balance': {
-        const addr = state.stack.pop();
+        const _addr = state.stack.pop();
         const symBal: SymbolicValue = {
           expr: intVar(`${funcName}_balance_${this.nextPathId++}`),
           type: 'i64',

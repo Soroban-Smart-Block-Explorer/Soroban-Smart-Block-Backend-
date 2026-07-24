@@ -40,6 +40,15 @@ import { Router, Request, Response, NextFunction } from 'express';
 import { z, ZodError } from 'zod';
 import { prismaRead, prismaWrite } from '../db';
 import { asyncHandler } from '../middleware/asyncHandler';
+import {
+  translateNlToQuery,
+  validateQuery,
+  mergeContext,
+  extractEntities,
+  extractTimeRange,
+  extractTokenSymbol,
+  extractContractPattern,
+} from '../services/search/nlq-service';
 
 export const nlqRouter = Router();
 
@@ -289,26 +298,39 @@ async function processQuery(
   apiEndpoint: string;
   visualization: Record<string, unknown>;
   suggestedFilters: Record<string, unknown>;
+  sql?: string;
+  explanation?: string;
 }> {
   const detectedLang = language ?? detectLanguage(query);
   const { intent, confidence, vizType, filters } = classifyIntent(query);
 
-  const intentToEndpoint: Record<string, string> = {
-    list_transactions: '/api/v1/transactions',
-    lookup_contract: '/api/v1/contracts',
-    aggregation_volume: '/api/v1/analytics/gas',
-    time_series: '/api/v1/events',
-    comparison: '/api/v1/analytics',
-    distribution: '/api/v1/events',
-    alert_condition: '/api/v1/alerts',
-    lookup_address: '/api/v1/wallets',
-    general_query: '/api/v1/transactions',
-  };
+  const entities = extractEntities(query);
+  const timeRange = extractTimeRange(query);
+  const tokenSymbol = extractTokenSymbol(query);
+  const contractPattern = extractContractPattern(query);
 
-  const resolvedFilters = {
+  const resolvedFilters: Record<string, unknown> = {
     ...((sessionContext?.activeFilters as Record<string, unknown>) ?? {}),
     ...filters,
   };
+
+  if (timeRange && !resolvedFilters.timeRange) {
+    resolvedFilters.timeRange = timeRange;
+  }
+  if (tokenSymbol) resolvedFilters.tokenSymbol = tokenSymbol;
+  if (contractPattern) resolvedFilters.contractPattern = contractPattern;
+  if (entities.numbers.length > 0 && !resolvedFilters.limit) {
+    resolvedFilters.limit = entities.numbers[0];
+  }
+  if (entities.addresses.length > 0 && !resolvedFilters.sender && !resolvedFilters.contract) {
+    if (intent === 'lookup_contract') {
+      resolvedFilters.contract = entities.addresses[0];
+    } else {
+      resolvedFilters.sender = entities.addresses[0];
+    }
+  }
+
+  const translation = await translateNlToQuery(query, intent, resolvedFilters, detectedLang);
 
   return {
     interpretedQuery: {
@@ -316,10 +338,16 @@ async function processQuery(
       confidence,
       language: detectedLang,
       filters: resolvedFilters,
+      entities: { addresses: entities.addresses, numbers: entities.numbers },
+      timeRange,
+      tokenSymbol,
+      contractPattern,
     },
-    apiEndpoint: intentToEndpoint[intent] ?? '/api/v1/transactions',
+    apiEndpoint: translation.apiEndpoint,
     visualization: getVisualizationConfig(intent, vizType ?? 'table', query),
     suggestedFilters: resolvedFilters,
+    sql: translation.sql,
+    explanation: translation.explanation,
   };
 }
 
@@ -341,6 +369,12 @@ const BUILT_IN_SUGGESTIONS = [
   'Compare StellarSwap and Aquarius volumes',
   'Show anomalous activity in the last hour',
   'List all failed transactions today',
+  'Find contracts with reentrancy vulnerabilities',
+  'Show me whale movements on mainnet yesterday',
+  'Search for all transactions that involved contract C... between dates Y and Z that transferred more than 1000 USDC',
+  'Find the contract that looks like a Uniswap V2 clone based on function signatures',
+  'Show me the top 10 contracts by gas consumption last week',
+  'Find contracts similar to StellarSwap',
 ];
 
 nlqRouter.get(
@@ -361,8 +395,24 @@ nlqRouter.get(
       select: { query: true, intent: true, usageCount: true },
     });
 
+    let searchSuggestions: Array<{ label: string; docType: string }> = [];
+    if (prefix.length > 0) {
+      try {
+        const raw = await prismaRead.searchSuggestion.findMany({
+          where: { prefix: { startsWith: prefix } },
+          orderBy: { weight: 'desc' },
+          take: 5,
+          select: { label: true, docType: true },
+        });
+        searchSuggestions = Array.isArray(raw) ? raw : [];
+      } catch {
+        searchSuggestions = [];
+      }
+    }
+
     const combined = [
       ...dbSuggestions.map((e) => e.query),
+      ...searchSuggestions.map((s) => s.label),
       ...suggestions.filter(
         (s) => !dbSuggestions.some((d) => d.query.toLowerCase() === s.toLowerCase()),
       ),
@@ -821,13 +871,10 @@ nlqRouter.post(
     const activeFilters = (ctx.activeFilters as Record<string, unknown>) ?? {};
 
     const start = Date.now();
-    const { interpretedQuery, apiEndpoint, visualization, suggestedFilters } = await processQuery(
-      data.query,
-      data.language,
-      { activeFilters },
-    );
+    const { interpretedQuery, apiEndpoint, visualization, suggestedFilters, sql, explanation } =
+      await processQuery(data.query, data.language, { activeFilters });
 
-    const mergedFilters = { ...activeFilters, ...suggestedFilters };
+    const mergedFilters = mergeContext(activeFilters, suggestedFilters);
 
     const savedQuery = await prismaWrite.nlQuery.create({
       data: {
@@ -835,6 +882,7 @@ nlqRouter.post(
         query: data.query,
         language: data.language ?? detectLanguage(data.query),
         interpretedQuery: interpretedQuery as object,
+        sql: sql ?? null,
         apiEndpoint,
         resolved: true,
         responseTime: Date.now() - start,
@@ -857,6 +905,8 @@ nlqRouter.post(
       query: data.query,
       intent: interpretedQuery.intent,
       filters: mergedFilters,
+      sql,
+      explanation,
     };
     const updatedTurns = [...turns.slice(-4), newTurn];
 
@@ -876,6 +926,8 @@ nlqRouter.post(
       interpretedQuery,
       apiEndpoint,
       visualization,
+      sql,
+      explanation,
       contextTurns: updatedTurns.length,
       activeFilters: mergedFilters,
     });
@@ -1079,11 +1131,13 @@ nlqRouter.post(
     const alert = await prismaRead.nlAlert.findUnique({ where: { id } });
     if (!alert) return res.status(404).json({ error: 'Alert not found' });
 
-    const { interpretedQuery } = await processQuery(alert.nlQuery);
+    const { interpretedQuery, sql, explanation } = await processQuery(alert.nlQuery);
     return res.json({
       alertId: id,
       tested: true,
       interpretedQuery,
+      sql,
+      explanation,
       conditions: alert.conditions,
       message: 'Alert test executed. Would fire based on conditions.',
     });
@@ -1100,6 +1154,9 @@ nlqRouter.post(
     const { intent, confidence, vizType, filters } = classifyIntent(data.query);
     const visualization = getVisualizationConfig(intent, vizType ?? 'table', data.query);
 
+    const translation = await translateNlToQuery(data.query, intent, filters, detectedLang);
+    const validation = validateQuery(translation.sql);
+
     res.json({
       query: data.query,
       detectedLanguage: detectedLang,
@@ -1107,11 +1164,28 @@ nlqRouter.post(
         intent,
         confidence,
         filters,
-        suggestedApiEndpoint: `/api/v1/${intent.replace('_', '/')}`,
+        suggestedApiEndpoint: translation.apiEndpoint,
       },
+      sql: translation.sql,
+      explanation: translation.explanation,
+      validation,
       visualization,
-      explanation: `This query is classified as "${intent}" with ${Math.round(confidence * 100)}% confidence. It would be executed against the ${intent.replace(/_/g, ' ')} endpoint with the extracted filters.`,
     });
+  }),
+);
+
+// ── POST /query/validate ──────────────────────────────────────────────────────
+
+nlqRouter.post(
+  '/validate',
+  asyncHandler(async (req: Request, res: Response) => {
+    const { sql } = req.body as { sql?: string };
+    if (!sql) {
+      return res.status(400).json({ error: 'sql field required' });
+    }
+
+    const validation = validateQuery(sql);
+    return res.json({ sql, ...validation });
   }),
 );
 
@@ -1189,10 +1263,8 @@ nlqRouter.post(
     const start = Date.now();
 
     const detectedLang = data.language ?? detectLanguage(data.query);
-    const { interpretedQuery, apiEndpoint, visualization, suggestedFilters } = await processQuery(
-      data.query,
-      detectedLang,
-    );
+    const { interpretedQuery, apiEndpoint, visualization, suggestedFilters, sql, explanation } =
+      await processQuery(data.query, detectedLang);
     const responseTime = Date.now() - start;
 
     const saved = await prismaWrite.nlQuery.create({
@@ -1201,6 +1273,7 @@ nlqRouter.post(
         query: data.query,
         language: detectedLang,
         interpretedQuery: interpretedQuery as object,
+        sql: sql ?? null,
         apiEndpoint,
         resolved: true,
         responseTime,
@@ -1229,6 +1302,8 @@ nlqRouter.post(
       interpretedQuery,
       apiEndpoint,
       visualization,
+      sql,
+      explanation,
       responseTimeMs: responseTime,
     });
   }),

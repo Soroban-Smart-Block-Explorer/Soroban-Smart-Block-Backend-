@@ -36,6 +36,12 @@ import { rejectUntrustedForwardedHeaders } from './middleware/proxyTrust';
 import { billingRouter } from './services/stripe-billing';
 import { logger } from './logger';
 import { feedOrchestrator } from './feed/orchestrator';
+import { startAuditPipeline } from './indexer/audit-pipeline';
+import { startAuditScheduler } from './indexer/audit-scheduler';
+import { startContinuousAuditMonitor } from './indexer/audit-monitor';
+import { attachAuditWebSocket } from './ws/auditBroadcaster';
+import { startAuditExpiryChecker } from './indexer/audit-expiry-checker';
+import { startAuditDigestScheduler } from './indexer/audit-digest-scheduler';
 import { startPriceUpdater, stopPriceUpdater } from './services/pricing';
 import { startBridgeWorker, stopBridgeWorker } from './bridge-tracker';
 import { writeFile, mkdir } from 'fs/promises';
@@ -47,6 +53,14 @@ import { startFeeAggregator as startFeeAggregatorImpl } from './indexer/fee-aggr
 import { attachArbitrageWebSocket as attachArbitrageWebSocketImpl } from './ws/arbitrageBroadcaster';
 import { attachComposabilityWebSocket as attachComposabilityWebSocketImpl } from './ws/composabilityBroadcaster';
 import { getHealthStatus, getLivenessStatus, getReadinessStatus } from './health';
+import {
+  getP2pStatusSnapshot,
+  resolveLedgerLocation,
+  startP2pNode,
+  stopP2pNode,
+  wireOnTheFlyIndexer,
+} from './p2p';
+import { indexSingleLedger } from './indexer/indexer';
 
 let isShuttingDown = false;
 const SERVICE_START_TIME = Date.now();
@@ -202,6 +216,35 @@ app.get(
   }),
 );
 
+// P2P indexer network status — peer table, range ownership, recent challenge
+// results (see docs/P2P_INDEXER_DESIGN.md §1.4 dashboard). Reports enabled:false
+// with an empty snapshot on single-node deployments rather than erroring.
+app.get(
+  '/p2p/status',
+  asyncHandler(async (_req, res) => {
+    const snapshot = await getP2pStatusSnapshot();
+    res.json(snapshot);
+  }),
+);
+
+// Coordinator-less ledger lookup (design doc §1.3): local DB first, then
+// DHT-forward to a live range owner, then on-the-fly indexing as a last
+// resort. Works identically whether P2P is enabled or not — in single-node
+// mode it's just a local lookup with graceful degradation to on-the-fly
+// indexing, which is a strict improvement over a plain 404.
+app.get(
+  '/p2p/ledger/:seq',
+  asyncHandler(async (req, res) => {
+    const seq = parseInt(req.params.seq, 10);
+    if (!Number.isFinite(seq) || seq < 0) {
+      return res.status(400).json({ error: 'Invalid ledger sequence' });
+    }
+    const includeEvents = req.query.events !== 'false';
+    const result = await resolveLedgerLocation(config.stellarNetwork, seq, includeEvents);
+    res.status(result.found ? 200 : 404).json(result);
+  }),
+);
+
 // Liveness probe - basic check that service is alive
 app.get('/livez', (_req, res) => {
   if (isShuttingDown) {
@@ -275,6 +318,11 @@ async function gracefulShutdown(signal: string): Promise<void> {
   try {
     stopIndexerService();
     logger.info('[shutdown] Indexer service stopped');
+
+    await stopP2pNode().catch((err) =>
+      logger.warn('[shutdown] Error stopping p2p node', { error: String(err) }),
+    );
+    logger.info('[shutdown] P2P node stopped');
 
     if (wssRef) {
       shutdownWebSocketServer();
@@ -358,6 +406,11 @@ async function main() {
   await initializeColdStorage();
   markReady('coldStorage');
 
+  wireOnTheFlyIndexer(indexSingleLedger);
+  await startP2pNode().catch((err) => {
+    logger.error('[p2p] failed to start', { error: String(err) });
+  });
+
   if (!process.env.DISABLE_INDEXER) {
     markReady('indexer');
     startIndexerService().catch((err) => {
@@ -406,6 +459,13 @@ async function main() {
     logger.debug('Arbitrage WebSocket disabled (ENABLE_ARBITRAGE_WS not set)');
   }
 
+  const httpServer = createServer(app);
+  attachWebSocketServer(httpServer);
+  attachPrivacyWebSocket(httpServer);
+  attachComposabilityWebSocket(httpServer);
+  attachArbitrageWebSocket(httpServer);
+  attachAuditWebSocket(httpServer); // /ws/audit — score alerts, finding alerts, signals
+
   if (!process.env.DISABLE_INDEXER) {
     if (ENABLE_POOL_MONITOR) {
       try {
@@ -447,6 +507,41 @@ async function main() {
       startBridgeWorker();
     } catch (err) {
       logger.warn('Bridge worker failed to start', { error: String(err) });
+    }
+
+    // Audit Pipeline — initial-audit queue drain (fires within 5 min of first detection)
+    try {
+      startAuditPipeline();
+    } catch (err) {
+      logger.warn('Audit pipeline failed to start', { error: String(err) });
+    }
+
+    // Audit Scheduler — daily (TVL > $100K, incremental) + weekly (all, full recompute)
+    try {
+      startAuditScheduler();
+    } catch (err) {
+      logger.warn('Audit scheduler failed to start', { error: String(err) });
+    }
+
+    // Continuous Audit Monitor — real-time 7-signal detector, 1-min poll
+    try {
+      startContinuousAuditMonitor();
+    } catch (err) {
+      logger.warn('Continuous audit monitor failed to start', { error: String(err) });
+    }
+
+    // Certificate Expiry Checker — 30/14/7-day warnings, auto re-audit at 7d
+    try {
+      startAuditExpiryChecker();
+    } catch (err) {
+      logger.warn('Audit expiry checker failed to start', { error: String(err) });
+    }
+
+    // Weekly Audit Digest Scheduler — posts to Slack/Discord every Monday 09:00 UTC
+    try {
+      startAuditDigestScheduler();
+    } catch (err) {
+      logger.warn('Audit digest scheduler failed to start', { error: String(err) });
     }
   }
 

@@ -40,6 +40,23 @@ import { marketRouter } from './market';
 import { tokenPricesRouter } from './token-prices';
 import { portfolioRouter } from './portfolio';
 import { exportsRouter } from './exports';
+import { syncStateRouter } from './sync-state';
+import { governanceRouter } from './governance';
+import { systemicRouter } from './systemic';
+import { benchmarkRouter } from './benchmarks';
+import { networkRouter } from './network';
+import { emergencyBaseRouter } from './emergency-router';
+import { stellarRouter } from './stellar';
+import { privacyRouter } from './privacy';
+import { mevRouter } from './mev';
+import { developerRouter } from './developer/router';
+import { scheduleRouter } from './schedule';
+import feedRouter from './feed';
+import backfillRouter from './backfill';
+import marketRouter from './market';
+import feedSSERouter from './feedSSE';
+import { arbitrageRouter } from './arbitrage';
+import { auditRouter } from './audit';
 import { rateLimitAdminRouter } from './rate-limits';
 import { alertsRouter } from './alerts';
 import { oracleIntelligenceRouter } from './oracle-intelligence';
@@ -49,12 +66,14 @@ import { adminErrorsRouter } from './admin/errors';
 // ── CSV Exports ───────────────────────────────────────────────────────────────
 import { requireApiKey, requireKeyTier } from '../middleware/apiKeyAuth';
 import { compilerRouter } from './compiler-router';
+import { sandboxRouter } from './sandbox';
 
 // ── MEV / Sandwich Detection (#290) ──────────────────────────────────────────
 
 // ── Freeze Management ─────────────────────────────────────────────────────────
 
 // ── Predictive Analytics ──────────────────────────────────────────────────────
+import { fraudRouter } from './fraud';
 
 export const router = Router();
 
@@ -72,6 +91,7 @@ router.use('/simulate', requireApiKey, simulateRouter);
 router.use('/verify', requireApiKey, verifyRouter);
 // compiler endpoints require developer+ tier (expensive builds)
 router.use('/compiler', requireKeyTier('developer'), compilerRouter);
+router.use('/sandbox', sandboxRouter);
 router.use('/sync-state', syncStateRouter);
 router.use('/network', networkRouter);
 router.use('/token-metadata', tokenMetadataRouter);
@@ -89,6 +109,9 @@ router.use('/exports', exportsRouter);
 router.use('/admin/rate-limits', rateLimitAdminRouter);
 router.use('/market/alerts', alertsRouter);
 router.use('/oracles/intelligence', oracleIntelligenceRouter);
+
+// ── Predictive Analytics ──────────────────────────────────────────────────────
+router.use('/fraud', fraudRouter);
 
 // ── Natural Language Query Interface (#328) ───────────────────────────────────
 // nlq invokes LLM APIs — compute-heavy and billed per request; key required
@@ -108,6 +131,10 @@ router.use('/admin/errors', adminErrorsRouter);
 import { bridgeTrackerRouter } from './bridge-tracker';
 router.use('/bridge-tracker', bridgeTrackerRouter);
 
+// ── ZKP Verification History ──────────────────────────────────────────────────
+import { zkpVerificationsRouter } from './zkp-verifications';
+router.use('/zkp-verifications', zkpVerificationsRouter);
+
 // ── Admin ──────────────────────────────────────────────────────────────────────
 import { adminRouter } from './admin';
 router.use('/admin', adminRouter);
@@ -120,3 +147,35 @@ router.use('/abi-extract', abiExtractRouter);
 // Auth and owner-scoping are enforced inside webhooksRouter itself.
 import { webhooksRouter } from './webhooks';
 router.use('/webhooks', webhooksRouter);
+
+// ── Governance & DAO Framework (#567) ─────────────────────────────────────────
+// Reads are public; writes are signature-authenticated inside the router.
+// Treasury mounts before the base router so /governance/treasury/... wins
+// over the /governance/:wildcard-style proposal routes.
+import { governanceTreasuryRouter } from './governance-treasury';
+router.use('/governance/treasury', governanceTreasuryRouter);
+import { governanceRouter } from './governance';
+router.use('/governance', governanceRouter);
+router.use('/systemic', systemicRouter);
+router.use('/benchmarks', benchmarkRouter);
+router.use('/network', networkRouter);
+router.use('/emergency', emergencyBaseRouter);
+router.use('/stellar', stellarRouter);
+router.use('/privacy', privacyRouter);
+router.use('/mev', mevRouter);
+router.use('/developer', developerRouter);
+router.use('/schedule', scheduleRouter);
+// Data Mesh Platform APIs
+router.use('/feed', feedRouter);
+router.use('/feed/backfill', backfillRouter);
+router.use('/feed/sse', feedSSERouter);
+router.use('/market', marketRouter);
+// Arbitrage Intelligence Platform
+router.use('/arbitrage', arbitrageRouter);
+// Smart Contract Audit Trail & Certificate Platform
+router.use('/audit', auditRouter);
+
+// ── Multi-Layer Data Lakehouse (#551) ─────────────────────────────────────────
+// Stream + OLAP + cold-storage query gateway. Compute-heavy — key required.
+import { lakehouseRouter } from './lakehouse';
+router.use('/lakehouse', requireApiKey, lakehouseRouter);

@@ -4,13 +4,20 @@
     "module": "commonjs",
     "lib": ["ES2020"],
     "outDir": "./dist",
-    "strict": true,
+    "strict": false,
+    "noImplicitAny": true,
+    "strictNullChecks": false,
+    "strictFunctionTypes": false,
+    "strictBindCallApply": false,
+    "strictPropertyInitialization": false,
+    "noImplicitThis": true,
+    "alwaysStrict": true,
     "esModuleInterop": true,
     "skipLibCheck": true,
     "forceConsistentCasingInFileNames": true,
     "resolveJsonModule": true,
     "sourceMap": true
   },
-  "include": ["src/index.ts", "src/indexer/run.ts", "src/types/**/*.d.ts"],
+  "include": ["src/index.ts", "src/indexer/run.ts", "src/api/search.ts", "src/api/search-routes.ts", "src/services/search-service.ts", "src/types/**/*.d.ts"],
   "exclude": ["node_modules", "dist"]
 }

@@ -102,6 +102,25 @@ const fuzzStartSchema = z.object({
   timeoutSeconds: z.number().int().positive().optional(),
   stopOnFirst: z.string().optional(),
 });
+const fuzzCampaignSchema = z.object({
+  sessionId: z.string().min(1),
+  contractId: z.string().min(1).optional(),
+  config: z
+    .object({
+      timeLimitMs: z.number().int().positive().optional(),
+      coverageTarget: z.number().int().min(0).max(100).optional(),
+      workers: z.number().int().positive().optional(),
+      maxSteps: z.number().int().positive().optional(),
+      seedCorpus: z.array(z.record(z.unknown())).optional(),
+      invariants: z.array(z.string()).optional(),
+      enableOracleManipulation: z.boolean().optional(),
+      targetContracts: z.array(z.string()).optional(),
+    })
+    .optional(),
+});
+const minimizeCrashSchema = z.object({
+  sessionId: z.string().min(1).optional(),
+});
 const ciSchema = z.object({
   sessionId: z.string().optional(),
   steps: z.array(
@@ -1916,6 +1935,53 @@ sandboxRouter.post('/fuzz/stop/:runId', async (req, res) => {
  *             example:
  *               error: Fuzz run not found
  */
+sandboxRouter.post('/fuzz/:contractId', async (req, res) => {
+  try {
+    const payload = fuzzCampaignSchema.parse({
+      sessionId: req.body?.sessionId,
+      contractId: req.params.contractId,
+      config: req.body?.config,
+    });
+    res.status(201).json(await sandboxEngine.startFuzzCampaign(payload));
+  } catch (error) {
+    handleError(res, error);
+  }
+});
+
+sandboxRouter.get('/fuzz/:campaignId', async (req, res) => {
+  try {
+    const campaign = await sandboxEngine.getFuzzCampaign(req.params.campaignId);
+    if (!campaign) return res.status(404).json({ error: 'Fuzz campaign not found' });
+    return res.json({
+      ...campaign,
+      coveragePercent: campaign.coverage.totalCoverage,
+      uniqueCrashes: campaign.crashes.length,
+      branchesHit: campaign.coverage.coveredBranches.length,
+    });
+  } catch (error) {
+    handleError(res, error);
+  }
+});
+
+sandboxRouter.get('/fuzz/:campaignId/crashes', async (req, res) => {
+  try {
+    res.json(await sandboxEngine.listFuzzCampaignCrashes(req.params.campaignId));
+  } catch (error) {
+    handleError(res, error);
+  }
+});
+
+sandboxRouter.post('/fuzz/:campaignId/minimize/:crashId', async (req, res) => {
+  try {
+    const { sessionId } = minimizeCrashSchema.parse(req.body ?? {});
+    res.json(
+      await sandboxEngine.minimizeCrash(sessionId ?? '', req.params.campaignId, req.params.crashId),
+    );
+  } catch (error) {
+    handleError(res, error);
+  }
+});
+
 sandboxRouter.get('/fuzz/run/:runId', async (req, res) => {
   try {
     const run = await sandboxEngine.getFuzzRun(req.params.runId);

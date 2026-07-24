@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Offline - Soroban Explorer</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: #0f172a;
+      color: #e2e8f0;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+      padding: 2rem;
+      text-align: center;
+    }
+    .container { max-width: 400px; }
+    .icon { font-size: 4rem; margin-bottom: 1rem; }
+    h1 { font-size: 1.5rem; margin-bottom: 0.5rem; color: #f8fafc; }
+    p { color: #94a3b8; margin-bottom: 2rem; line-height: 1.5; }
+    .actions { display: flex; flex-direction: column; gap: 0.75rem; }
+    .btn {
+      padding: 0.75rem 1.5rem;
+      border-radius: 0.5rem;
+      border: none;
+      font-size: 1rem;
+      cursor: pointer;
+      text-decoration: none;
+      text-align: center;
+    }
+    .btn-primary { background: #3b82f6; color: white; }
+    .btn-secondary { background: #1e293b; color: #94a3b8; }
+    .cached-items { margin-top: 2rem; text-align: left; }
+    .cached-items h3 { color: #94a3b8; font-size: 0.875rem; margin-bottom: 0.5rem; }
+    .cached-items ul { list-style: none; padding: 0; }
+    .cached-items li { padding: 0.5rem 0; border-bottom: 1px solid #1e293b; color: #e2e8f0; font-size: 0.875rem; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="icon">📡</div>
+    <h1>You're Offline</h1>
+    <p>Some features may be unavailable. Cached data is still accessible.</p>
+    <div class="actions">
+      <button class="btn btn-primary" onclick="window.location.reload()">Try Again</button>
+      <button class="btn btn-secondary" onclick="window.location.href='/'">Go Home</button>
+    </div>
+    <div class="cached-items" id="cached-items">
+      <h3>Recently Viewed</h3>
+      <ul id="recent-list">
+        <li>Loading...</li>
+      </ul>
+    </div>
+  </div>
+  <script>
+    if ('caches' in window) {
+      caches.open('soroban-api-v1').then((cache) => {
+        cache.keys().then((requests) => {
+          const recent = requests
+            .filter((r) => r.url.includes('/api/v1/'))
+            .slice(-10)
+            .reverse();
+          const list = document.getElementById('recent-list');
+          if (recent.length === 0) {
+            list.innerHTML = '<li>No cached items yet</li>';
+          } else {
+            list.innerHTML = recent
+              .map((r) => {
+                const url = new URL(r.url);
+                return `<li><a href="${url.pathname}" style="color:#60a5fa">${url.pathname}</a></li>`;
+              })
+              .join('');
+          }
+        });
+      });
+    }
+  </script>
+</body>
+</html>

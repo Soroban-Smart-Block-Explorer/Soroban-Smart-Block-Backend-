@@ -8,6 +8,7 @@
 import { xdr } from '@stellar/stellar-sdk';
 import { rpc } from './rpc';
 import { recordUpgradeWithIntelligence } from './upgrade-governance';
+import { triggerUpgradeAudit } from './audit-pipeline';
 
 /** Event topic symbols / types that signal a contract code upgrade. */
 const UPGRADE_SYMBOLS = new Set<string>([
@@ -129,4 +130,7 @@ export async function handleUpgradeEvent(input: UpgradeEventInput): Promise<void
     previousWasm: canDiff ? previousWasm : undefined,
     newWasm: canDiff ? newWasm : undefined,
   });
+
+  // Immediately trigger a full re-audit now that a new upgrade is recorded
+  triggerUpgradeAudit(input.contractAddress);
 }

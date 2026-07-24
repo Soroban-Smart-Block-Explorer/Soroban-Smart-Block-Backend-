@@ -1,0 +1,500 @@
+---
+# Kubernetes Deployment for Adaptive Indexer
+# Includes: Ingester, Decoder, Enrichment workers with HPA
+
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: indexer-config
+  namespace: soroban
+data:
+  NATS_SERVERS: "nats-cluster-0.nats.soroban.svc.cluster.local:4222,nats-cluster-1.nats.soroban.svc.cluster.local:4222"
+  INDEXER_MODE: "adaptive"
+  PREDICTION_MODEL_ENABLED: "true"
+  GRACEFUL_DEGRADATION_ENABLED: "true"
+
+---
+# Ingester Workers (fetch raw ledgers)
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: indexer-ingester
+  namespace: soroban
+spec:
+  serviceName: indexer-ingester
+  replicas: 4
+  selector:
+    matchLabels:
+      component: indexer-ingester
+      tier: worker
+  template:
+    metadata:
+      labels:
+        component: indexer-ingester
+        tier: worker
+        app: adaptive-indexer
+    spec:
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                labelSelector:
+                  matchExpressions:
+                    - key: component
+                      operator: In
+                      values:
+                        - indexer-ingester
+                topologyKey: kubernetes.io/hostname
+      containers:
+        - name: ingester
+          image: soroban-indexer:latest
+          imagePullPolicy: Always
+          command: ['node', '/app/dist/indexer/ingester-worker.js']
+          envFrom:
+            - configMapRef:
+                name: indexer-config
+          env:
+            - name: WORKER_TYPE
+              value: "ingester"
+            - name: WORKER_ID
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            - name: POD_IP
+              valueFrom:
+                fieldRef:
+                  fieldPath: status.podIP
+          resources:
+            requests:
+              cpu: 500m
+              memory: 512Mi
+            limits:
+              cpu: 2
+              memory: 1Gi
+          livenessProbe:
+            httpGet:
+              path: /admin/indexer/health
+              port: 3000
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /admin/indexer/health
+              port: 3000
+            initialDelaySeconds: 10
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 2
+          ports:
+            - name: metrics
+              containerPort: 9090
+              protocol: TCP
+            - name: admin
+              containerPort: 3000
+              protocol: TCP
+
+---
+# Ingester HPA (auto-scale based on ledger close rate)
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: indexer-ingester-hpa
+  namespace: soroban
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: StatefulSet
+    name: indexer-ingester
+  minReplicas: 2
+  maxReplicas: 16
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 70
+    - type: Resource
+      resource:
+        name: memory
+        target:
+          type: Utilization
+          averageUtilization: 80
+    - type: Pods
+      pods:
+        metric:
+          name: nats_queue_depth
+          selector:
+            matchLabels:
+              topic: raw-ledgers
+        target:
+          type: AverageValue
+          averageValue: '500' # Average queue depth per ingester
+  behavior:
+    scaleUp:
+      stabilizationWindowSeconds: 30
+      policies:
+        - type: Percent
+          value: 100 # Double
+          periodSeconds: 15
+        - type: Pods
+          value: 4
+          periodSeconds: 15
+      selectPolicy: Max
+    scaleDown:
+      stabilizationWindowSeconds: 300
+      policies:
+        - type: Percent
+          value: 10 # 10% reduction
+          periodSeconds: 60
+
+---
+# Decoder Workers (parse XDR)
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: indexer-decoder
+  namespace: soroban
+spec:
+  replicas: 4
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 2
+      maxUnavailable: 1
+  selector:
+    matchLabels:
+      component: indexer-decoder
+      tier: worker
+  template:
+    metadata:
+      labels:
+        component: indexer-decoder
+        tier: worker
+        app: adaptive-indexer
+    spec:
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                labelSelector:
+                  matchExpressions:
+                    - key: component
+                      operator: In
+                      values:
+                        - indexer-decoder
+                topologyKey: kubernetes.io/hostname
+      containers:
+        - name: decoder
+          image: soroban-indexer:latest
+          imagePullPolicy: Always
+          command: ['node', '/app/dist/indexer/decoder-worker.js']
+          envFrom:
+            - configMapRef:
+                name: indexer-config
+          env:
+            - name: WORKER_TYPE
+              value: "decoder"
+          resources:
+            requests:
+              cpu: 1
+              memory: 1Gi
+            limits:
+              cpu: 2
+              memory: 2Gi
+          livenessProbe:
+            httpGet:
+              path: /admin/indexer/health
+              port: 3000
+            initialDelaySeconds: 30
+            periodSeconds: 10
+          readinessProbe:
+            httpGet:
+              path: /admin/indexer/health
+              port: 3000
+            initialDelaySeconds: 10
+            periodSeconds: 5
+          ports:
+            - name: metrics
+              containerPort: 9090
+
+---
+# Decoder HPA
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: indexer-decoder-hpa
+  namespace: soroban
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: indexer-decoder
+  minReplicas: 2
+  maxReplicas: 32
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 75
+    - type: Pods
+      pods:
+        metric:
+          name: nats_queue_depth
+          selector:
+            matchLabels:
+              topic: raw-ledgers
+        target:
+          type: AverageValue
+          averageValue: '300'
+  behavior:
+    scaleUp:
+      stabilizationWindowSeconds: 30
+      policies:
+        - type: Percent
+          value: 100
+          periodSeconds: 15
+
+---
+# Enrichment Workers (analyze events)
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: indexer-enrichment
+  namespace: soroban
+spec:
+  replicas: 4
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 2
+      maxUnavailable: 1
+  selector:
+    matchLabels:
+      component: indexer-enrichment
+      tier: worker
+  template:
+    metadata:
+      labels:
+        component: indexer-enrichment
+        tier: worker
+        app: adaptive-indexer
+    spec:
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                labelSelector:
+                  matchExpressions:
+                    - key: component
+                      operator: In
+                      values:
+                        - indexer-enrichment
+                topologyKey: kubernetes.io/hostname
+      containers:
+        - name: enrichment
+          image: soroban-indexer:latest
+          imagePullPolicy: Always
+          command: ['node', '/app/dist/indexer/enrichment-worker.js']
+          envFrom:
+            - configMapRef:
+                name: indexer-config
+          env:
+            - name: WORKER_TYPE
+              value: "enrichment"
+          resources:
+            requests:
+              cpu: 800m
+              memory: 1Gi
+            limits:
+              cpu: 2
+              memory: 2Gi
+          livenessProbe:
+            httpGet:
+              path: /admin/indexer/health
+              port: 3000
+            initialDelaySeconds: 30
+            periodSeconds: 10
+          readinessProbe:
+            httpGet:
+              path: /admin/indexer/health
+              port: 3000
+            initialDelaySeconds: 10
+            periodSeconds: 5
+          ports:
+            - name: metrics
+              containerPort: 9090
+
+---
+# Enrichment HPA
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: indexer-enrichment-hpa
+  namespace: soroban
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: indexer-enrichment
+  minReplicas: 2
+  maxReplicas: 24
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 70
+    - type: Pods
+      pods:
+        metric:
+          name: nats_queue_depth
+          selector:
+            matchLabels:
+              topic: decoded-transactions
+        target:
+          type: AverageValue
+          averageValue: '250'
+  behavior:
+    scaleUp:
+      stabilizationWindowSeconds: 30
+      policies:
+        - type: Percent
+          value: 100
+          periodSeconds: 15
+
+---
+# Predictive Scaler (singleton pod)
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: indexer-predictor
+  namespace: soroban
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      component: indexer-predictor
+      tier: control
+  template:
+    metadata:
+      labels:
+        component: indexer-predictor
+        tier: control
+        app: adaptive-indexer
+    spec:
+      containers:
+        - name: predictor
+          image: soroban-indexer:latest
+          imagePullPolicy: Always
+          command: ['node', '/app/dist/indexer/predictor-service.js']
+          envFrom:
+            - configMapRef:
+                name: indexer-config
+          resources:
+            requests:
+              cpu: 500m
+              memory: 512Mi
+            limits:
+              cpu: 1
+              memory: 1Gi
+          livenessProbe:
+            httpGet:
+              path: /admin/indexer/health
+              port: 3000
+            initialDelaySeconds: 30
+            periodSeconds: 10
+          ports:
+            - name: metrics
+              containerPort: 9090
+
+---
+# Control Plane API (operator dashboard)
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: indexer-control-plane
+  namespace: soroban
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      component: indexer-control-plane
+      tier: control
+  template:
+    metadata:
+      labels:
+        component: indexer-control-plane
+        tier: control
+        app: adaptive-indexer
+    spec:
+      containers:
+        - name: control-plane
+          image: soroban-indexer:latest
+          imagePullPolicy: Always
+          command: ['node', '/app/dist/indexer/control-plane-server.js']
+          envFrom:
+            - configMapRef:
+                name: indexer-config
+          resources:
+            requests:
+              cpu: 200m
+              memory: 256Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+          livenessProbe:
+            httpGet:
+              path: /admin/indexer/health
+              port: 3000
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          readinessProbe:
+            httpGet:
+              path: /admin/indexer/health
+              port: 3000
+            initialDelaySeconds: 5
+            periodSeconds: 5
+          ports:
+            - name: http
+              containerPort: 3000
+
+---
+# Service for Control Plane API
+apiVersion: v1
+kind: Service
+metadata:
+  name: indexer-control-plane
+  namespace: soroban
+spec:
+  selector:
+    component: indexer-control-plane
+  ports:
+    - name: http
+      port: 80
+      targetPort: 3000
+  type: LoadBalancer
+
+---
+# ServiceMonitor for Prometheus (Prometheus Operator)
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: indexer-metrics
+  namespace: soroban
+spec:
+  selector:
+    matchLabels:
+      app: adaptive-indexer
+  endpoints:
+    - port: metrics
+      interval: 30s
+      path: /metrics

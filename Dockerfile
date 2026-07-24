@@ -30,10 +30,11 @@ COPY package*.json ./
 RUN npm ci --omit=dev --ignore-scripts && npm audit --omit=dev --audit-level=high
 
 COPY --from=builder /app/dist ./dist
+COPY --from=builder /app/dist-esm ./dist-esm
 COPY --from=builder /app/node_modules/.prisma ./node_modules/.prisma
 COPY prisma ./prisma
 
-RUN chown -R appuser:appgroup /app
+RUN mkdir -p /app/data/p2p && chown -R appuser:appgroup /app
 
 RUN mkdir -p /tmp/.npm && chmod 1777 /tmp
 
@@ -42,5 +43,6 @@ USER appuser
 HEALTHCHECK --interval=30s --timeout=10s --start-period=15s --retries=3 \
   CMD wget --no-verbose --tries=1 --spider http://localhost:3000/health || exit 1
 
-EXPOSE 3000
+# 4001: libp2p listen port (P2P_LISTEN_ADDR), only relevant when P2P_ENABLED=true.
+EXPOSE 3000 4001
 CMD ["node", "dist/index.js"]

@@ -72,7 +72,6 @@ const PENDING_SCHEMA_ROUTERS = new Set([
   'feed.ts',
   'feedSSE.ts',
   'fuzzing.ts',
-  'governance.ts',
   'graph.ts',
   'intelligence.ts',
   'mev.ts',
@@ -101,7 +100,6 @@ const PENDING_SCHEMA_ROUTERS = new Set([
   'treasury.ts',
   'upgrade-trace.ts',
   'virtualList.ts',
-  'webhooks.ts',
   'yield.ts',
 ]);
 

@@ -225,9 +225,9 @@ export async function processGovernanceEvent(
         contractAddress,
         proposalId: proposalFields.proposalId,
         proposer: proposalFields.proposer,
-        title: proposalFields.title,
+        title: proposalFields.title ?? `Proposal ${proposalFields.proposalId}`,
         description: proposalFields.description,
-        targets: (targets as object) ?? undefined,
+        targets: (targets as object) ?? [],
         startBlock: proposalFields.startBlock ?? 0,
         endBlock: proposalFields.endBlock ?? 0,
         quorum: proposalFields.quorum ?? undefined,
@@ -280,6 +280,8 @@ export async function processGovernanceEvent(
           contractAddress,
           proposalId,
           proposer: voteFields.voter,
+          title: `Proposal ${proposalId}`,
+          targets: [],
           startBlock: event.ledgerSequence,
           endBlock: event.ledgerSequence,
           status: 'active',
@@ -291,7 +293,10 @@ export async function processGovernanceEvent(
         votesAgainst: proposal.votesAgainst,
         votesAbstain: proposal.votesAbstain,
       };
-      const newValue = addIntegerStrings(voteTotals[voteColumn as keyof typeof voteTotals], weight);
+      const newValue = addIntegerStrings(
+        voteTotals[voteColumn as keyof typeof voteTotals] ?? '0',
+        weight,
+      );
       await prisma.governanceProposal.update({
         where: { contractAddress_proposalId: { contractAddress, proposalId } },
         data: { [voteColumn]: newValue },
@@ -311,7 +316,7 @@ export async function processGovernanceEvent(
             : 'votesFor';
       const oldValue = subtractIntegerStrings(
         proposal[oldColumn as keyof typeof proposal] ?? '0',
-        existingVote.weight,
+        existingVote.weight ?? '0',
       );
       const newValue = addIntegerStrings(
         proposal[voteColumn as keyof typeof proposal] ?? '0',

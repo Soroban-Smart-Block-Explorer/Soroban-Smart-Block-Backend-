@@ -1,0 +1,46 @@
+{
+  "expo": {
+    "name": "Soroban Explorer",
+    "slug": "soroban-explorer",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "dark",
+    "splash": {
+      "image": "./assets/splash.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#0f172a"
+    },
+    "assetBundlePatterns": ["**/*"],
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.soroban.explorer",
+      "infoPlist": {
+        "NSFaceIDUsageDescription": "Soroban Explorer uses Face ID to secure your account.",
+        "NSCameraUsageDescription": "Camera is used to scan Soroban address QR codes."
+      }
+    },
+    "android": {
+      "package": "com.soroban.explorer",
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#0f172a"
+      }
+    },
+    "web": {
+      "favicon": "./assets/favicon.png",
+      "bundler": "metro"
+    },
+    "plugins": [
+      "expo-local-authentication",
+      "expo-secure-store",
+      "expo-notifications",
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "Allow Soroban Explorer to access your camera for QR scanning."
+        }
+      ]
+    ]
+  }
+}

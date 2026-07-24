@@ -2,6 +2,7 @@ import { prismaRead, prismaWrite } from './db';
 import { isCacheReady } from './cache';
 import { getIndexerStatus } from './indexer-state';
 import { getReadinessState } from './readiness';
+import { getConnectedPeerCount, isP2pEnabled } from './p2p';
 
 /**
  * Health check status for individual dependencies
@@ -24,6 +25,7 @@ export interface HealthResponse {
     cache: DependencyHealth;
     indexer: DependencyHealth;
     worker: DependencyHealth;
+    p2p: DependencyHealth;
   };
   readiness: {
     ready: boolean;
@@ -137,6 +139,28 @@ function checkWorkerHealth(): DependencyHealth {
 }
 
 /**
+ * Check P2P subsystem health. Single-node deployments (P2P_ENABLED unset)
+ * always report healthy — this dependency only matters once P2P is on.
+ */
+function checkP2pHealth(): DependencyHealth {
+  if (!isP2pEnabled()) {
+    return {
+      status: 'healthy',
+      message: 'P2P disabled (single-node mode)',
+      details: { enabled: false },
+      lastChecked: new Date().toISOString(),
+    };
+  }
+  const peerCount = getConnectedPeerCount();
+  return {
+    status: peerCount > 0 ? 'healthy' : 'degraded',
+    message: peerCount > 0 ? `Connected to ${peerCount} peer(s)` : 'No connected peers',
+    details: { enabled: true, connectedPeerCount: peerCount },
+    lastChecked: new Date().toISOString(),
+  };
+}
+
+/**
  * Get overall health status
  */
 export async function getHealthStatus(): Promise<HealthResponse> {
@@ -146,8 +170,9 @@ export async function getHealthStatus(): Promise<HealthResponse> {
     Promise.resolve(checkIndexerHealth()),
     Promise.resolve(checkWorkerHealth()),
   ]);
+  const p2p = checkP2pHealth();
 
-  const dependencies = { database, cache, indexer, worker };
+  const dependencies = { database, cache, indexer, worker, p2p };
 
   // Determine overall status
   const statuses = Object.values(dependencies).map((d) => d.status);

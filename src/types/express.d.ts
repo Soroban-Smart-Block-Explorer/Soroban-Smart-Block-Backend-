@@ -36,5 +36,7 @@ declare module 'express-serve-static-core' {
     spanId: string;
     /** Admin actor identity set by adminAuth middleware (freeze, audit routes). */
     actor?: string;
+    /** Data-sovereignty scope from the `?region=` query param, set by regionScope middleware. */
+    regionScope?: 'us' | 'eu' | 'apac' | 'sa' | 'af';
   }
 }

@@ -1,4 +1,5 @@
 import WebSocket from 'ws';
+import { xdr } from '@stellar/stellar-sdk';
 import { prismaWrite as prisma } from '../db';
 import { config } from '../config';
 import {
@@ -11,17 +12,31 @@ import {
   fetchLedgerMetadata,
 } from './rpc';
 import { decodeTransaction, decodeEvent } from './decoder';
+import { decodeZkpVerification, recordZkpVerification } from './zkp-verifier';
 import { processAaTransaction } from './aa-indexer';
 import { feedOrchestrator } from '../feed/orchestrator';
+import { enqueueInitialAudit } from './audit-pipeline';
+import { amIResponsibleFor, getRangeCursor, isP2pEnabled, setRangeCursor } from '../p2p';
 
 const BATCH = config.indexerBatchSize;
 const WORKERS = config.indexerCatchupWorkers;
 
 // ---------------------------------------------------------------------------
 // IndexerState helpers
+//
+// In single-node mode (P2P_ENABLED unset/false — the default, zero behavior
+// change) these delegate to the singleton IndexerState row exactly as
+// before. In P2P mode they delegate to per-range cursors (IndexerRangeClaim)
+// instead: getLastIndexedLedger() returns the furthest-behind cursor among
+// ranges this node currently owns, and setLastIndexedLedger(ledger) advances
+// the cursor of whichever range `ledger` falls in. See
+// docs/P2P_INDEXER_DESIGN.md §3.
 // ---------------------------------------------------------------------------
 
 export async function getLastIndexedLedger(): Promise<number> {
+  if (isP2pEnabled()) {
+    return getLastIndexedLedgerP2p();
+  }
   const state = await prisma.indexerState.upsert({
     where: { id: 'singleton' },
     update: {},
@@ -30,7 +45,21 @@ export async function getLastIndexedLedger(): Promise<number> {
   return state.lastLedger;
 }
 
+async function getLastIndexedLedgerP2p(): Promise<number> {
+  // Probe from the configured start ledger: the cursor of whichever range it
+  // falls in tells us where this node last left off for that range. Ranges
+  // this node doesn't own report their own cursor too (harmless — the
+  // per-ledger responsibility check in processLedgerRange skips them), so we
+  // simply use the probe range's cursor as the resume point for the main
+  // sequential loop, same shape as the single-node singleton cursor.
+  return getRangeCursor(config.indexerStartLedger);
+}
+
 export async function setLastIndexedLedger(ledger: number): Promise<void> {
+  if (isP2pEnabled()) {
+    await setRangeCursor(ledger, ledger);
+    return;
+  }
   await prisma.indexerState.upsert({
     where: { id: 'singleton' },
     update: { lastLedger: ledger },
@@ -79,11 +108,25 @@ export async function rollbackLedgers(sequences: number[]) {
   ]);
 }
 
-export async function processLedgerRange(start: number, end: number) {
+export async function processLedgerRange(
+  start: number,
+  end: number,
+  opts: { force?: boolean } = {},
+) {
   console.log(`Indexing ledgers ${start} → ${end}`);
 
   // 1. Fetch metadata and check reorgs sequentially for all ledgers in the range first
   for (let seq = start; seq <= end; seq++) {
+    if (!opts.force && !(await amIResponsibleFor(seq))) {
+      // Not one of this range's rendezvous-hash owners (P2P mode only — see
+      // docs/P2P_INDEXER_DESIGN.md §1.2/§3). Another replica indexes it;
+      // skip without writing so we don't do redundant RPC/DB work outside
+      // our assigned ranges. opts.force bypasses this for on-the-fly
+      // graceful-degradation indexing (indexSingleLedger below), where we
+      // explicitly want to index a ledger regardless of steady-state
+      // ownership because no reachable owner had it.
+      continue;
+    }
     const ledgerMeta = await fetchLedgerMetadata(seq);
 
     // Reorg check
@@ -139,6 +182,12 @@ export async function processLedgerRange(start: number, end: number) {
       create: { address: event.contractId },
     });
 
+    // Queue an initial audit for newly discovered contracts (fires after 5 min)
+    enqueueInitialAudit(event.contractId);
+
+    const existingTx = await prisma.transaction.findUnique({
+      where: { hash: event.transactionHash },
+    });
     const existingTx = await prisma.transaction.findUnique({
       where: { hash: event.transactionHash },
     });
@@ -173,6 +222,36 @@ export async function processLedgerRange(start: number, end: number) {
           feeCharged: String((txResult as any)?.feeCharged ?? ''),
         },
       });
+
+      // Record ZKP verifier invocations when the invoked function looks like
+      // a proof verification entry point (verify_proof / verify_snark /
+      // verify_stark / verify_groth16). Best-effort: a failure here must
+      // never disrupt the main indexing loop.
+      try {
+        if (rawXdr && decoded.functionName && decoded.contractAddress) {
+          const envelope = xdr.TransactionEnvelope.fromXDR(rawXdr, 'base64');
+          const ops =
+            envelope.switch().name === 'envelopeTypeTx'
+              ? envelope.v1().tx().operations()
+              : envelope.v0().tx().operations();
+          const invokeOp = ops.find((op) => op.body().switch().name === 'invokeHostFunction');
+          const scArgs = invokeOp
+            ? invokeOp.body().invokeHostFunctionOp().hostFunction().invokeContract().args()
+            : [];
+          const zkpData = decodeZkpVerification(decoded.functionName, scArgs);
+          if (zkpData) {
+            await recordZkpVerification(
+              transaction.hash,
+              decoded.contractAddress,
+              zkpData,
+              transaction.ledgerSequence,
+              transaction.ledgerCloseTime,
+            );
+          }
+        }
+      } catch (zkpErr) {
+        console.error('ZKP recording error:', zkpErr);
+      }
 
       // Trigger Account Abstraction processing (non-blocking)
       try {
@@ -218,6 +297,15 @@ export async function processLedgerRange(start: number, end: number) {
 
     await processSessionAuthorization(event, eventType, decoded, eventId);
   }
+}
+
+/**
+ * Indexes exactly one ledger regardless of range ownership — used as the
+ * P2P "graceful degradation" on-the-fly indexing fallback (design doc §1.3)
+ * when a query's range owners are all unreachable.
+ */
+export async function indexSingleLedger(ledgerSeq: number): Promise<void> {
+  await processLedgerRange(ledgerSeq, ledgerSeq, { force: true });
 }
 
 // ---------------------------------------------------------------------------

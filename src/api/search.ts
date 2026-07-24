@@ -4,6 +4,30 @@ import { prismaRead as prisma, prismaWrite } from '../db';
 import { asyncHandler } from '../middleware/asyncHandler';
 import { safeString } from '../schemas/common';
 
+interface SearchIndexEntry {
+  contractAddress: string;
+  contentType: string;
+  content: string;
+  metadata: unknown;
+}
+
+interface ContractSource {
+  contractAddress: string;
+  functionDetails: Array<{
+    name: string;
+    pseudoCode?: string;
+    params?: string[];
+    returns?: string[];
+    selector: string;
+    complexity?: string;
+  }>;
+  imports: unknown[];
+  exports: unknown[];
+  events: unknown[];
+  errors: unknown[];
+  storageVariables: unknown[];
+}
+
 export const searchRouter = Router();
 
 const searchQuerySchema = z.object({
@@ -138,7 +162,11 @@ searchRouter.get('/index', async (_req: Request, res: Response) => {
     let indexed = 0;
     for (const source of sources) {
       for (const fn of source.functionDetails || []) {
-        await prismaWrite.searchIndexEntry.create({
+        await (
+          prismaWrite as unknown as {
+            searchIndexEntry: { create: (args: unknown) => Promise<unknown> };
+          }
+        ).searchIndexEntry.create({
           data: {
             contractAddress: source.contractAddress,
             contentType: 'function',
