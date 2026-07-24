@@ -28,5 +28,19 @@
     "error-handling/require-async-handler": "error",
     "error-handling/no-phantom-prisma-field": "warn"
   },
-  "ignorePatterns": ["dist/", "node_modules/"]
+  "ignorePatterns": ["dist/", "node_modules/"],
+  "overrides": [
+    {
+      "files": ["tests/load/*.ts", "tests/fixtures/*.ts"],
+      "rules": {
+        "no-console": "off"
+      }
+    },
+    {
+      "files": ["tests/**/*.test.ts"],
+      "rules": {
+        "error-handling/require-async-handler": "off"
+      }
+    }
+  ]
 }
