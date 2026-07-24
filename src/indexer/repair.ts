@@ -207,7 +207,7 @@ export async function startRepairLoop(): Promise<void> {
 // ─── Entry point ──────────────────────────────────────────────────────────────
 if (require.main === module) {
   startRepairLoop().catch((err) => {
-    console.error('[repair] Fatal error:', err);
+    logger.error('[repair] Fatal error:', err);
     process.exit(1);
   });
 }

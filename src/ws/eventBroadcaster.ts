@@ -72,7 +72,12 @@ export function attachWebSocketServer(httpServer: Server): WebSocketServer {
       return;
     }
 
-    const client: Client = { ws, contractFilter: contractFilter ?? null, eventTypeFilter: eventTypeFilter ?? null, ip };
+    const client: Client = {
+      ws,
+      contractFilter: contractFilter ?? null,
+      eventTypeFilter: eventTypeFilter ?? null,
+      ip,
+    };
     clients.add(client);
 
     ws.on('close', () => clients.delete(client));
