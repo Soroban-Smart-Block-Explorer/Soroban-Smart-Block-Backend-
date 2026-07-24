@@ -44,12 +44,10 @@ vi.mock('../src/db', () => {
           .mockResolvedValue({ tokenAddress: 'CCONTRACT_TEST_ADDRESS', priceChange24h: 2.5 }),
       },
       dexPool: {
-        findFirst: vi
-          .fn()
-          .mockResolvedValue({
-            token0Address: 'CCONTRACT_TEST_ADDRESS',
-            totalValueAtRisk: 1000000,
-          }),
+        findFirst: vi.fn().mockResolvedValue({
+          token0Address: 'CCONTRACT_TEST_ADDRESS',
+          totalValueAtRisk: 1000000,
+        }),
       },
       modelRegistryEntry: {
         count: vi.fn().mockResolvedValue(4),
@@ -71,16 +69,14 @@ vi.mock('../src/db', () => {
             metrics: { accuracy: 0.93 },
           },
         ]),
-        findUnique: vi
-          .fn()
-          .mockResolvedValue({
-            id: 'm-1',
-            name: 'LSTM-Autoencoder-Anomaly',
-            type: 'LSTM',
-            version: '1.0.0',
-            status: 'ACTIVE',
-            metrics: { accuracy: 0.95 },
-          }),
+        findUnique: vi.fn().mockResolvedValue({
+          id: 'm-1',
+          name: 'LSTM-Autoencoder-Anomaly',
+          type: 'LSTM',
+          version: '1.0.0',
+          status: 'ACTIVE',
+          metrics: { accuracy: 0.95 },
+        }),
       },
       featureStoreEntry: {
         findMany: vi.fn().mockResolvedValue(

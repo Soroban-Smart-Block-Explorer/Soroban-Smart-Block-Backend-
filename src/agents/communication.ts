@@ -190,7 +190,7 @@ class AgentDiscoveryRegistry {
     pricePerMonth?: string;
     metadata?: Record<string, unknown>;
   }): Promise<void> {
-    const existing = await prismaWrite.agentRegistration.findUnique({
+    const existing = await prismaRead.agentRegistration.findUnique({
       where: { agentId: params.agentId },
     });
 

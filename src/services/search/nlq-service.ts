@@ -1,4 +1,3 @@
-
 export interface NlqTranslation {
   sql: string;
   apiEndpoint: string;

@@ -49,9 +49,19 @@ describe('account-aggregator', () => {
       last_modified_ledger: 100,
       last_modified_time: '2025-06-17T10:00:00Z',
       thresholds: { low_threshold: 0, med_threshold: 1, high_threshold: 1 },
-      flags: { auth_required: false, auth_revocable: false, auth_immutable: false, auth_clawback_enabled: false },
+      flags: {
+        auth_required: false,
+        auth_revocable: false,
+        auth_immutable: false,
+        auth_clawback_enabled: false,
+      },
       balances: [
-        { balance: '1000', buying_liabilities: '0', selling_liabilities: '0', asset_type: 'native' },
+        {
+          balance: '1000',
+          buying_liabilities: '0',
+          selling_liabilities: '0',
+          asset_type: 'native',
+        },
         {
           balance: '5000',
           buying_liabilities: '0',

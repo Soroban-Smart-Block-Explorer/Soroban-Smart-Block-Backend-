@@ -17,6 +17,7 @@ import { processAaTransaction } from './aa-indexer';
 import { feedOrchestrator } from '../feed/orchestrator';
 import { enqueueInitialAudit } from './audit-pipeline';
 import { amIResponsibleFor, getRangeCursor, isP2pEnabled, setRangeCursor } from '../p2p';
+import { logger } from '../logger';
 
 const BATCH = config.indexerBatchSize;
 const WORKERS = config.indexerCatchupWorkers;
@@ -68,39 +69,39 @@ export async function setLastIndexedLedger(ledger: number): Promise<void> {
 }
 
 export async function rollbackLedgers(sequences: number[]) {
-  console.log(`⚠️ Rollback triggered for ledgers: ${sequences.join(', ')}`);
+  logger.info(`⚠️ Rollback triggered for ledgers: ${sequences.join(', ')}`);
 
-  await prisma.$transaction([
+  await prismaWrite.$transaction([
     // Delete SessionAuthorizations related to these ledgers
-    prisma.sessionAuthorization.deleteMany({
+    prismaWrite.sessionAuthorization.deleteMany({
       where: {
         startLedger: { in: sequences },
       },
     }),
 
     // Delete Events for these ledgers
-    prisma.event.deleteMany({
+    prismaWrite.event.deleteMany({
       where: {
         ledgerSequence: { in: sequences },
       },
     }),
 
     // Delete Transactions for these ledgers
-    prisma.transaction.deleteMany({
+    prismaWrite.transaction.deleteMany({
       where: {
         ledgerSequence: { in: sequences },
       },
     }),
 
     // Delete WasmUpgradeHistory for these ledgers
-    prisma.wasmUpgradeHistory.deleteMany({
+    prismaWrite.wasmUpgradeHistory.deleteMany({
       where: {
         ledgerSequence: { in: sequences },
       },
     }),
 
     // Delete Ledgers themselves
-    prisma.ledger.deleteMany({
+    prismaWrite.ledger.deleteMany({
       where: {
         sequence: { in: sequences },
       },
@@ -113,7 +114,7 @@ export async function processLedgerRange(
   end: number,
   opts: { force?: boolean } = {},
 ) {
-  console.log(`Indexing ledgers ${start} → ${end}`);
+  logger.info(`Indexing ledgers ${start} → ${end}`);
 
   // 1. Fetch metadata and check reorgs sequentially for all ledgers in the range first
   for (let seq = start; seq <= end; seq++) {
@@ -131,13 +132,13 @@ export async function processLedgerRange(
 
     // Reorg check
     const prevSeq = seq - 1;
-    const prevLedger = await prisma.ledger.findUnique({ where: { sequence: prevSeq } });
+    const prevLedger = await prismaRead.ledger.findUnique({ where: { sequence: prevSeq } });
     if (prevLedger && prevLedger.hash !== ledgerMeta.previousLedgerHash) {
-      console.warn(
+      logger.warn(
         `🚨 REORG DETECTED at ledger ${seq}! Expected prev hash ${prevLedger.hash}, but network says ${ledgerMeta.previousLedgerHash}`,
       );
 
-      await prisma.reorgEvent.create({
+      await prismaWrite.reorgEvent.create({
         data: {
           ledgerSequence: seq,
           expectedHash: prevLedger.hash,
@@ -154,7 +155,7 @@ export async function processLedgerRange(
     }
 
     // Save/upsert Ledger record
-    await prisma.ledger.upsert({
+    await prismaWrite.ledger.upsert({
       where: { sequence: seq },
       update: {
         hash: ledgerMeta.hash,
@@ -176,7 +177,7 @@ export async function processLedgerRange(
   const events = await fetchEvents(start, end);
 
   for (const event of events) {
-    await prisma.contract.upsert({
+    await prismaWrite.contract.upsert({
       where: { address: event.contractId },
       update: {},
       create: { address: event.contractId },
@@ -205,7 +206,7 @@ export async function processLedgerRange(
             humanReadable: null,
           };
 
-      const transaction = await prisma.transaction.upsert({
+      const transaction = await prismaWrite.transaction.upsert({
         where: { hash: event.transactionHash },
         update: {},
         create: {
@@ -250,7 +251,7 @@ export async function processLedgerRange(
           }
         }
       } catch (zkpErr) {
-        console.error('ZKP recording error:', zkpErr);
+        logger.error('ZKP recording error:', zkpErr);
       }
 
       // Trigger Account Abstraction processing (non-blocking)
@@ -264,11 +265,13 @@ export async function processLedgerRange(
           transaction.feeCharged ?? undefined,
         );
       } catch (err) {
-        console.error('AA processing error:', err);
+        logger.error('AA processing error:', err);
       }
 
       // Publish to feed
-      await feedOrchestrator.publishTransaction(transaction).catch(console.error);
+      await feedOrchestrator
+        .publishTransaction(transaction)
+        .catch((err) => logger.error('publishTransaction error:', err));
     }
 
     const { eventType, decoded } = decodeEvent(event.topics, event.data);
@@ -276,7 +279,7 @@ export async function processLedgerRange(
     // when a single transaction emits multiple events with the same first topic.
     const positionKey = event.pagingToken || `${event.ledgerSequence}-${events.indexOf(event)}`;
     const eventId = `${event.transactionHash}-${positionKey}`;
-    const savedEvent = await prisma.event.upsert({
+    const savedEvent = await prismaWrite.event.upsert({
       where: { id: eventId },
       update: {},
       create: {
@@ -293,7 +296,9 @@ export async function processLedgerRange(
     });
 
     // Publish event to feed
-    await feedOrchestrator.publishEvent(savedEvent).catch(console.error);
+    await feedOrchestrator
+      .publishEvent(savedEvent)
+      .catch((err) => logger.error('publishEvent error:', err));
 
     await processSessionAuthorization(event, eventType, decoded, eventId);
   }
@@ -333,13 +338,13 @@ function chunkRange(from: number, to: number, n: number): Array<[number, number]
  */
 async function catchUp(from: number, to: number): Promise<void> {
   const chunks = chunkRange(from, to, WORKERS);
-  console.log(
+  logger.info(
     `[catch-up] ${chunks.length} worker(s) covering ledgers ${from}–${to} ` +
       `(chunk size ~${chunks[0][1] - chunks[0][0] + 1})`,
   );
   await Promise.all(chunks.map(([s, e]) => processLedgerRange(s, e)));
   await setLastIndexedLedger(to);
-  console.log(`[catch-up] done — cursor advanced to ${to}`);
+  logger.info(`[catch-up] done — cursor advanced to ${to}`);
 }
 
 async function processSessionAuthorization(
@@ -368,7 +373,7 @@ async function processSessionAuthorization(
 
   const allocatedBlocks = Math.max(0, expiryLedger - startLedger);
 
-  await prisma.sessionAuthorization.upsert({
+  await prismaWrite.sessionAuthorization.upsert({
     where: { eventId },
     update: {
       hotSigner,
@@ -524,7 +529,7 @@ export class SorobanEventWorker {
   }
 
   async start() {
-    console.log('🔍 Soroban event worker starting...');
+    logger.info('🔍 Soroban event worker starting...');
     this.connectWebsocket();
 
     while (!this.shouldStop) {
@@ -537,7 +542,7 @@ export class SorobanEventWorker {
         const latest = await getLatestLedger();
         await this.syncToLatest(latest);
       } catch (err) {
-        console.error('Indexer error:', err);
+        logger.error('Indexer error:', err);
         await sleep(config.indexerPollIntervalMs);
       }
     }
@@ -556,12 +561,12 @@ export class SorobanEventWorker {
         if (last < targetLedger - 1) {
           const gapStart = last + 1;
           const gapEnd = targetLedger - 1;
-          console.warn(
+          logger.warn(
             `⚠️ Ledger gap detected: expected next ledger to be ${targetLedger}, but last indexed is ${last}. Gap range: ${gapStart} → ${gapEnd}`,
           );
 
           // Record LedgerGap in the database
-          await prisma.ledgerGap.create({
+          await prismaWrite.ledgerGap.create({
             data: {
               startSequence: gapStart,
               endSequence: gapEnd,
@@ -571,7 +576,7 @@ export class SorobanEventWorker {
 
           // Attempt to backfill the gap
           try {
-            console.log(`🔄 Attempting to backfill gap ${gapStart} → ${gapEnd}...`);
+            logger.info(`🔄 Attempting to backfill gap ${gapStart} → ${gapEnd}...`);
             if (gapEnd - gapStart >= BATCH && WORKERS > 1) {
               await catchUp(gapStart, gapEnd);
             } else {
@@ -580,7 +585,7 @@ export class SorobanEventWorker {
             }
 
             // Mark the gap as resolved
-            await prisma.ledgerGap.updateMany({
+            await prismaWrite.ledgerGap.updateMany({
               where: {
                 startSequence: gapStart,
                 endSequence: gapEnd,
@@ -588,11 +593,11 @@ export class SorobanEventWorker {
               },
               data: { resolved: true },
             });
-            console.log(
+            logger.info(
               `✅ Ledger gap ${gapStart} → ${gapEnd} successfully backfilled and resolved.`,
             );
           } catch (backfillErr) {
-            console.error(`❌ Failed to backfill ledger gap ${gapStart} → ${gapEnd}:`, backfillErr);
+            logger.error(`❌ Failed to backfill ledger gap ${gapStart} → ${gapEnd}:`, backfillErr);
             throw backfillErr;
           }
 
@@ -626,7 +631,7 @@ export class SorobanEventWorker {
     }
 
     const url = getRpcWebsocketUrl();
-    console.log(`Connecting Soroban RPC websocket to ${url}`);
+    logger.info(`Connecting Soroban RPC websocket to ${url}`);
     try {
       this.websocket = new WebSocket(url);
       this.websocket.on('open', () => this.handleWsOpen());
@@ -634,13 +639,13 @@ export class SorobanEventWorker {
       this.websocket.on('close', (code, reason) => this.handleWsClose(code, reason.toString()));
       this.websocket.on('error', (error) => this.handleWsError(error));
     } catch (error) {
-      console.error('Failed to establish websocket connection:', error);
+      logger.error('Failed to establish websocket connection:', error);
       this.scheduleReconnect();
     }
   }
 
   private handleWsOpen() {
-    console.log('Soroban RPC websocket connected');
+    logger.info('Soroban RPC websocket connected');
     this.reconnectDelayMs = 1000;
     this.subscribeLedgerClose();
   }
@@ -666,11 +671,11 @@ export class SorobanEventWorker {
       const ledgerNumber = this.extractLedgerNumber(message);
       if (typeof ledgerNumber === 'number') {
         this.onLedgerClose(ledgerNumber).catch((err) =>
-          console.error('Ledger close handler failed:', err),
+          logger.error('Ledger close handler failed:', err),
         );
       }
     } catch (error) {
-      console.warn('Failed to parse websocket event payload:', error);
+      logger.warn('Failed to parse websocket event payload:', error);
     }
   }
 
@@ -688,17 +693,17 @@ export class SorobanEventWorker {
 
   private async onLedgerClose(ledger: number) {
     if (this.isProcessing) return;
-    console.log(`Ledger close event received for ledger ${ledger}`);
+    logger.info(`Ledger close event received for ledger ${ledger}`);
     await this.syncToLatest(ledger);
   }
 
   private handleWsClose(code: number, reason: string) {
-    console.warn(`Soroban RPC websocket closed (${code}) ${reason}`);
+    logger.warn(`Soroban RPC websocket closed (${code}) ${reason}`);
     this.scheduleReconnect();
   }
 
   private handleWsError(error: Error) {
-    console.error('Soroban RPC websocket error:', error.message ?? error);
+    logger.error('Soroban RPC websocket error:', error.message ?? error);
     this.websocket?.close();
   }
 

@@ -2,6 +2,7 @@ import type { AxiosError } from 'axios';
 import { xdr, SorobanRpc } from '@stellar/stellar-sdk';
 import { config } from '../config';
 import { cacheGet, cacheSet } from '../cache';
+import { logger } from '../logger';
 
 const isDevnet = config.profile.name === 'devnet';
 
@@ -69,7 +70,7 @@ async function retry<T>(fn: () => Promise<T>): Promise<T> {
       const backoff = Math.min(16000, 500 * 2 ** attempt);
       const jitter = Math.floor(Math.random() * 300);
       attempt += 1;
-      console.warn(`RPC rate limit hit, retrying in ${backoff + jitter}ms (attempt ${attempt})`);
+      logger.warn(`RPC rate limit hit, retrying in ${backoff + jitter}ms (attempt ${attempt})`);
       await sleep(backoff + jitter);
     }
   }

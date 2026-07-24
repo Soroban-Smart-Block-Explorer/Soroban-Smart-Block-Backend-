@@ -3,6 +3,7 @@ import { randomBytes, createHash } from 'crypto';
 import { prismaWrite as prisma } from '../db';
 import { requireAuth } from '../auth/middleware';
 import { issueTokens, generateSessionId, REFRESH_TOKEN_TTL } from '../auth/tokens';
+import { asyncHandler } from '../middleware/asyncHandler';
 
 export const authOAuth2Router = Router();
 

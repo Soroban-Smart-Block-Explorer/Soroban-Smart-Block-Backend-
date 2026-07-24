@@ -51,60 +51,66 @@ const signSchema = z.object({
 });
 
 // POST /commodity-compliance — log a new dual-signer verification event
-commodityComplianceRouter.post('/', async (req: Request, res: Response) => {
-  try {
-    const data = createSchema.parse(req.body);
-    const record = await prisma.commodityDualSignerLog.create({
-      data: {
-        ...data,
-        expiresAt: data.expiresAt ? new Date(data.expiresAt) : undefined,
-        ledgerCloseTime: new Date(data.ledgerCloseTime),
-      },
-    });
-    res.status(201).json(record);
-  } catch (e) {
-    res.status(400).json({ error: String(e) });
-  }
-});
+commodityComplianceRouter.post(
+  '/',
+  asyncHandler(async (req: Request, res: Response) => {
+    try {
+      const data = createSchema.parse(req.body);
+      const record = await prisma.commodityDualSignerLog.create({
+        data: {
+          ...data,
+          expiresAt: data.expiresAt ? new Date(data.expiresAt) : undefined,
+          ledgerCloseTime: new Date(data.ledgerCloseTime),
+        },
+      });
+      res.status(201).json(record);
+    } catch (e) {
+      res.status(400).json({ error: String(e) });
+    }
+  }),
+);
 
 // GET /commodity-compliance — list with filters
-commodityComplianceRouter.get('/', async (req: Request, res: Response) => {
-  try {
-    const q = listSchema.parse(req.query);
-    const where = {
-      ...(q.commodityCode && { commodityCode: q.commodityCode }),
-      ...(q.commodityType && { commodityType: q.commodityType }),
-      ...(q.contract && { contractAddress: q.contract }),
-      ...(q.trader && { traderAddress: q.trader }),
-      ...(q.status && { complianceStatus: q.status }),
-      ...(q.jurisdiction && { regulatoryJurisdiction: q.jurisdiction }),
-      ...(q.signer && {
-        OR: [{ primarySignerAddress: q.signer }, { secondarySignerAddress: q.signer }],
-      }),
-      ...((q.ledgerMin !== undefined || q.ledgerMax !== undefined) && {
-        ledgerSequence: {
-          ...(q.ledgerMin !== undefined && { gte: q.ledgerMin }),
-          ...(q.ledgerMax !== undefined && { lte: q.ledgerMax }),
-        },
-      }),
-    };
+commodityComplianceRouter.get(
+  '/',
+  asyncHandler(async (req: Request, res: Response) => {
+    try {
+      const q = listSchema.parse(req.query);
+      const where = {
+        ...(q.commodityCode && { commodityCode: q.commodityCode }),
+        ...(q.commodityType && { commodityType: q.commodityType }),
+        ...(q.contract && { contractAddress: q.contract }),
+        ...(q.trader && { traderAddress: q.trader }),
+        ...(q.status && { complianceStatus: q.status }),
+        ...(q.jurisdiction && { regulatoryJurisdiction: q.jurisdiction }),
+        ...(q.signer && {
+          OR: [{ primarySignerAddress: q.signer }, { secondarySignerAddress: q.signer }],
+        }),
+        ...((q.ledgerMin !== undefined || q.ledgerMax !== undefined) && {
+          ledgerSequence: {
+            ...(q.ledgerMin !== undefined && { gte: q.ledgerMin }),
+            ...(q.ledgerMax !== undefined && { lte: q.ledgerMax }),
+          },
+        }),
+      };
 
-    const skip = (q.page - 1) * q.limit;
-    const [data, total] = await Promise.all([
-      prisma.commodityDualSignerLog.findMany({
-        where,
-        orderBy: { ledgerSequence: 'desc' },
-        skip,
-        take: q.limit,
-      }),
-      prisma.commodityDualSignerLog.count({ where }),
-    ]);
+      const skip = (q.page - 1) * q.limit;
+      const [data, total] = await Promise.all([
+        prisma.commodityDualSignerLog.findMany({
+          where,
+          orderBy: { ledgerSequence: 'desc' },
+          skip,
+          take: q.limit,
+        }),
+        prisma.commodityDualSignerLog.count({ where }),
+      ]);
 
-    res.json({ data, total, page: q.page, limit: q.limit, pages: Math.ceil(total / q.limit) });
-  } catch (e) {
-    res.status(400).json({ error: String(e) });
-  }
-});
+      res.json({ data, total, page: q.page, limit: q.limit, pages: Math.ceil(total / q.limit) });
+    } catch (e) {
+      res.status(400).json({ error: String(e) });
+    }
+  }),
+);
 
 // GET /commodity-compliance/:txHash — get by transaction hash
 commodityComplianceRouter.get(
@@ -119,41 +125,46 @@ commodityComplianceRouter.get(
 );
 
 // PATCH /commodity-compliance/:txHash/sign — record a signer approval/rejection
-commodityComplianceRouter.patch('/:txHash/sign', async (req: Request, res: Response) => {
-  try {
-    const { signerAddress, approved } = signSchema.parse(req.body);
+commodityComplianceRouter.patch(
+  '/:txHash/sign',
+  asyncHandler(async (req: Request, res: Response) => {
+    try {
+      const { signerAddress, approved } = signSchema.parse(req.body);
 
-    const existing = await prisma.commodityDualSignerLog.findUnique({
-      where: { transactionHash: req.params.txHash },
-    });
-    if (!existing) return res.status(404).json({ error: 'Not found' });
+      const existing = await prisma.commodityDualSignerLog.findUnique({
+        where: { transactionHash: req.params.txHash },
+      });
+      if (!existing) return res.status(404).json({ error: 'Not found' });
 
-    const isPrimary = existing.primarySignerAddress === signerAddress;
-    const isSecondary = existing.secondarySignerAddress === signerAddress;
+      const isPrimary = existing.primarySignerAddress === signerAddress;
+      const isSecondary = existing.secondarySignerAddress === signerAddress;
 
-    if (!isPrimary && !isSecondary) {
-      return res.status(403).json({ error: 'Address is not a registered signer for this record' });
+      if (!isPrimary && !isSecondary) {
+        return res
+          .status(403)
+          .json({ error: 'Address is not a registered signer for this record' });
+      }
+
+      const primarySigned = isPrimary ? approved : existing.primarySigned;
+      const secondarySigned = isSecondary ? approved : existing.secondarySigned;
+      const bothSigned = primarySigned && secondarySigned;
+
+      // Determine compliance status
+      let complianceStatus = existing.complianceStatus;
+      if (!approved) {
+        complianceStatus = 'rejected';
+      } else if (bothSigned) {
+        complianceStatus = 'approved';
+      }
+
+      const record = await prisma.commodityDualSignerLog.update({
+        where: { transactionHash: req.params.txHash },
+        data: { primarySigned, secondarySigned, bothSigned, complianceStatus },
+      });
+
+      res.json(record);
+    } catch (e) {
+      res.status(400).json({ error: String(e) });
     }
-
-    const primarySigned = isPrimary ? approved : existing.primarySigned;
-    const secondarySigned = isSecondary ? approved : existing.secondarySigned;
-    const bothSigned = primarySigned && secondarySigned;
-
-    // Determine compliance status
-    let complianceStatus = existing.complianceStatus;
-    if (!approved) {
-      complianceStatus = 'rejected';
-    } else if (bothSigned) {
-      complianceStatus = 'approved';
-    }
-
-    const record = await prisma.commodityDualSignerLog.update({
-      where: { transactionHash: req.params.txHash },
-      data: { primarySigned, secondarySigned, bothSigned, complianceStatus },
-    });
-
-    res.json(record);
-  } catch (e) {
-    res.status(400).json({ error: String(e) });
-  }
-});
+  }),
+);

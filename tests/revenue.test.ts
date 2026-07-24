@@ -57,10 +57,7 @@ import {
   detectAnomalies,
   type RawEvent,
 } from '../src/indexer/fee-classifier';
-import {
-  predictRevenue,
-  runHourlyAggregation,
-} from '../src/indexer/fee-aggregator';
+import { predictRevenue, runHourlyAggregation } from '../src/indexer/fee-aggregator';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -120,7 +117,9 @@ describe('classifyFeeType', () => {
   });
 
   it('classifies insurance contribution', () => {
-    expect(classifyFeeType(makeEvent({ topics: ['insurance_contribution'] }))).toBe('INSURANCE_CONTRIBUTION');
+    expect(classifyFeeType(makeEvent({ topics: ['insurance_contribution'] }))).toBe(
+      'INSURANCE_CONTRIBUTION',
+    );
   });
 
   it('returns null for unrelated events', () => {
@@ -134,7 +133,9 @@ describe('classifyFeeType', () => {
 
 describe('classifyDestination', () => {
   it('classifies buyback/burn', () => {
-    expect(classifyDestination(makeEvent({ topics: ['buyback'], receiver: 'burn_address' }))).toBe('BUYBACK_BURN');
+    expect(classifyDestination(makeEvent({ topics: ['buyback'], receiver: 'burn_address' }))).toBe(
+      'BUYBACK_BURN',
+    );
   });
 
   it('classifies treasury', () => {
@@ -150,7 +151,9 @@ describe('classifyDestination', () => {
   });
 
   it('defaults to LP_REWARDS', () => {
-    expect(classifyDestination(makeEvent({ receiver: 'unknown_address', topics: [], data: '' }))).toBe('LP_REWARDS');
+    expect(
+      classifyDestination(makeEvent({ receiver: 'unknown_address', topics: [], data: '' })),
+    ).toBe('LP_REWARDS');
   });
 });
 
@@ -221,9 +224,7 @@ describe('classifyAndStore', () => {
 
   it('stores classified events', async () => {
     vi.mocked(prismaWrite.feeEvent.createMany).mockResolvedValue({ count: 1 });
-    const result = await classifyAndStore([
-      makeEvent({ topics: ['swap_fee'], data: '100 USDC' }),
-    ]);
+    const result = await classifyAndStore([makeEvent({ topics: ['swap_fee'], data: '100 USDC' })]);
     expect(result).toHaveLength(1);
     expect(result[0].feeType).toBe('SWAP');
     expect(prismaWrite.feeEvent.createMany).toHaveBeenCalledOnce();
@@ -293,12 +294,25 @@ describe('detectAnomalies', () => {
       period: 'DAY' as const,
       timestamp: new Date(),
       totalFees: fees,
-      swapFees: null, withdrawFees: null, performanceFees: null,
-      protocolFees: null, liquidationFees: null, interestSpread: null,
-      flashLoanFees: null, referralFees: null, lpRewards: null,
-      treasuryAmount: null, burnedAmount: null, stakerRewards: null,
-      insuranceFund: null, ecosystemFund: null, teamVesting: null,
-      feeToken: 'XLM', usdValue: null, txCount: 1, uniqueUsers: null,
+      swapFees: null,
+      withdrawFees: null,
+      performanceFees: null,
+      protocolFees: null,
+      liquidationFees: null,
+      interestSpread: null,
+      flashLoanFees: null,
+      referralFees: null,
+      lpRewards: null,
+      treasuryAmount: null,
+      burnedAmount: null,
+      stakerRewards: null,
+      insuranceFund: null,
+      ecosystemFund: null,
+      teamVesting: null,
+      feeToken: 'XLM',
+      usdValue: null,
+      txCount: 1,
+      uniqueUsers: null,
     });
 
     // Latest row is 10x the baseline of 100
@@ -326,12 +340,25 @@ describe('detectAnomalies', () => {
       period: 'DAY' as const,
       timestamp: new Date(),
       totalFees: fees,
-      swapFees: null, withdrawFees: null, performanceFees: null,
-      protocolFees: null, liquidationFees: null, interestSpread: null,
-      flashLoanFees: null, referralFees: null, lpRewards: null,
-      treasuryAmount: null, burnedAmount: null, stakerRewards: null,
-      insuranceFund: null, ecosystemFund: null, teamVesting: null,
-      feeToken: 'XLM', usdValue: null, txCount: 1, uniqueUsers: null,
+      swapFees: null,
+      withdrawFees: null,
+      performanceFees: null,
+      protocolFees: null,
+      liquidationFees: null,
+      interestSpread: null,
+      flashLoanFees: null,
+      referralFees: null,
+      lpRewards: null,
+      treasuryAmount: null,
+      burnedAmount: null,
+      stakerRewards: null,
+      insuranceFund: null,
+      ecosystemFund: null,
+      teamVesting: null,
+      feeToken: 'XLM',
+      usdValue: null,
+      txCount: 1,
+      uniqueUsers: null,
     });
 
     const rows = [
@@ -358,12 +385,25 @@ describe('detectAnomalies', () => {
       period: 'DAY' as const,
       timestamp: new Date(),
       totalFees: fees,
-      swapFees: null, withdrawFees: null, performanceFees: null,
-      protocolFees: null, liquidationFees: null, interestSpread: null,
-      flashLoanFees: null, referralFees: null, lpRewards: null,
-      treasuryAmount: null, burnedAmount: null, stakerRewards: null,
-      insuranceFund: null, ecosystemFund: null, teamVesting: null,
-      feeToken: 'XLM', usdValue: null, txCount: 1, uniqueUsers: null,
+      swapFees: null,
+      withdrawFees: null,
+      performanceFees: null,
+      protocolFees: null,
+      liquidationFees: null,
+      interestSpread: null,
+      flashLoanFees: null,
+      referralFees: null,
+      lpRewards: null,
+      treasuryAmount: null,
+      burnedAmount: null,
+      stakerRewards: null,
+      insuranceFund: null,
+      ecosystemFund: null,
+      teamVesting: null,
+      feeToken: 'XLM',
+      usdValue: null,
+      txCount: 1,
+      uniqueUsers: null,
     });
 
     const rows = [

@@ -10,8 +10,28 @@ export interface InferenceResult {
 }
 
 /**
- * 1. Time-series Anomaly Detector (LSTM-based Autoencoder mock)
- * Trained on normal transaction patterns, flags outliers.
+ * =========================================================================
+ * SIMULATED / EDUCATIONAL FRAUD-DETECTION MODELS
+ *
+ * The classes below (LstmAnomalyDetector, GnnClusterDetector,
+ * XgboostWashTradingClassifier, ExploitPredictor) are RULE-BASED
+ * HEURISTICS — NOT real neural networks, graph neural networks,
+ * gradient-boosted trees, or LLMs.
+ *
+ * - No PyTorch / TensorFlow / ONNX runtime is loaded.
+ * - No XGBoost / LightGBM binaries are invoked.
+ * - SHAP values are hard-coded weights, not Shapley values.
+ * - "LIME explanations" are pre-formed template strings.
+ *
+ * These classes exist for demo / educational / integration-test
+ * purposes. They are NOT suitable for production fraud detection.
+ * =========================================================================
+ */
+
+/**
+ * 1. Time-series Anomaly Detector — rule-based simulation.
+ * Not an actual LSTM autoencoder. Uses a simple threshold on gas-price
+ * deviation and inter-transaction timing.
  */
 export class LstmAnomalyDetector {
   private normalThreshold = 0.65;
@@ -72,8 +92,8 @@ export class LstmAnomalyDetector {
 }
 
 /**
- * 2. Graph Neural Network (GNN - GraphSAGE / GAT mock)
- * Detects wash trading rings, Sybil clusters, and money laundering.
+ * 2. Graph Neural Network simulation — rule-based, not a real GNN.
+ * Uses centrality + PageRank heuristics rather than message-passing on a graph.
  */
 export class GnnClusterDetector {
   async predict(features: TransactionFeatures): Promise<InferenceResult> {
@@ -111,8 +131,9 @@ export class GnnClusterDetector {
 }
 
 /**
- * 3. Wash Trading Classifier (XGBoost/LightGBM mock)
- * Uses self-trading ratios, volume clustering, price deviations.
+ * 3. Wash Trading Classifier — rule-based simulation.
+ * Not real XGBoost / LightGBM. Uses simple thresholds on volume clustering
+ * and liquidity change to produce a heuristic risk score.
  */
 export class XgboostWashTradingClassifier {
   async predict(features: TransactionFeatures): Promise<InferenceResult> {
@@ -151,8 +172,9 @@ export class XgboostWashTradingClassifier {
 }
 
 /**
- * 4. Smart Contract Exploit Predictor (LLM-embedding mock)
- * Predicts reentrancy, flash loan attacks, oracle manipulation.
+ * 4. Smart Contract Exploit Predictor — rule-based simulation.
+ * Not an actual LLM/embedding model. Uses call-depth and storage-access
+ * heuristics to flag reentrancy, flash-loan, and oracle-manipulation patterns.
  */
 export class ExploitPredictor {
   async predict(features: TransactionFeatures): Promise<InferenceResult> {

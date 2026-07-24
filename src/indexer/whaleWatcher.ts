@@ -1,5 +1,6 @@
 import { prismaWrite as prisma } from '../db';
 import { EventEmitter } from 'events';
+import { logger } from '../logger';
 
 interface WhaleThreshold {
   asset: string;
@@ -64,12 +65,12 @@ export class WhaleWatcher extends EventEmitter {
         await this.handleWhaleAlert(alert);
       }
     } catch (err) {
-      console.error('[WhaleWatcher] Error monitoring event:', err);
+      logger.error('[WhaleWatcher] Error monitoring event:', err);
     }
   }
 
   private async handleWhaleAlert(alert: WhaleAlert): Promise<void> {
-    console.log(
+    logger.info(
       `[WhaleWatcher] 🐋 WHALE ALERT: ${alert.amount} ${alert.asset} (${alert.usdValue?.toFixed(2)} USD) on tx ${alert.transactionHash}`,
     );
 
@@ -85,13 +86,13 @@ export class WhaleWatcher extends EventEmitter {
         },
       });
     } catch (err) {
-      console.error('[WhaleWatcher] Error storing whale alert:', err);
+      logger.error('[WhaleWatcher] Error storing whale alert:', err);
     }
   }
 
   setThreshold(asset: string, threshold: number, usdEquivalent?: number): void {
     this.thresholds.set(asset, { asset, threshold, usdEquivalent });
-    console.log(
+    logger.info(
       `[WhaleWatcher] Updated threshold for ${asset}: ${threshold} (${usdEquivalent} USD)`,
     );
   }
@@ -108,7 +109,7 @@ export function initWhaleWatcher(customThresholds?: WhaleThreshold[]): WhaleWatc
 
   // Listen for whale alerts and broadcast to connected clients
   whaleWatcher.on('whale-alert', (alert: WhaleAlert) => {
-    console.log(`[WhaleWatcher] Broadcasting alert to ${alert.transactionHash}`);
+    logger.info(`[WhaleWatcher] Broadcasting alert to ${alert.transactionHash}`);
     // In production, this would push to WebSocket clients or notification service
   });
 

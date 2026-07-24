@@ -52,10 +52,7 @@ const PM_MAP: Record<PaymentMethod, string> = {
 
 const BLOCKED_COUNTRIES = new Set(['IR', 'KP', 'SY', 'CU', 'SD', 'MM', 'RU', 'BY', 'VE']);
 
-async function transakFetch<T>(
-  path: string,
-  opts: RequestInit = {},
-): Promise<T> {
+async function transakFetch<T>(path: string, opts: RequestInit = {}): Promise<T> {
   const url = `${BASE_URL}${path}`;
   const res = await fetch(url, {
     ...opts,
@@ -178,19 +175,16 @@ export class TransakAdapter implements RampProviderAdapter {
     };
 
     const widgetUrl = `https://global${ENV === 'staging' ? '-stg' : ''}.transak.com/?${new URLSearchParams(
-      Object.fromEntries(
-        Object.entries(payload).map(([k, v]) => [k, String(v)]),
-      ),
+      Object.fromEntries(Object.entries(payload).map(([k, v]) => [k, String(v)])),
     ).toString()}`;
 
     // Create server-side order record
-    const data = await transakFetch<{ data: { id: string; status: string } }>(
-      '/api/v2/order',
-      {
-        method: 'POST',
-        body: JSON.stringify(payload),
-      },
-    ).catch(() => ({ data: { id: `transak-${Date.now()}`, status: 'AWAITING_PAYMENT_FROM_USER' } }));
+    const data = await transakFetch<{ data: { id: string; status: string } }>('/api/v2/order', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }).catch(() => ({
+      data: { id: `transak-${Date.now()}`, status: 'AWAITING_PAYMENT_FROM_USER' },
+    }));
 
     return {
       providerOrderId: data.data.id,
@@ -219,8 +213,8 @@ export class TransakAdapter implements RampProviderAdapter {
   }
 
   async initiateRefund(providerOrderId: string, amountUsd: number): Promise<RefundResult> {
-    await transakFetch(`/api/v2/order/${providerOrderId}/cancel`, { method: 'POST' }).catch(
-      (err) => logger.warn('[transak] refund call failed', { error: String(err) }),
+    await transakFetch(`/api/v2/order/${providerOrderId}/cancel`, { method: 'POST' }).catch((err) =>
+      logger.warn('[transak] refund call failed', { error: String(err) }),
     );
 
     return {
