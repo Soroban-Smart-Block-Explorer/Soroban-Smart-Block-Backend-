@@ -100,12 +100,14 @@ export async function fetchEvents(startLedger: number, endLedger: number): Promi
   while (true) {
     pageCount++;
     if (pageCount > MAX_PAGES) {
-      console.warn(`[fetchEvents] Exceeded max page count (${MAX_PAGES}) for range ${startLedger}–${endLedger}`);
+      logger.warn(
+        `[fetchEvents] Exceeded max page count (${MAX_PAGES}) for range ${startLedger}–${endLedger}`,
+      );
       break;
     }
 
     if (cursor && seenCursors.has(cursor)) {
-      console.warn(`[fetchEvents] Repeated cursor detected — breaking pagination loop`);
+      logger.warn(`[fetchEvents] Repeated cursor detected — breaking pagination loop`);
       break;
     }
     if (cursor) {
