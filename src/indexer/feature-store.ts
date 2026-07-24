@@ -1,81 +1,118 @@
 import { prismaWrite as prisma } from '../db';
-import { config } from '../config';
-import {
-  createSeededRandom,
-  generateDeterministicSeries,
-  type RandomSource,
-} from '../predictive/random';
 
 export class FeatureStore {
-  constructor(private readonly rng: RandomSource = createSeededRandom(config.forecastSeed)) {}
+  constructor() {}
 
   /**
-   * Computes derived features (rolling averages, lag, ratio) for the latest block.
+   * Computes derived features for the latest block from actual indexed data.
    */
   public async computeAndStoreFeatures(ledgerSequence: number, closeTime: Date) {
-    const txVolume = await prisma.transaction.count({
-      where: { ledgerSequence },
-    });
+    const ledger = await prisma.ledger.findUnique({ where: { sequence: ledgerSequence } });
+    const txCount = ledger?.txCount ?? 0;
 
-    const txVol7d = await this.getRollingAverage('tx_volume', 7);
+    const [txVolume, uniqueSourceAccounts, contractsWithEvents, failedTxs] = await Promise.all([
+      prisma.transaction.count({ where: { ledgerSequence } }),
+      prisma.transaction.findMany({
+        where: { ledgerSequence },
+        select: { sourceAccount: true },
+        distinct: ['sourceAccount'],
+      }),
+      prisma.event.findMany({
+        where: { ledgerSequence },
+        select: { contractAddress: true },
+        distinct: ['contractAddress'],
+      }),
+      prisma.transaction.count({ where: { ledgerSequence, status: { not: 'success' } } }),
+    ]);
 
-    const txVolDef = await this.getOrCreateFeatureDef('tx_volume', 'transaction volume per block');
-    const txVol7dDef = await this.getOrCreateFeatureDef(
-      'tx_volume_7d_ma',
-      '7-day moving average of tx volume',
+    const failureRatio = txCount > 0 ? Number((failedTxs / txCount).toFixed(6)) : 0;
+
+    const latestLedger = await prisma.ledger.findFirst({ orderBy: { sequence: 'desc' } });
+    const freshnessSeconds = latestLedger
+      ? Number(((closeTime.getTime() - latestLedger.closeTime.getTime()) / 1000).toFixed(3))
+      : 0;
+
+    const txVolume7dAvg = await this.compute7dMovingAverage('tx_volume');
+
+    const features = [
+      { name: 'tx_volume', value: txVolume, description: 'transaction count for the ledger' },
+      {
+        name: 'unique_source_accounts',
+        value: uniqueSourceAccounts.length,
+        description: 'distinct source accounts in ledger',
+      },
+      {
+        name: 'contracts_with_events',
+        value: contractsWithEvents.length,
+        description: 'distinct contract addresses emitting events',
+      },
+      {
+        name: 'tx_failure_ratio',
+        value: failureRatio,
+        description: 'failed tx ratio for ledger',
+      },
+      {
+        name: 'data_freshness_seconds',
+        value: freshnessSeconds,
+        description: 'seconds since latest indexed ledger close',
+      },
+      {
+        name: 'tx_volume_7d_ma',
+        value: txVolume7dAvg,
+        description: '7-day simple moving average of tx volume',
+      },
+    ];
+
+    const rows = await Promise.all(
+      features.map(async (feature) => {
+        const def = await this.getOrCreateFeatureDef(feature.name, feature.description);
+        return {
+          featureId: def.id,
+          timestamp: closeTime,
+          value: feature.value,
+          ledger: ledgerSequence,
+        };
+      }),
     );
 
-    await prisma.featureValue.createMany({
-      data: [
-        {
-          featureId: txVolDef.id,
-          timestamp: closeTime,
-          value: txVolume,
-          ledger: ledgerSequence,
-        },
-        {
-          featureId: txVol7dDef.id,
-          timestamp: closeTime,
-          value: txVol7d,
-          ledger: ledgerSequence,
-        },
-      ],
-      skipDuplicates: true,
-    });
+    await prisma.featureValue.createMany({ data: rows, skipDuplicates: true });
   }
 
   private async getOrCreateFeatureDef(name: string, description: string) {
-    let def = await prisma.featureDefinition.findUnique({
-      where: { name },
-    });
+    let def = await prisma.featureDefinition.findUnique({ where: { name } });
     if (!def) {
       def = await prisma.featureDefinition.create({
-        data: {
-          name,
-          description,
-          category: 'onchain',
-        },
+        data: { name, description, category: 'onchain' },
       });
     }
     return def;
   }
 
-  private async getRollingAverage(_featureName: string, _days: number): Promise<number> {
-    return 1000 + this.rng.next() * 200;
-  }
-
-  private syntheticSeries(metric: string, limit: number): number[] {
-    let seed = config.forecastSeed;
-    for (let i = 0; i < metric.length; i++) {
-      seed = (seed * 31 + metric.charCodeAt(i)) >>> 0;
+  private async compute7dMovingAverage(featureName: string): Promise<number> {
+    const def = await prisma.featureDefinition.findUnique({ where: { name: featureName } });
+    if (!def) {
+      return 0;
     }
-    return generateDeterministicSeries(limit, seed);
+
+    const values = await prisma.featureValue.findMany({
+      where: { featureId: def.id },
+      orderBy: { timestamp: 'desc' },
+      take: 7,
+    });
+
+    const recent = values.map((value) => value.value);
+    if (recent.length === 0) {
+      return 0;
+    }
+
+    const sum = recent.reduce((acc, val) => acc + val, 0);
+    return Number((sum / recent.length).toFixed(6));
   }
 
   public async getHistoricalData(metric: string, limit: number = 30): Promise<number[]> {
     const def = await prisma.featureDefinition.findUnique({ where: { name: metric } });
     if (!def) {
-      return this.syntheticSeries(metric, limit);
+      return [];
     }
 
     const values = await prisma.featureValue.findMany({
@@ -84,11 +121,7 @@ export class FeatureStore {
       take: limit,
     });
 
-    if (values.length === 0) {
-      return this.syntheticSeries(metric, limit);
-    }
-
-    return values.reverse().map((v: { value: number }) => v.value);
+    return values.map((value) => value.value);
   }
 }
 
