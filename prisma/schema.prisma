@@ -3022,7 +3022,7 @@ model ZkpVerificationEvent {
   createdAt           DateTime @default(now())
 }
 
-// ─── Soroban Reentrancy Fortress (Issue #307) ────────────────────────────────
+// ── Soroban Reentrancy Fortress (Issue #307) ────────────────────────────────
 
 enum ReentrancyType {
   SIMPLE
@@ -4065,3 +4065,33 @@ model AbiCommunityContribution {
   @@map("abi_community_contributions")
 }
 
+// =========================================================================
+// Migration: 20260724000000_search_index
+// =========================================================================
+
+model ContractSource {
+  id               String   @id @default(cuid())
+  contractAddress  String   @unique
+  functionDetails  Json?
+  imports          Json?
+  exports          Json?
+  events           Json?
+  errors           Json?
+  storageVariables Json?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  @@index([contractAddress])
+}
+
+model SearchIndexEntry {
+  id               String   @id @default(cuid())
+  contractAddress  String
+  contentType      String   // function | import | export | event | storage | error
+  content          String
+  metadata         Json?
+  createdAt        DateTime @default(now())
+
+  @@index([contractAddress])
+  @@index([contentType])
+}
