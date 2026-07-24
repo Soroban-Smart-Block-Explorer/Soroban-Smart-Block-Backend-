@@ -192,7 +192,7 @@ export async function fetchSanctionsList(source: SanctionsSource): Promise<Fetch
       return result;
     }
 
-    const existingCount = await prismaWrite.sanctionsList.count({
+    const existingCount = await prismaRead.sanctionsList.count({
       where: { source, listVersion: result.listVersion },
     });
 

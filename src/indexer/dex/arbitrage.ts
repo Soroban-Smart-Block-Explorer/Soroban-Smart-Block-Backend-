@@ -162,7 +162,7 @@ export async function scanArbitrage(opts: ArbOptions = {}): Promise<ArbitrageOpp
 
   // Upsert current opportunities (one open row per pair).
   for (const o of opportunities) {
-    const existing = await prismaWrite.arbitrageOpportunity.findFirst({
+    const existing = await prismaRead.arbitrageOpportunity.findFirst({
       where: { pairKey: o.pairKey, status: 'open' },
       select: { id: true },
     });

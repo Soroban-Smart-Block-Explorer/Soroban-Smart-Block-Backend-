@@ -26,7 +26,7 @@ function generateRsaKeyPair(): KeyPair {
   };
 }
 
-export async function getOrCreateKeyPair(): Promise<KeyPair> {
+export async function getOrCreateKeyPair(): Promise<forge.pki.KeyPair> {
   if (currentKeyPair) return currentKeyPair;
 
   const cached = await cacheGet<KeyPair>(KEYS_CACHE_KEY);

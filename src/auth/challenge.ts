@@ -22,7 +22,7 @@ export function buildChallengeMessage(
   appId: string,
   domain: string,
 ): string {
-  const ts = new Date().toISOString();
+  const ts = `${new Date().toISOString()}-${nonce.slice(0, 8)}`;
   return `Sign this message to authenticate with Soroban Explorer: ${domain} ${ts} [nonce: ${nonce}] [appId: ${appId}]`;
 }
 

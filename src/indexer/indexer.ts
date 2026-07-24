@@ -71,37 +71,37 @@ export async function setLastIndexedLedger(ledger: number): Promise<void> {
 export async function rollbackLedgers(sequences: number[]) {
   logger.info(`⚠️ Rollback triggered for ledgers: ${sequences.join(', ')}`);
 
-  await prisma.$transaction([
+  await prismaWrite.$transaction([
     // Delete SessionAuthorizations related to these ledgers
-    prisma.sessionAuthorization.deleteMany({
+    prismaWrite.sessionAuthorization.deleteMany({
       where: {
         startLedger: { in: sequences },
       },
     }),
 
     // Delete Events for these ledgers
-    prisma.event.deleteMany({
+    prismaWrite.event.deleteMany({
       where: {
         ledgerSequence: { in: sequences },
       },
     }),
 
     // Delete Transactions for these ledgers
-    prisma.transaction.deleteMany({
+    prismaWrite.transaction.deleteMany({
       where: {
         ledgerSequence: { in: sequences },
       },
     }),
 
     // Delete WasmUpgradeHistory for these ledgers
-    prisma.wasmUpgradeHistory.deleteMany({
+    prismaWrite.wasmUpgradeHistory.deleteMany({
       where: {
         ledgerSequence: { in: sequences },
       },
     }),
 
     // Delete Ledgers themselves
-    prisma.ledger.deleteMany({
+    prismaWrite.ledger.deleteMany({
       where: {
         sequence: { in: sequences },
       },
@@ -132,13 +132,13 @@ export async function processLedgerRange(
 
     // Reorg check
     const prevSeq = seq - 1;
-    const prevLedger = await prisma.ledger.findUnique({ where: { sequence: prevSeq } });
+    const prevLedger = await prismaRead.ledger.findUnique({ where: { sequence: prevSeq } });
     if (prevLedger && prevLedger.hash !== ledgerMeta.previousLedgerHash) {
       logger.warn(
         `🚨 REORG DETECTED at ledger ${seq}! Expected prev hash ${prevLedger.hash}, but network says ${ledgerMeta.previousLedgerHash}`,
       );
 
-      await prisma.reorgEvent.create({
+      await prismaWrite.reorgEvent.create({
         data: {
           ledgerSequence: seq,
           expectedHash: prevLedger.hash,
@@ -155,7 +155,7 @@ export async function processLedgerRange(
     }
 
     // Save/upsert Ledger record
-    await prisma.ledger.upsert({
+    await prismaWrite.ledger.upsert({
       where: { sequence: seq },
       update: {
         hash: ledgerMeta.hash,
@@ -177,7 +177,7 @@ export async function processLedgerRange(
   const events = await fetchEvents(start, end);
 
   for (const event of events) {
-    await prisma.contract.upsert({
+    await prismaWrite.contract.upsert({
       where: { address: event.contractId },
       update: {},
       create: { address: event.contractId },
@@ -206,7 +206,7 @@ export async function processLedgerRange(
             humanReadable: null,
           };
 
-      const transaction = await prisma.transaction.upsert({
+      const transaction = await prismaWrite.transaction.upsert({
         where: { hash: event.transactionHash },
         update: {},
         create: {
@@ -279,7 +279,7 @@ export async function processLedgerRange(
     // when a single transaction emits multiple events with the same first topic.
     const positionKey = event.pagingToken || `${event.ledgerSequence}-${events.indexOf(event)}`;
     const eventId = `${event.transactionHash}-${positionKey}`;
-    const savedEvent = await prisma.event.upsert({
+    const savedEvent = await prismaWrite.event.upsert({
       where: { id: eventId },
       update: {},
       create: {
@@ -373,7 +373,7 @@ async function processSessionAuthorization(
 
   const allocatedBlocks = Math.max(0, expiryLedger - startLedger);
 
-  await prisma.sessionAuthorization.upsert({
+  await prismaWrite.sessionAuthorization.upsert({
     where: { eventId },
     update: {
       hotSigner,
@@ -566,7 +566,7 @@ export class SorobanEventWorker {
           );
 
           // Record LedgerGap in the database
-          await prisma.ledgerGap.create({
+          await prismaWrite.ledgerGap.create({
             data: {
               startSequence: gapStart,
               endSequence: gapEnd,
@@ -585,7 +585,7 @@ export class SorobanEventWorker {
             }
 
             // Mark the gap as resolved
-            await prisma.ledgerGap.updateMany({
+            await prismaWrite.ledgerGap.updateMany({
               where: {
                 startSequence: gapStart,
                 endSequence: gapEnd,

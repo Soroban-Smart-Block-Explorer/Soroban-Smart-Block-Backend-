@@ -15,6 +15,7 @@ interface MemoryEntry {
 
 // Map insertion order is used as LRU order: oldest entry is first.
 const memoryStore = new Map<string, MemoryEntry>();
+const MAX_MEMORY_ENTRIES = 10_000;
 let redisClient: RedisClientType | null = null;
 let redisAvailable = false;
 let _evictionCount = 0;

@@ -31,7 +31,7 @@ export function hashToken(token: string): string {
 export async function issueTokens(payload: Omit<TokenPayload, 'jti'>): Promise<TokenPair> {
   const { kid, privateKeyPem } = await getOrCreateKeyPair();
   const jti = randomBytes(16).toString('hex');
-  const sessionId = payload.sessionId || `sess_${randomBytes(12).toString('hex')}`;
+  const sessionId = payload.sessionId?.trim() || generateSessionId();
 
   const claims: TokenPayload = { ...payload, jti, sessionId };
   const opts: SignOptions = {

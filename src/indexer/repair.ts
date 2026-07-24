@@ -203,3 +203,11 @@ export async function startRepairLoop(): Promise<void> {
     await sleep(SWEEP_INTERVAL_MS);
   }
 }
+
+// ─── Entry point ──────────────────────────────────────────────────────────────
+if (require.main === module) {
+  startRepairLoop().catch((err) => {
+    console.error('[repair] Fatal error:', err);
+    process.exit(1);
+  });
+}
