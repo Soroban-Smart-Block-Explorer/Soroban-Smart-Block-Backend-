@@ -9,6 +9,7 @@
  * 5-field cron parsing and alias expansion in-house.
  */
 import { prismaWrite as prisma } from '../db';
+import { logger } from '../logger';
 
 // ── Minimal cron parser ───────────────────────────────────────────────────────
 
@@ -226,7 +227,7 @@ export async function runDueCronJobs(): Promise<void> {
 export function startCronEngine(intervalMs = 60_000): () => void {
   const timer = setInterval(() => {
     runDueCronJobs().catch((err) => {
-      console.error('[cron-engine] error:', err);
+      logger.error('[cron-engine] error:', err);
     });
   }, intervalMs);
 

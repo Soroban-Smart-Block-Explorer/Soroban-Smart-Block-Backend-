@@ -45,7 +45,9 @@ describe('generateMutations', () => {
   it('sorts by priority descending (boundary/large before flip)', () => {
     const mutations = generateMutations([100]);
     const firstPriority = Math.max(...mutations[0].mutations.map((m) => m.priority));
-    const lastPriority = Math.max(...mutations[mutations.length - 1].mutations.map((m) => m.priority));
+    const lastPriority = Math.max(
+      ...mutations[mutations.length - 1].mutations.map((m) => m.priority),
+    );
     expect(firstPriority).toBeGreaterThanOrEqual(lastPriority);
   });
 

@@ -2,6 +2,7 @@ import axios from 'axios';
 import crypto from 'crypto';
 import { EventEmitter } from 'events';
 import { SubscriptionManager } from './subscriptionManager';
+import { logger } from '../logger';
 
 export interface DeliveryConfig {
   webhook?: {
@@ -51,7 +52,7 @@ export class DeliveryService extends EventEmitter {
       // Direct delivery for single messages
       await this.deliverSingle(subscription, [message]);
     } catch (error) {
-      console.error('Delivery failed:', error);
+      logger.error('Delivery failed:', error);
       await this.subscriptionManager.updateDeliveryStats(
         subscriptionId,
         false,
@@ -160,7 +161,7 @@ export class DeliveryService extends EventEmitter {
         throw new Error(`HTTP ${response.status}: ${response.statusText}`);
       }
     } catch (error) {
-      console.error(
+      logger.error(
         `Webhook delivery failed for ${subscriptionId}:`,
         error instanceof Error ? error.message : 'Unknown error',
       );

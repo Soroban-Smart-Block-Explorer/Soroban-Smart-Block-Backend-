@@ -217,29 +217,32 @@ async function analyzeAndPersist(
  *             example: { error: "Database connection failed" }
  */
 // ── POST /analyze ─────────────────────────────────────────────────────────────
-composabilityRouter.post('/analyze', async (req: Request, res: Response) => {
-  try {
-    const body = analyzeSchema.parse(req.body);
-    const ts = body.timestamp ? new Date(body.timestamp) : new Date();
-    const r = await analyzeAndPersist(
-      body.txHash,
-      body.ledgerSeq,
-      ts,
-      body.contractCalls as ContractCall[],
-    );
-    res.json({
-      txHash: body.txHash,
-      safetyScore: r.safetyScore,
-      riskLevel: r.riskLevel,
-      patterns: r.patterns,
-      verification: r.verification,
-      callGraph: r.callGraph,
-    });
-  } catch (e: any) {
-    if (e instanceof z.ZodError) return res.status(400).json({ error: e.errors });
-    res.status(500).json({ error: String(e.message) });
-  }
-});
+composabilityRouter.post(
+  '/analyze',
+  asyncHandler(async (req: Request, res: Response) => {
+    try {
+      const body = analyzeSchema.parse(req.body);
+      const ts = body.timestamp ? new Date(body.timestamp) : new Date();
+      const r = await analyzeAndPersist(
+        body.txHash,
+        body.ledgerSeq,
+        ts,
+        body.contractCalls as ContractCall[],
+      );
+      res.json({
+        txHash: body.txHash,
+        safetyScore: r.safetyScore,
+        riskLevel: r.riskLevel,
+        patterns: r.patterns,
+        verification: r.verification,
+        callGraph: r.callGraph,
+      });
+    } catch (e: any) {
+      if (e instanceof z.ZodError) return res.status(400).json({ error: e.errors });
+      res.status(500).json({ error: String(e.message) });
+    }
+  }),
+);
 
 /**
  * @swagger
@@ -309,32 +312,35 @@ composabilityRouter.post('/analyze', async (req: Request, res: Response) => {
  *             example: { error: "Database connection failed" }
  */
 // ── POST /analyze/batch ───────────────────────────────────────────────────────
-composabilityRouter.post('/analyze/batch', async (req: Request, res: Response) => {
-  try {
-    const items = z.array(analyzeSchema).parse(req.body);
-    const results = await Promise.all(
-      items.map(async (b) => {
-        const ts = b.timestamp ? new Date(b.timestamp) : new Date();
-        const r = await analyzeAndPersist(
-          b.txHash,
-          b.ledgerSeq,
-          ts,
-          b.contractCalls as ContractCall[],
-        );
-        return {
-          txHash: b.txHash,
-          safetyScore: r.safetyScore,
-          riskLevel: r.riskLevel,
-          patternCount: r.patterns.length,
-        };
-      }),
-    );
-    res.json({ processed: results.length, results });
-  } catch (e: any) {
-    if (e instanceof z.ZodError) return res.status(400).json({ error: e.errors });
-    res.status(500).json({ error: String(e.message) });
-  }
-});
+composabilityRouter.post(
+  '/analyze/batch',
+  asyncHandler(async (req: Request, res: Response) => {
+    try {
+      const items = z.array(analyzeSchema).parse(req.body);
+      const results = await Promise.all(
+        items.map(async (b) => {
+          const ts = b.timestamp ? new Date(b.timestamp) : new Date();
+          const r = await analyzeAndPersist(
+            b.txHash,
+            b.ledgerSeq,
+            ts,
+            b.contractCalls as ContractCall[],
+          );
+          return {
+            txHash: b.txHash,
+            safetyScore: r.safetyScore,
+            riskLevel: r.riskLevel,
+            patternCount: r.patterns.length,
+          };
+        }),
+      );
+      res.json({ processed: results.length, results });
+    } catch (e: any) {
+      if (e instanceof z.ZodError) return res.status(400).json({ error: e.errors });
+      res.status(500).json({ error: String(e.message) });
+    }
+  }),
+);
 
 /**
  * @swagger
@@ -695,33 +701,38 @@ composabilityRouter.get(
 );
 
 // ── POST /patterns ────────────────────────────────────────────────────────────
-composabilityRouter.post('/patterns', async (req: Request, res: Response) => {
-  try {
-    const body = z
-      .object({
-        name: z.string(),
-        description: z.string(),
-        category: z.string(),
-        riskRating: z.enum(['safe', 'low_risk', 'medium_risk', 'high_risk', 'critical']).optional(),
-        requiredCalls: z.number().int().optional(),
-        detectionRules: z.unknown().optional(),
-        safeIf: z.unknown().optional(),
-        mitigationGuide: z.string().optional(),
-      })
-      .parse(req.body);
-    const pattern = await prismaWrite.compositionPattern.create({
-      data: {
-        ...body,
-        detectionRules: (body.detectionRules as object) ?? undefined,
-        safeIf: (body.safeIf as object) ?? undefined,
-      },
-    });
-    res.status(201).json(pattern);
-  } catch (e: any) {
-    if (e instanceof z.ZodError) return res.status(400).json({ error: e.errors });
-    res.status(500).json({ error: String(e.message) });
-  }
-});
+composabilityRouter.post(
+  '/patterns',
+  asyncHandler(async (req: Request, res: Response) => {
+    try {
+      const body = z
+        .object({
+          name: z.string(),
+          description: z.string(),
+          category: z.string(),
+          riskRating: z
+            .enum(['safe', 'low_risk', 'medium_risk', 'high_risk', 'critical'])
+            .optional(),
+          requiredCalls: z.number().int().optional(),
+          detectionRules: z.unknown().optional(),
+          safeIf: z.unknown().optional(),
+          mitigationGuide: z.string().optional(),
+        })
+        .parse(req.body);
+      const pattern = await prismaWrite.compositionPattern.create({
+        data: {
+          ...body,
+          detectionRules: (body.detectionRules as object) ?? undefined,
+          safeIf: (body.safeIf as object) ?? undefined,
+        },
+      });
+      res.status(201).json(pattern);
+    } catch (e: any) {
+      if (e instanceof z.ZodError) return res.status(400).json({ error: e.errors });
+      res.status(500).json({ error: String(e.message) });
+    }
+  }),
+);
 
 /**
  * @swagger
@@ -751,41 +762,44 @@ composabilityRouter.post('/patterns', async (req: Request, res: Response) => {
  *             example: { error: "Internal server error" }
  */
 // ── POST /static-analyze/:address ────────────────────────────────────────────
-composabilityRouter.post('/static-analyze/:address', async (req: Request, res: Response) => {
-  try {
-    const addr = req.params.address;
-    const contract = await prismaRead.contract.findUnique({
-      where: { address: addr },
-      select: { functionSignatures: true, abi: true },
-    });
-    const fns = contract?.functionSignatures as Array<{ name: string }> | null;
-    const abi = contract?.abi as { functions?: Array<{ name: string }> } | null;
-    const result = performStaticAnalysis(addr, fns, abi);
+composabilityRouter.post(
+  '/static-analyze/:address',
+  asyncHandler(async (req: Request, res: Response) => {
+    try {
+      const addr = req.params.address;
+      const contract = await prismaRead.contract.findUnique({
+        where: { address: addr },
+        select: { functionSignatures: true, abi: true },
+      });
+      const fns = contract?.functionSignatures as Array<{ name: string }> | null;
+      const abi = contract?.abi as { functions?: Array<{ name: string }> } | null;
+      const result = performStaticAnalysis(addr, fns, abi);
 
-    const saved = await prismaWrite.composabilityStaticAnalysis.upsert({
-      where: { contractAddress: addr },
-      update: {
-        externalCalls: result.externalCalls as object[],
-        callGraph: result.callGraph as object,
-        circularDeps: result.circularDeps as object[],
-        hasUnboundedRecursion: result.hasUnboundedRecursion,
-        maxCallDepth: result.maxCallDepth,
-        analyzedAt: new Date(),
-      },
-      create: {
-        contractAddress: addr,
-        externalCalls: result.externalCalls as object[],
-        callGraph: result.callGraph as object,
-        circularDeps: result.circularDeps as object[],
-        hasUnboundedRecursion: result.hasUnboundedRecursion,
-        maxCallDepth: result.maxCallDepth,
-      },
-    });
-    res.json(saved);
-  } catch (e: any) {
-    res.status(500).json({ error: String(e.message) });
-  }
-});
+      const saved = await prismaWrite.composabilityStaticAnalysis.upsert({
+        where: { contractAddress: addr },
+        update: {
+          externalCalls: result.externalCalls as object[],
+          callGraph: result.callGraph as object,
+          circularDeps: result.circularDeps as object[],
+          hasUnboundedRecursion: result.hasUnboundedRecursion,
+          maxCallDepth: result.maxCallDepth,
+          analyzedAt: new Date(),
+        },
+        create: {
+          contractAddress: addr,
+          externalCalls: result.externalCalls as object[],
+          callGraph: result.callGraph as object,
+          circularDeps: result.circularDeps as object[],
+          hasUnboundedRecursion: result.hasUnboundedRecursion,
+          maxCallDepth: result.maxCallDepth,
+        },
+      });
+      res.json(saved);
+    } catch (e: any) {
+      res.status(500).json({ error: String(e.message) });
+    }
+  }),
+);
 
 /**
  * @swagger
@@ -862,56 +876,59 @@ composabilityRouter.get(
  *             example: { error: "Internal server error" }
  */
 // ── POST /verify/:txHash ──────────────────────────────────────────────────────
-composabilityRouter.post('/verify/:txHash', async (req: Request, res: Response) => {
-  try {
-    const tx = await prismaRead.composedTransaction.findUnique({
-      where: { txHash: req.params.txHash },
-    });
-    if (!tx) return res.status(404).json({ error: 'Transaction not found' });
+composabilityRouter.post(
+  '/verify/:txHash',
+  asyncHandler(async (req: Request, res: Response) => {
+    try {
+      const tx = await prismaRead.composedTransaction.findUnique({
+        where: { txHash: req.params.txHash },
+      });
+      if (!tx) return res.status(404).json({ error: 'Transaction not found' });
 
-    const calls = (tx.contractCalls as unknown as ContractCall[]) ?? [];
-    const callGraph = buildCallGraph(calls);
-    const verification = verifyCompositionSafety(calls, callGraph);
+      const calls = (tx.contractCalls as unknown as ContractCall[]) ?? [];
+      const callGraph = buildCallGraph(calls);
+      const verification = verifyCompositionSafety(calls, callGraph);
 
-    const saved = await prismaWrite.composabilityVerification.upsert({
-      where: { txHash: req.params.txHash },
-      update: {
-        atomicity: verification.atomicity,
-        authorization: verification.authorization,
-        stateConsistency: verification.stateConsistency,
-        reentrancyFree: verification.reentrancyFree,
-        oracleFreshness: verification.oracleFreshness,
-        atomicityScore: verification.scores.atomicity,
-        authorizationScore: verification.scores.authorization,
-        stateScore: verification.scores.stateConsistency,
-        reentrancyScore: verification.scores.reentrancy,
-        oracleScore: verification.scores.oracleFreshness,
-        totalScore: verification.scores.total,
-        proofData: verification.proofData as object,
-        verified: verification.verified,
-      },
-      create: {
-        txHash: req.params.txHash,
-        atomicity: verification.atomicity,
-        authorization: verification.authorization,
-        stateConsistency: verification.stateConsistency,
-        reentrancyFree: verification.reentrancyFree,
-        oracleFreshness: verification.oracleFreshness,
-        atomicityScore: verification.scores.atomicity,
-        authorizationScore: verification.scores.authorization,
-        stateScore: verification.scores.stateConsistency,
-        reentrancyScore: verification.scores.reentrancy,
-        oracleScore: verification.scores.oracleFreshness,
-        totalScore: verification.scores.total,
-        proofData: verification.proofData as object,
-        verified: verification.verified,
-      },
-    });
-    res.json(saved);
-  } catch (e: any) {
-    res.status(500).json({ error: String(e.message) });
-  }
-});
+      const saved = await prismaWrite.composabilityVerification.upsert({
+        where: { txHash: req.params.txHash },
+        update: {
+          atomicity: verification.atomicity,
+          authorization: verification.authorization,
+          stateConsistency: verification.stateConsistency,
+          reentrancyFree: verification.reentrancyFree,
+          oracleFreshness: verification.oracleFreshness,
+          atomicityScore: verification.scores.atomicity,
+          authorizationScore: verification.scores.authorization,
+          stateScore: verification.scores.stateConsistency,
+          reentrancyScore: verification.scores.reentrancy,
+          oracleScore: verification.scores.oracleFreshness,
+          totalScore: verification.scores.total,
+          proofData: verification.proofData as object,
+          verified: verification.verified,
+        },
+        create: {
+          txHash: req.params.txHash,
+          atomicity: verification.atomicity,
+          authorization: verification.authorization,
+          stateConsistency: verification.stateConsistency,
+          reentrancyFree: verification.reentrancyFree,
+          oracleFreshness: verification.oracleFreshness,
+          atomicityScore: verification.scores.atomicity,
+          authorizationScore: verification.scores.authorization,
+          stateScore: verification.scores.stateConsistency,
+          reentrancyScore: verification.scores.reentrancy,
+          oracleScore: verification.scores.oracleFreshness,
+          totalScore: verification.scores.total,
+          proofData: verification.proofData as object,
+          verified: verification.verified,
+        },
+      });
+      res.json(saved);
+    } catch (e: any) {
+      res.status(500).json({ error: String(e.message) });
+    }
+  }),
+);
 
 /**
  * @swagger
@@ -1230,26 +1247,29 @@ composabilityRouter.get(
  *             example: { error: "Internal server error" }
  */
 // ── POST /exploit/check ───────────────────────────────────────────────────────
-composabilityRouter.post('/exploit/check', async (req: Request, res: Response) => {
-  try {
-    const body = z.object({ contractCalls: z.array(callSchema) }).parse(req.body);
-    const result = checkForExploit(body.contractCalls as ContractCall[]);
-    if (result.exploitDetected) {
-      await prismaWrite.compositionAlert.create({
-        data: {
-          severity: 'critical',
-          title: `Pending exploit: ${result.exploitType}`,
-          description: result.description ?? '',
-          exploitDetected: true,
-        },
-      });
+composabilityRouter.post(
+  '/exploit/check',
+  asyncHandler(async (req: Request, res: Response) => {
+    try {
+      const body = z.object({ contractCalls: z.array(callSchema) }).parse(req.body);
+      const result = checkForExploit(body.contractCalls as ContractCall[]);
+      if (result.exploitDetected) {
+        await prismaWrite.compositionAlert.create({
+          data: {
+            severity: 'critical',
+            title: `Pending exploit: ${result.exploitType}`,
+            description: result.description ?? '',
+            exploitDetected: true,
+          },
+        });
+      }
+      res.json(result);
+    } catch (e: any) {
+      if (e instanceof z.ZodError) return res.status(400).json({ error: e.errors });
+      res.status(500).json({ error: String(e.message) });
     }
-    res.json(result);
-  } catch (e: any) {
-    if (e instanceof z.ZodError) return res.status(400).json({ error: e.errors });
-    res.status(500).json({ error: String(e.message) });
-  }
-});
+  }),
+);
 
 /**
  * @swagger
@@ -1448,35 +1468,38 @@ composabilityRouter.post(
  *             example: { error: "Internal server error" }
  */
 // ── POST /fuzz/:contractAddress ───────────────────────────────────────────────
-composabilityRouter.post('/fuzz/:contractAddress', async (req: Request, res: Response) => {
-  try {
-    const iterations = Math.min(500, parseInt((req.query.iterations as string) ?? '100', 10));
-    const addr = req.params.contractAddress;
-    const { findings, coverage } = runFuzzCampaign(addr, iterations);
+composabilityRouter.post(
+  '/fuzz/:contractAddress',
+  asyncHandler(async (req: Request, res: Response) => {
+    try {
+      const iterations = Math.min(500, parseInt((req.query.iterations as string) ?? '100', 10));
+      const addr = req.params.contractAddress;
+      const { findings, coverage } = runFuzzCampaign(addr, iterations);
 
-    const campaign = await prismaWrite.composabilityFuzzCampaign.create({
-      data: {
+      const campaign = await prismaWrite.composabilityFuzzCampaign.create({
+        data: {
+          contractAddress: addr,
+          status: 'completed',
+          totalCases: iterations,
+          unsafeFound: findings.length,
+          coveragePct: coverage,
+          findings: findings as object[],
+          completedAt: new Date(),
+        },
+      });
+      res.json({
+        campaignId: campaign.id,
         contractAddress: addr,
-        status: 'completed',
         totalCases: iterations,
         unsafeFound: findings.length,
-        coveragePct: coverage,
-        findings: findings as object[],
-        completedAt: new Date(),
-      },
-    });
-    res.json({
-      campaignId: campaign.id,
-      contractAddress: addr,
-      totalCases: iterations,
-      unsafeFound: findings.length,
-      coverage,
-      findings: findings.slice(0, 20),
-    });
-  } catch (e: any) {
-    res.status(500).json({ error: String(e.message) });
-  }
-});
+        coverage,
+        findings: findings.slice(0, 20),
+      });
+    } catch (e: any) {
+      res.status(500).json({ error: String(e.message) });
+    }
+  }),
+);
 
 /**
  * @swagger
@@ -1661,33 +1684,36 @@ composabilityRouter.get(
 );
 
 // ── POST /exploit-database ────────────────────────────────────────────────────
-composabilityRouter.post('/exploit-database', async (req: Request, res: Response) => {
-  try {
-    const body = z
-      .object({
-        title: z.string(),
-        description: z.string(),
-        patternCategory: z.string(),
-        severity: z.enum(['critical', 'high', 'medium', 'low']),
-        cveId: z.string().optional(),
-        affectedContracts: z.array(z.string()).optional(),
-        exploitTxHashes: z.array(z.string()).optional(),
-        advisoryUrl: z.string().optional(),
-      })
-      .parse(req.body);
-    const exploit = await prismaWrite.composabilityExploit.create({
-      data: {
-        ...body,
-        affectedContracts: body.affectedContracts ?? [],
-        exploitTxHashes: body.exploitTxHashes ?? [],
-      },
-    });
-    res.status(201).json(exploit);
-  } catch (e: any) {
-    if (e instanceof z.ZodError) return res.status(400).json({ error: e.errors });
-    res.status(500).json({ error: String(e.message) });
-  }
-});
+composabilityRouter.post(
+  '/exploit-database',
+  asyncHandler(async (req: Request, res: Response) => {
+    try {
+      const body = z
+        .object({
+          title: z.string(),
+          description: z.string(),
+          patternCategory: z.string(),
+          severity: z.enum(['critical', 'high', 'medium', 'low']),
+          cveId: z.string().optional(),
+          affectedContracts: z.array(z.string()).optional(),
+          exploitTxHashes: z.array(z.string()).optional(),
+          advisoryUrl: z.string().optional(),
+        })
+        .parse(req.body);
+      const exploit = await prismaWrite.composabilityExploit.create({
+        data: {
+          ...body,
+          affectedContracts: body.affectedContracts ?? [],
+          exploitTxHashes: body.exploitTxHashes ?? [],
+        },
+      });
+      res.status(201).json(exploit);
+    } catch (e: any) {
+      if (e instanceof z.ZodError) return res.status(400).json({ error: e.errors });
+      res.status(500).json({ error: String(e.message) });
+    }
+  }),
+);
 
 /**
  * @swagger
@@ -1974,37 +2000,40 @@ composabilityRouter.get(
  *             example: { error: "Internal server error" }
  */
 // ── POST /alerts ──────────────────────────────────────────────────────────────
-composabilityRouter.post('/alerts', async (req: Request, res: Response) => {
-  try {
-    const body = z
-      .object({
-        contractAddress: z.string().optional(),
-        severity: z.enum(['critical', 'high', 'medium', 'low']).optional(),
-        webhookUrl: z.string().url().optional(),
-      })
-      .parse(req.body);
-    // Store alert subscription in CompositionAlert as a subscription marker
-    const alert = await prismaWrite.compositionAlert.create({
-      data: {
-        contractAddress: body.contractAddress,
-        severity: body.severity ?? 'high',
-        title: 'Alert subscription created',
-        description: `Subscribed to composability alerts${body.contractAddress ? ` for ${body.contractAddress}` : ''}`,
-        mitigationPatch: body.webhookUrl ? ({ webhookUrl: body.webhookUrl } as object) : undefined,
-      },
-    });
-    res
-      .status(201)
-      .json({
+composabilityRouter.post(
+  '/alerts',
+  asyncHandler(async (req: Request, res: Response) => {
+    try {
+      const body = z
+        .object({
+          contractAddress: z.string().optional(),
+          severity: z.enum(['critical', 'high', 'medium', 'low']).optional(),
+          webhookUrl: z.string().url().optional(),
+        })
+        .parse(req.body);
+      // Store alert subscription in CompositionAlert as a subscription marker
+      const alert = await prismaWrite.compositionAlert.create({
+        data: {
+          contractAddress: body.contractAddress,
+          severity: body.severity ?? 'high',
+          title: 'Alert subscription created',
+          description: `Subscribed to composability alerts${body.contractAddress ? ` for ${body.contractAddress}` : ''}`,
+          mitigationPatch: body.webhookUrl
+            ? ({ webhookUrl: body.webhookUrl } as object)
+            : undefined,
+        },
+      });
+      res.status(201).json({
         subscriptionId: alert.id,
         contractAddress: body.contractAddress,
         severity: body.severity ?? 'high',
       });
-  } catch (e: any) {
-    if (e instanceof z.ZodError) return res.status(400).json({ error: e.errors });
-    res.status(500).json({ error: String(e.message) });
-  }
-});
+    } catch (e: any) {
+      if (e instanceof z.ZodError) return res.status(400).json({ error: e.errors });
+      res.status(500).json({ error: String(e.message) });
+    }
+  }),
+);
 
 /**
  * @swagger

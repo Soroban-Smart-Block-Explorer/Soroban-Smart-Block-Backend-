@@ -89,8 +89,15 @@ describe('GET /api/v1/stellar/accounts/:address', () => {
       sequence: '100',
       subentry_count: 2,
       thresholds: { low_threshold: 0, med_threshold: 1, high_threshold: 1 },
-      flags: { auth_required: false, auth_revocable: false, auth_immutable: false, auth_clawback_enabled: false },
-      balances: [{ balance: '500', buying_liabilities: '0', selling_liabilities: '0', asset_type: 'native' }],
+      flags: {
+        auth_required: false,
+        auth_revocable: false,
+        auth_immutable: false,
+        auth_clawback_enabled: false,
+      },
+      balances: [
+        { balance: '500', buying_liabilities: '0', selling_liabilities: '0', asset_type: 'native' },
+      ],
       signers: [{ key: G_ADDRESS, weight: 1, type: 'ed25519_public_key' }],
       data: {},
       num_sponsoring: 0,

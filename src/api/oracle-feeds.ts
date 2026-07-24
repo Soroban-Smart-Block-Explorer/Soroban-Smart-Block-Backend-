@@ -8,6 +8,7 @@
 import { Router, Request, Response } from 'express';
 import { z } from 'zod';
 import axios from 'axios';
+import { logger } from '../logger';
 
 export const oracleFeedsRouter = Router();
 
@@ -41,7 +42,7 @@ async function fetchLivePrices(): Promise<void> {
     }
     cacheTimestamp = now;
   } catch (err) {
-    console.warn('[oracle-feeds] CoinGecko API error, using cached prices:', err);
+    logger.warn('[oracle-feeds] CoinGecko API error, using cached prices:', err);
   }
 }
 

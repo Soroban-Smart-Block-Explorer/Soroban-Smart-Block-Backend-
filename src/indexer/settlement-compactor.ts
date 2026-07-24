@@ -14,6 +14,7 @@
  */
 
 import { prismaWrite as prisma } from '../db';
+import { logger } from '../logger';
 
 const WINDOW_SIZE = Number(process.env.COMPACTOR_WINDOW_SIZE ?? 100); // ledgers per window
 const MIN_EVENTS = Number(process.env.COMPACTOR_MIN_EVENTS ?? 10); // min events to compact
@@ -24,11 +25,11 @@ let timer: ReturnType<typeof setInterval> | null = null;
 
 export function scheduleSettlementCompactor(): void {
   if (timer) return;
-  console.log('[compactor] settlement compactor scheduled every', INTERVAL_MS, 'ms');
+  logger.info('[compactor] settlement compactor scheduled every', INTERVAL_MS, 'ms');
   // Run once immediately, then on interval
-  runCompactor().catch((e) => console.error('[compactor] run error:', e));
+  runCompactor().catch((e) => logger.error('[compactor] run error:', e));
   timer = setInterval(() => {
-    runCompactor().catch((e) => console.error('[compactor] run error:', e));
+    runCompactor().catch((e) => logger.error('[compactor] run error:', e));
   }, INTERVAL_MS);
 }
 
@@ -133,6 +134,6 @@ export async function runCompactor(): Promise<void> {
   }
 
   if (compacted > 0) {
-    console.log(`[compactor] compacted ${compacted} settlement events into batch summaries`);
+    logger.info(`[compactor] compacted ${compacted} settlement events into batch summaries`);
   }
 }

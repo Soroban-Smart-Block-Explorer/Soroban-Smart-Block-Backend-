@@ -158,7 +158,11 @@ export class GraphFeatureExtractor {
   /**
    * Save embedding to database
    */
-  private async saveEmbedding(nodeId: string, nodeType: string, embedding: number[]): Promise<void> {
+  private async saveEmbedding(
+    nodeId: string,
+    nodeType: string,
+    embedding: number[],
+  ): Promise<void> {
     try {
       await this.prisma.$executeRaw`
         INSERT INTO node_embeddings (node_id, node_type, embedding_vector, embedding_version)

@@ -1,6 +1,7 @@
 import * as dotenv from 'dotenv';
 import { z } from 'zod';
 import { getProfile, type NetworkProfile } from './profiles';
+import { logger } from './logger';
 
 // Load the profile-specific env file first, then fall back to .env
 const network = process.env.STELLAR_NETWORK ?? 'testnet';
@@ -142,16 +143,16 @@ try {
 } catch (error) {
   // Format error message for actionable feedback
   const errorMessage = error instanceof Error ? error.message : String(error);
-  console.error('\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-  console.error('❌ CONFIGURATION ERROR: Invalid environment variable');
-  console.error('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n');
-  console.error(errorMessage);
-  console.error('\n📋 Action required:');
-  console.error('  1. Check your .env file or environment variables');
-  console.error('  2. Ensure numeric values are valid integers');
-  console.error('  3. Verify values are within acceptable ranges');
-  console.error('  4. See .env.example for reference values\n');
-  console.error('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n');
+  logger.error('\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+  logger.error('❌ CONFIGURATION ERROR: Invalid environment variable');
+  logger.error('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n');
+  logger.error(errorMessage);
+  logger.error('\n📋 Action required:');
+  logger.error('  1. Check your .env file or environment variables');
+  logger.error('  2. Ensure numeric values are valid integers');
+  logger.error('  3. Verify values are within acceptable ranges');
+  logger.error('  4. See .env.example for reference values\n');
+  logger.error('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n');
   process.exit(1);
 }
 

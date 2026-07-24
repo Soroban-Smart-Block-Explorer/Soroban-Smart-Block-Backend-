@@ -1,3 +1,4 @@
+import { logger } from '../logger';
 /**
  * Extension point for token staking (explicitly out of scope for v1 — see
  * requirements). Reputation/challenge logic call through this interface so a
@@ -18,7 +19,7 @@ export class NullStakeProvider implements StakeProvider {
 
   async slash(peerId: string, amount: bigint, reason: string): Promise<void> {
     // eslint-disable-next-line no-console
-    console.log(
+    logger.info(
       `[p2p:stake] (no-op, staking disabled) would slash ${amount} from ${peerId}: ${reason}`,
     );
   }

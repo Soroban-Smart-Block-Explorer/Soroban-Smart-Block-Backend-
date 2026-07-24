@@ -74,9 +74,7 @@ export class SsrfBlockedError extends Error {
 
 /** Convert a dotted-decimal IPv4 string to a 32-bit integer. */
 function ipv4ToInt(ip: string): number {
-  return ip
-    .split('.')
-    .reduce((acc, octet) => (acc << 8) | parseInt(octet, 10), 0) >>> 0;
+  return ip.split('.').reduce((acc, octet) => (acc << 8) | parseInt(octet, 10), 0) >>> 0;
 }
 
 interface Ipv4Range {
@@ -91,19 +89,19 @@ function makeRange(cidr: string): Ipv4Range {
 }
 
 const BLOCKED_IPV4_RANGES: Ipv4Range[] = [
-  makeRange('0.0.0.0/8'),       // unspecified / "this" network
-  makeRange('10.0.0.0/8'),      // private
-  makeRange('100.64.0.0/10'),   // shared address space (RFC 6598)
-  makeRange('127.0.0.0/8'),     // loopback
-  makeRange('169.254.0.0/16'),  // link-local / AWS metadata
-  makeRange('172.16.0.0/12'),   // private
-  makeRange('192.0.0.0/24'),    // IETF protocol assignments
-  makeRange('192.168.0.0/16'),  // private
-  makeRange('198.18.0.0/15'),   // benchmarking
+  makeRange('0.0.0.0/8'), // unspecified / "this" network
+  makeRange('10.0.0.0/8'), // private
+  makeRange('100.64.0.0/10'), // shared address space (RFC 6598)
+  makeRange('127.0.0.0/8'), // loopback
+  makeRange('169.254.0.0/16'), // link-local / AWS metadata
+  makeRange('172.16.0.0/12'), // private
+  makeRange('192.0.0.0/24'), // IETF protocol assignments
+  makeRange('192.168.0.0/16'), // private
+  makeRange('198.18.0.0/15'), // benchmarking
   makeRange('198.51.100.0/24'), // TEST-NET-2 (documentation)
-  makeRange('203.0.113.0/24'),  // TEST-NET-3 (documentation)
-  makeRange('224.0.0.0/4'),     // multicast
-  makeRange('240.0.0.0/4'),     // reserved
+  makeRange('203.0.113.0/24'), // TEST-NET-3 (documentation)
+  makeRange('224.0.0.0/4'), // multicast
+  makeRange('240.0.0.0/4'), // reserved
   makeRange('255.255.255.255/32'), // broadcast
 ];
 
@@ -114,7 +112,10 @@ function isBlockedIpv4(ip: string): boolean {
 
 function isBlockedIpv6(ip: string): boolean {
   // Normalise — strip zone IDs and brackets
-  const addr = ip.replace(/^.*%.*$/, '').replace(/^\[|\]$/g, '').toLowerCase();
+  const addr = ip
+    .replace(/^.*%.*$/, '')
+    .replace(/^\[|\]$/g, '')
+    .toLowerCase();
 
   // Unspecified :: and loopback ::1
   if (addr === '::' || addr === '::1') return true;
@@ -197,9 +198,7 @@ async function assertHostnameResolvesToPublicIp(hostname: string): Promise<strin
   // Validate all resolved IPs
   for (const ip of results) {
     if (isBlockedIp(ip)) {
-      throw new SsrfBlockedError(
-        `Hostname "${hostname}" resolves to blocked IP ${ip}`,
-      );
+      throw new SsrfBlockedError(`Hostname "${hostname}" resolves to blocked IP ${ip}`);
     }
   }
 
@@ -267,7 +266,7 @@ function createPinnedLookup(hostname: string, pinnedIps: string[]): LookupFuncti
     }
 
     // Use the first pinned IP (prefer IPv4 for compatibility)
-    const ipv4 = pinnedIps.find(ip => net.isIPv4(ip));
+    const ipv4 = pinnedIps.find((ip) => net.isIPv4(ip));
     const ip = ipv4 || pinnedIps[0];
     const family = net.isIPv4(ip) ? 4 : 6;
 
@@ -285,7 +284,11 @@ function createPinnedLookup(hostname: string, pinnedIps: string[]): LookupFuncti
  *
  * The caller should pass `REQUEST_TIMEOUT_MS` as the timeout.
  */
-export function buildSafeAxios(timeoutMs: number, hostname: string, pinnedIps: string[]): AxiosInstance {
+export function buildSafeAxios(
+  timeoutMs: number,
+  hostname: string,
+  pinnedIps: string[],
+): AxiosInstance {
   const lookup = createPinnedLookup(hostname, pinnedIps);
 
   return axios.create({
@@ -293,11 +296,11 @@ export function buildSafeAxios(timeoutMs: number, hostname: string, pinnedIps: s
     maxRedirects: 0, // we follow manually below
     validateStatus: () => true,
     // Dedicated agents with pinned DNS lookup
-    httpAgent: new HttpAgent({ 
+    httpAgent: new HttpAgent({
       keepAlive: false,
       lookup: lookup as any, // Node's types are slightly different but compatible
     }),
-    httpsAgent: new HttpsAgent({ 
+    httpsAgent: new HttpsAgent({
       keepAlive: false,
       lookup: lookup as any,
     }),

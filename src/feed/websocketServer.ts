@@ -3,6 +3,7 @@ import { IncomingMessage } from 'http';
 import { ChannelManager } from '../feed/channelManager';
 import { SubscriptionManager } from '../feed/subscriptionManager';
 import { deliveryService } from '../feed/deliveryService';
+import { logger } from '../logger';
 
 interface WebSocketConnection {
   id: string;
@@ -65,7 +66,7 @@ export class FeedWebSocketServer {
 
       this.connections.set(connectionId, connection);
 
-      console.log(`WebSocket connected: ${connectionId}, channels: ${channels.join(', ')}`);
+      logger.info(`WebSocket connected: ${connectionId}, channels: ${channels.join(', ')}`);
 
       // Send welcome message
       ws.send(
@@ -83,11 +84,11 @@ export class FeedWebSocketServer {
 
       ws.on('close', () => {
         this.connections.delete(connectionId);
-        console.log(`WebSocket disconnected: ${connectionId}`);
+        logger.info(`WebSocket disconnected: ${connectionId}`);
       });
 
       ws.on('error', (error) => {
-        console.error(`WebSocket error for ${connectionId}:`, error);
+        logger.error(`WebSocket error for ${connectionId}:`, error);
         this.connections.delete(connectionId);
       });
 
@@ -120,7 +121,7 @@ export class FeedWebSocketServer {
           break;
       }
     } catch (error) {
-      console.error(`Failed to handle WebSocket message from ${connectionId}:`, error);
+      logger.error(`Failed to handle WebSocket message from ${connectionId}:`, error);
     }
   }
 

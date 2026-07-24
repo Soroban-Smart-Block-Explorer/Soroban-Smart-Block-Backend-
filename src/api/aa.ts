@@ -17,6 +17,7 @@ import { Router, Request, Response } from 'express';
 import { prismaRead as prisma } from '../db';
 import { z } from 'zod';
 import { validateAddressParam } from '../middleware/sanitize';
+import { asyncHandler } from '../middleware/asyncHandler';
 
 export const aaRouter = Router();
 
@@ -33,53 +34,56 @@ const walletFilterSchema = pageSchema.extend({
 
 // ── GET /aa/wallets ───────────────────────────────────────────────────────────
 
-aaRouter.get('/wallets', async (req: Request, res: Response) => {
-  try {
-    const { page, limit, type, deployer, authMethod } = walletFilterSchema.parse(req.query);
-    const skip = (page - 1) * limit;
+aaRouter.get(
+  '/wallets',
+  asyncHandler(async (req: Request, res: Response) => {
+    try {
+      const { page, limit, type, deployer, authMethod } = walletFilterSchema.parse(req.query);
+      const skip = (page - 1) * limit;
 
-    // authMethod filter uses a PostgreSQL JSON contains check
-    const where: Record<string, unknown> = {
-      ...(type ? { walletType: type } : {}),
-      ...(deployer ? { deployedByAccount: deployer } : {}),
-      ...(authMethod ? { authMethods: { array_contains: [authMethod] } } : {}),
-    };
+      // authMethod filter uses a PostgreSQL JSON contains check
+      const where: Record<string, unknown> = {
+        ...(type ? { walletType: type } : {}),
+        ...(deployer ? { deployedByAccount: deployer } : {}),
+        ...(authMethod ? { authMethods: { array_contains: [authMethod] } } : {}),
+      };
 
-    const [wallets, total] = await Promise.all([
-      prisma.smartWallet.findMany({
-        where,
-        orderBy: { lastSeenLedger: 'desc' },
-        skip,
-        take: limit,
-        select: {
-          address: true,
-          walletType: true,
-          signerCount: true,
-          threshold: true,
-          authMethods: true,
-          deployedAtLedger: true,
-          deployedByAccount: true,
-          firstSeenLedger: true,
-          lastSeenLedger: true,
-          txCount: true,
-          sponsoredTxCount: true,
-        },
-      }),
-      prisma.smartWallet.count({ where }),
-    ]);
+      const [wallets, total] = await Promise.all([
+        prisma.smartWallet.findMany({
+          where,
+          orderBy: { lastSeenLedger: 'desc' },
+          skip,
+          take: limit,
+          select: {
+            address: true,
+            walletType: true,
+            signerCount: true,
+            threshold: true,
+            authMethods: true,
+            deployedAtLedger: true,
+            deployedByAccount: true,
+            firstSeenLedger: true,
+            lastSeenLedger: true,
+            txCount: true,
+            sponsoredTxCount: true,
+          },
+        }),
+        prisma.smartWallet.count({ where }),
+      ]);
 
-    res.json({ data: wallets, total, page, limit });
-  } catch (e) {
-    res.status(400).json({ error: String(e) });
-  }
-});
+      res.json({ data: wallets, total, page, limit });
+    } catch (e) {
+      res.status(400).json({ error: String(e) });
+    }
+  }),
+);
 
 // ── GET /aa/wallets/:address ──────────────────────────────────────────────────
 
 aaRouter.get(
   '/wallets/:address',
   validateAddressParam('address'),
-  async (req: Request, res: Response) => {
+  asyncHandler(async (req: Request, res: Response) => {
     try {
       const wallet = await prisma.smartWallet.findUnique({
         where: { address: req.params.address },
@@ -118,7 +122,7 @@ aaRouter.get(
     } catch (e) {
       res.status(400).json({ error: String(e) });
     }
-  },
+  }),
 );
 
 // ── GET /aa/wallets/:address/auth ─────────────────────────────────────────────
@@ -126,7 +130,7 @@ aaRouter.get(
 aaRouter.get(
   '/wallets/:address/auth',
   validateAddressParam('address'),
-  async (req: Request, res: Response) => {
+  asyncHandler(async (req: Request, res: Response) => {
     try {
       const { page, limit } = pageSchema.parse(req.query);
       const skip = (page - 1) * limit;
@@ -146,54 +150,60 @@ aaRouter.get(
     } catch (e) {
       res.status(400).json({ error: String(e) });
     }
-  },
+  }),
 );
 
 // ── GET /aa/sponsored ─────────────────────────────────────────────────────────
 
-aaRouter.get('/sponsored', async (req: Request, res: Response) => {
-  try {
-    const { page, limit } = pageSchema.parse(req.query);
-    const skip = (page - 1) * limit;
+aaRouter.get(
+  '/sponsored',
+  asyncHandler(async (req: Request, res: Response) => {
+    try {
+      const { page, limit } = pageSchema.parse(req.query);
+      const skip = (page - 1) * limit;
 
-    const [txs, total] = await Promise.all([
-      prisma.sponsoredTransaction.findMany({
-        orderBy: { ledgerSequence: 'desc' },
-        skip,
-        take: limit,
-      }),
-      prisma.sponsoredTransaction.count(),
-    ]);
+      const [txs, total] = await Promise.all([
+        prisma.sponsoredTransaction.findMany({
+          orderBy: { ledgerSequence: 'desc' },
+          skip,
+          take: limit,
+        }),
+        prisma.sponsoredTransaction.count(),
+      ]);
 
-    res.json({ data: txs, total, page, limit });
-  } catch (e) {
-    res.status(400).json({ error: String(e) });
-  }
-});
+      res.json({ data: txs, total, page, limit });
+    } catch (e) {
+      res.status(400).json({ error: String(e) });
+    }
+  }),
+);
 
 // ── GET /aa/sponsored/:sponsor ────────────────────────────────────────────────
 
-aaRouter.get('/sponsored/:sponsor', async (req: Request, res: Response) => {
-  try {
-    const { page, limit } = pageSchema.parse(req.query);
-    const skip = (page - 1) * limit;
-    const sponsor = req.params.sponsor;
+aaRouter.get(
+  '/sponsored/:sponsor',
+  asyncHandler(async (req: Request, res: Response) => {
+    try {
+      const { page, limit } = pageSchema.parse(req.query);
+      const skip = (page - 1) * limit;
+      const sponsor = req.params.sponsor;
 
-    const [txs, total] = await Promise.all([
-      prisma.sponsoredTransaction.findMany({
-        where: { sponsorAccount: sponsor },
-        orderBy: { ledgerSequence: 'desc' },
-        skip,
-        take: limit,
-      }),
-      prisma.sponsoredTransaction.count({ where: { sponsorAccount: sponsor } }),
-    ]);
+      const [txs, total] = await Promise.all([
+        prisma.sponsoredTransaction.findMany({
+          where: { sponsorAccount: sponsor },
+          orderBy: { ledgerSequence: 'desc' },
+          skip,
+          take: limit,
+        }),
+        prisma.sponsoredTransaction.count({ where: { sponsorAccount: sponsor } }),
+      ]);
 
-    res.json({ data: txs, total, page, limit });
-  } catch (e) {
-    res.status(400).json({ error: String(e) });
-  }
-});
+      res.json({ data: txs, total, page, limit });
+    } catch (e) {
+      res.status(400).json({ error: String(e) });
+    }
+  }),
+);
 
 // ── GET /aa/wallets/:address/signers ──────────────────────────────────────────
 // Historical signer-snapshot timeline for threshold trend analysis
@@ -201,7 +211,7 @@ aaRouter.get('/sponsored/:sponsor', async (req: Request, res: Response) => {
 aaRouter.get(
   '/wallets/:address/signers',
   validateAddressParam('address'),
-  async (req: Request, res: Response) => {
+  asyncHandler(async (req: Request, res: Response) => {
     try {
       const { page, limit } = pageSchema.parse(req.query);
       const skip = (page - 1) * limit;
@@ -228,7 +238,7 @@ aaRouter.get(
     } catch (e) {
       res.status(400).json({ error: String(e) });
     }
-  },
+  }),
 );
 
 // ── GET /aa/wallets/:address/sessions ─────────────────────────────────────────
@@ -237,7 +247,7 @@ aaRouter.get(
 aaRouter.get(
   '/wallets/:address/sessions',
   validateAddressParam('address'),
-  async (req: Request, res: Response) => {
+  asyncHandler(async (req: Request, res: Response) => {
     try {
       const { page, limit } = pageSchema.parse(req.query);
       const skip = (page - 1) * limit;
@@ -259,15 +269,17 @@ aaRouter.get(
     } catch (e) {
       res.status(400).json({ error: String(e) });
     }
-  },
+  }),
 );
 
 // ── GET /aa/adoption ──────────────────────────────────────────────────────────
 // Time-series: smart wallet first-seen count grouped by ledger bucket (1000-ledger windows)
 
-aaRouter.get('/adoption', async (_req: Request, res: Response) => {
-  try {
-    const rows = await prisma.$queryRaw<{ bucket: number; count: bigint; wallet_type: string }[]>`
+aaRouter.get(
+  '/adoption',
+  asyncHandler(async (_req: Request, res: Response) => {
+    try {
+      const rows = await prisma.$queryRaw<{ bucket: number; count: bigint; wallet_type: string }[]>`
       SELECT
         (("firstSeenLedger" / 1000) * 1000) AS bucket,
         "walletType"                          AS wallet_type,
@@ -277,147 +289,154 @@ aaRouter.get('/adoption', async (_req: Request, res: Response) => {
       ORDER BY bucket ASC
     `;
 
-    // Re-shape into { ledger_bucket, byType: {multi_sig: n, ...}, total: n }[]
-    const bucketMap = new Map<number, Record<string, number>>();
-    for (const row of rows) {
-      const b = Number(row.bucket);
-      if (!bucketMap.has(b)) bucketMap.set(b, {});
-      bucketMap.get(b)![row.wallet_type] = Number(row.count);
+      // Re-shape into { ledger_bucket, byType: {multi_sig: n, ...}, total: n }[]
+      const bucketMap = new Map<number, Record<string, number>>();
+      for (const row of rows) {
+        const b = Number(row.bucket);
+        if (!bucketMap.has(b)) bucketMap.set(b, {});
+        bucketMap.get(b)![row.wallet_type] = Number(row.count);
+      }
+
+      const data = [...bucketMap.entries()]
+        .sort(([a], [b]) => a - b)
+        .map(([bucket, byType]) => ({
+          ledgerBucket: bucket,
+          byType,
+          total: Object.values(byType).reduce((s, n) => s + n, 0),
+        }));
+
+      res.json({ data });
+    } catch (e) {
+      res.status(500).json({ error: String(e) });
     }
-
-    const data = [...bucketMap.entries()]
-      .sort(([a], [b]) => a - b)
-      .map(([bucket, byType]) => ({
-        ledgerBucket: bucket,
-        byType,
-        total: Object.values(byType).reduce((s, n) => s + n, 0),
-      }));
-
-    res.json({ data });
-  } catch (e) {
-    res.status(500).json({ error: String(e) });
-  }
-});
+  }),
+);
 
 // ── GET /aa/analytics ────────────────────────────────────────────────────────
 
-aaRouter.get('/analytics', async (_req: Request, res: Response) => {
-  try {
-    const [
-      totalWallets,
-      byType,
-      totalSponsored,
-      topSponsors,
-      recentDeployments,
-      authMethodBreakdown,
-    ] = await Promise.all([
-      prisma.smartWallet.count(),
+aaRouter.get(
+  '/analytics',
+  asyncHandler(async (_req: Request, res: Response) => {
+    try {
+      const [
+        totalWallets,
+        byType,
+        totalSponsored,
+        topSponsors,
+        recentDeployments,
+        authMethodBreakdown,
+      ] = await Promise.all([
+        prisma.smartWallet.count(),
 
-      prisma.smartWallet.groupBy({
-        by: ['walletType'],
-        _count: { walletType: true },
-        orderBy: { _count: { walletType: 'desc' } },
-      }),
+        prisma.smartWallet.groupBy({
+          by: ['walletType'],
+          _count: { walletType: true },
+          orderBy: { _count: { walletType: 'desc' } },
+        }),
 
-      prisma.sponsoredTransaction.count(),
+        prisma.sponsoredTransaction.count(),
 
-      // Top 10 sponsors by transaction volume
-      prisma.sponsoredTransaction.groupBy({
-        by: ['sponsorAccount'],
-        _count: { sponsorAccount: true },
-        orderBy: { _count: { sponsorAccount: 'desc' } },
-        take: 10,
-      }),
+        // Top 10 sponsors by transaction volume
+        prisma.sponsoredTransaction.groupBy({
+          by: ['sponsorAccount'],
+          _count: { sponsorAccount: true },
+          orderBy: { _count: { sponsorAccount: 'desc' } },
+          take: 10,
+        }),
 
-      // Most recently deployed smart wallets
-      prisma.smartWallet.findMany({
-        orderBy: { deployedAtLedger: 'desc' },
-        take: 5,
-        select: {
-          address: true,
-          walletType: true,
-          deployedAtLedger: true,
-          deployedByAccount: true,
-        },
-      }),
+        // Most recently deployed smart wallets
+        prisma.smartWallet.findMany({
+          orderBy: { deployedAtLedger: 'desc' },
+          take: 5,
+          select: {
+            address: true,
+            walletType: true,
+            deployedAtLedger: true,
+            deployedByAccount: true,
+          },
+        }),
 
-      // Auth decomposition method distribution — raw query because authMethods is Json
-      prisma.$queryRaw<{ methods: string; count: bigint }[]>`
+        // Auth decomposition method distribution — raw query because authMethods is Json
+        prisma.$queryRaw<{ methods: string; count: bigint }[]>`
         SELECT "authMethods"::text AS methods, COUNT(*) AS count
         FROM "AuthDecomposition"
         GROUP BY "authMethods"
         ORDER BY count DESC
         LIMIT 20
       `,
-    ]);
+      ]);
 
-    // Flatten type counts into a plain object
-    const walletsByType = Object.fromEntries(
-      byType.map((r) => [r.walletType, r._count.walletType]),
-    );
+      // Flatten type counts into a plain object
+      const walletsByType = Object.fromEntries(
+        byType.map((r) => [r.walletType, r._count.walletType]),
+      );
 
-    const topSponsorList = topSponsors.map((r) => ({
-      sponsor: r.sponsorAccount,
-      count: r._count.sponsorAccount,
-    }));
+      const topSponsorList = topSponsors.map((r) => ({
+        sponsor: r.sponsorAccount,
+        count: r._count.sponsorAccount,
+      }));
 
-    res.json({
-      data: {
-        totalSmartWallets: totalWallets,
-        walletsByType,
-        totalSponsoredTransactions: totalSponsored,
-        topSponsors: topSponsorList,
-        recentDeployments,
-        authMethodBreakdown: authMethodBreakdown.map((r) => ({
-          methods: r.methods,
-          count: Number(r.count),
-        })),
-      },
-    });
-  } catch (e) {
-    res.status(500).json({ error: String(e) });
-  }
-});
+      res.json({
+        data: {
+          totalSmartWallets: totalWallets,
+          walletsByType,
+          totalSponsoredTransactions: totalSponsored,
+          topSponsors: topSponsorList,
+          recentDeployments,
+          authMethodBreakdown: authMethodBreakdown.map((r) => ({
+            methods: r.methods,
+            count: Number(r.count),
+          })),
+        },
+      });
+    } catch (e) {
+      res.status(500).json({ error: String(e) });
+    }
+  }),
+);
 
 // ── GET /aa/stats ─────────────────────────────────────────────────────────────
 // Lightweight real-time summary for dashboards — one cheap parallel query set.
 
-aaRouter.get('/stats', async (_req: Request, res: Response) => {
-  try {
-    const [totalWallets, totalSponsored, mostCommonType, recentWallets] = await Promise.all([
-      prisma.smartWallet.count(),
-      prisma.sponsoredTransaction.count(),
-      prisma.smartWallet.groupBy({
-        by: ['walletType'],
-        _count: { walletType: true },
-        orderBy: { _count: { walletType: 'desc' } },
-        take: 1,
-      }),
-      prisma.smartWallet.count({
-        where: {
-          firstSeenLedger: {
-            // wallets first seen in the last ~24 h window (≈17280 ledgers at 5 s each)
-            gte:
-              (
-                await prisma.smartWallet.findFirst({
-                  orderBy: { lastSeenLedger: 'desc' },
-                  select: { lastSeenLedger: true },
-                })
-              )?.lastSeenLedger ?? 0 - 17280,
+aaRouter.get(
+  '/stats',
+  asyncHandler(async (_req: Request, res: Response) => {
+    try {
+      const [totalWallets, totalSponsored, mostCommonType, recentWallets] = await Promise.all([
+        prisma.smartWallet.count(),
+        prisma.sponsoredTransaction.count(),
+        prisma.smartWallet.groupBy({
+          by: ['walletType'],
+          _count: { walletType: true },
+          orderBy: { _count: { walletType: 'desc' } },
+          take: 1,
+        }),
+        prisma.smartWallet.count({
+          where: {
+            firstSeenLedger: {
+              // wallets first seen in the last ~24 h window (≈17280 ledgers at 5 s each)
+              gte:
+                (
+                  await prisma.smartWallet.findFirst({
+                    orderBy: { lastSeenLedger: 'desc' },
+                    select: { lastSeenLedger: true },
+                  })
+                )?.lastSeenLedger ?? 0 - 17280,
+            },
           },
-        },
-      }),
-    ]);
+        }),
+      ]);
 
-    res.json({
-      data: {
-        totalSmartWallets: totalWallets,
-        totalSponsoredTransactions: totalSponsored,
-        mostCommonWalletType: mostCommonType[0]?.walletType ?? null,
-        recentWalletsLast24h: recentWallets,
-      },
-    });
-  } catch (e) {
-    res.status(500).json({ error: String(e) });
-  }
-});
+      res.json({
+        data: {
+          totalSmartWallets: totalWallets,
+          totalSponsoredTransactions: totalSponsored,
+          mostCommonWalletType: mostCommonType[0]?.walletType ?? null,
+          recentWalletsLast24h: recentWallets,
+        },
+      });
+    } catch (e) {
+      res.status(500).json({ error: String(e) });
+    }
+  }),
+);
