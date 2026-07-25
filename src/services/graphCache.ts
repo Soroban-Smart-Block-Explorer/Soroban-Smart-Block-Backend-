@@ -106,7 +106,7 @@ export class GraphQueryCache {
     executionTime: number,
     nodeCount: number,
     edgeCount: number,
-    ttl: number = 300 // 5 minutes default
+    ttl: number = 300, // 5 minutes default
   ): Promise<void> {
     if (!this.isConnected) {
       return;
@@ -140,7 +140,7 @@ export class GraphQueryCache {
 
     try {
       const keys = await this.cache.keys(`graph:query:*${pattern}*`);
-      
+
       if (keys.length > 0) {
         await this.cache.del(...keys);
         this.metrics.evictions += keys.length;
@@ -190,7 +190,7 @@ export class GraphQueryCache {
 
     try {
       const keys = await this.cache.keys('graph:query:*');
-      
+
       if (keys.length > 0) {
         await this.cache.del(...keys);
         this.metrics.evictions += keys.length;
@@ -226,9 +226,8 @@ export class GraphQueryCache {
    */
   private updateHitRate(): void {
     this.metrics.totalQueries = this.metrics.hits + this.metrics.misses;
-    this.metrics.hitRate = this.metrics.totalQueries > 0
-      ? this.metrics.hits / this.metrics.totalQueries
-      : 0;
+    this.metrics.hitRate =
+      this.metrics.totalQueries > 0 ? this.metrics.hits / this.metrics.totalQueries : 0;
   }
 
   /**

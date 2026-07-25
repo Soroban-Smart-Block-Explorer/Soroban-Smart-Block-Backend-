@@ -23,6 +23,7 @@
 import { Router, Request, Response } from 'express';
 import { prismaRead } from '../db';
 import { cacheGet, cacheSet } from '../cache';
+import { asyncHandler } from '../middleware/asyncHandler';
 
 export const auditEmbedRouter = Router();
 
@@ -45,92 +46,95 @@ function riskColor(s: number) {
 
 // ── GET /data/:address — public JSON for the widget ───────────────────────────
 
-auditEmbedRouter.get('/data/:address', async (req: Request, res: Response) => {
-  try {
-    const { address } = req.params;
-    const cacheKey = `embed:data:${address}`;
-    const cached = await cacheGet(cacheKey);
-    if (cached) {
+auditEmbedRouter.get(
+  '/data/:address',
+  asyncHandler(async (req: Request, res: Response) => {
+    try {
+      const { address } = req.params;
+      const cacheKey = `embed:data:${address}`;
+      const cached = await cacheGet(cacheKey);
+      if (cached) {
+        res.setHeader('Cache-Control', 'public, max-age=300');
+        res.setHeader('Access-Control-Allow-Origin', '*');
+        return res.json(cached);
+      }
+
+      const cert = await prismaRead.auditCertificate.findFirst({
+        where: { contractAddress: address, status: 'published' },
+        orderBy: { version: 'desc' },
+        select: {
+          id: true,
+          version: true,
+          overallScore: true,
+          securityScore: true,
+          governanceScore: true,
+          economicScore: true,
+          complianceScore: true,
+          liquidityScore: true,
+          totalFindings: true,
+          criticalFindings: true,
+          highFindings: true,
+          openFindings: true,
+          generatedAt: true,
+          expiresAt: true,
+          certificateHash: true,
+          anchorTxHash: true,
+        },
+      });
+
+      const contract = await prismaRead.contract.findUnique({
+        where: { address },
+        select: { name: true, tokenSymbol: true, isToken: true },
+      });
+
+      if (!cert) {
+        const result = { audited: false, contractAddress: address };
+        await cacheSet(cacheKey, result, 60);
+        res.setHeader('Access-Control-Allow-Origin', '*');
+        res.setHeader('Cache-Control', 'public, max-age=60');
+        return res.json(result);
+      }
+
+      const result = {
+        audited: true,
+        contractAddress: address,
+        contractName: contract?.name ?? contract?.tokenSymbol ?? null,
+        version: cert.version,
+        overallScore: cert.overallScore,
+        grade: scoreGrade(cert.overallScore),
+        riskLevel: riskLabel(cert.overallScore),
+        riskColor: riskColor(cert.overallScore),
+        scores: {
+          security: cert.securityScore,
+          governance: cert.governanceScore,
+          economic: cert.economicScore,
+          compliance: cert.complianceScore,
+          liquidity: cert.liquidityScore,
+        },
+        findings: {
+          total: cert.totalFindings,
+          critical: cert.criticalFindings,
+          high: cert.highFindings,
+          open: cert.openFindings,
+        },
+        anchored: !!cert.anchorTxHash,
+        generatedAt: cert.generatedAt,
+        expiresAt: cert.expiresAt,
+        certId: cert.id,
+        verifyUrl: `${BASE_URL()}/api/v1/audit/verify/${cert.id}`,
+        reportUrl: `${BASE_URL()}/api/v1/contracts/${address}/audit`,
+        badgeUrl: `${BASE_URL()}/api/v1/contracts/${address}/audit/badge.svg`,
+      };
+
+      await cacheSet(cacheKey, result, 300);
+      res.setHeader('Access-Control-Allow-Origin', '*');
       res.setHeader('Cache-Control', 'public, max-age=300');
-      res.setHeader('Access-Control-Allow-Origin', '*');
-      return res.json(cached);
+      res.json(result);
+    } catch (e) {
+      res.status(500).json({ error: String(e) });
     }
-
-    const cert = await prismaRead.auditCertificate.findFirst({
-      where: { contractAddress: address, status: 'published' },
-      orderBy: { version: 'desc' },
-      select: {
-        id: true,
-        version: true,
-        overallScore: true,
-        securityScore: true,
-        governanceScore: true,
-        economicScore: true,
-        complianceScore: true,
-        liquidityScore: true,
-        totalFindings: true,
-        criticalFindings: true,
-        highFindings: true,
-        openFindings: true,
-        generatedAt: true,
-        expiresAt: true,
-        certificateHash: true,
-        anchorTxHash: true,
-      },
-    });
-
-    const contract = await prismaRead.contract.findUnique({
-      where: { address },
-      select: { name: true, tokenSymbol: true, isToken: true },
-    });
-
-    if (!cert) {
-      const result = { audited: false, contractAddress: address };
-      await cacheSet(cacheKey, result, 60);
-      res.setHeader('Access-Control-Allow-Origin', '*');
-      res.setHeader('Cache-Control', 'public, max-age=60');
-      return res.json(result);
-    }
-
-    const result = {
-      audited: true,
-      contractAddress: address,
-      contractName: contract?.name ?? contract?.tokenSymbol ?? null,
-      version: cert.version,
-      overallScore: cert.overallScore,
-      grade: scoreGrade(cert.overallScore),
-      riskLevel: riskLabel(cert.overallScore),
-      riskColor: riskColor(cert.overallScore),
-      scores: {
-        security: cert.securityScore,
-        governance: cert.governanceScore,
-        economic: cert.economicScore,
-        compliance: cert.complianceScore,
-        liquidity: cert.liquidityScore,
-      },
-      findings: {
-        total: cert.totalFindings,
-        critical: cert.criticalFindings,
-        high: cert.highFindings,
-        open: cert.openFindings,
-      },
-      anchored: !!cert.anchorTxHash,
-      generatedAt: cert.generatedAt,
-      expiresAt: cert.expiresAt,
-      certId: cert.id,
-      verifyUrl: `${BASE_URL()}/api/v1/audit/verify/${cert.id}`,
-      reportUrl: `${BASE_URL()}/api/v1/contracts/${address}/audit`,
-      badgeUrl: `${BASE_URL()}/api/v1/contracts/${address}/audit/badge.svg`,
-    };
-
-    await cacheSet(cacheKey, result, 300);
-    res.setHeader('Access-Control-Allow-Origin', '*');
-    res.setHeader('Cache-Control', 'public, max-age=300');
-    res.json(result);
-  } catch (e) {
-    res.status(500).json({ error: String(e) });
-  }
-});
+  }),
+);
 
 // ── GET /widget.css — standalone widget stylesheet ───────────────────────────
 
@@ -351,42 +355,44 @@ auditEmbedRouter.get('/widget.js', (_req: Request, res: Response) => {
 
 // ── GET /snippet/:address — embed code snippets ───────────────────────────────
 
-auditEmbedRouter.get('/snippet/:address', async (req: Request, res: Response) => {
-  try {
-    const { address } = req.params;
-    const base = BASE_URL();
-    const format = (req.query.format as string) ?? 'all';
+auditEmbedRouter.get(
+  '/snippet/:address',
+  asyncHandler(async (req: Request, res: Response) => {
+    try {
+      const { address } = req.params;
+      const base = BASE_URL();
+      const format = (req.query.format as string) ?? 'all';
 
-    // Verify contract has an audit
-    const cert = await prismaRead.auditCertificate.findFirst({
-      where: { contractAddress: address, status: 'published' },
-      orderBy: { version: 'desc' },
-      select: { overallScore: true, id: true },
-    });
+      // Verify contract has an audit
+      const cert = await prismaRead.auditCertificate.findFirst({
+        where: { contractAddress: address, status: 'published' },
+        orderBy: { version: 'desc' },
+        select: { overallScore: true, id: true },
+      });
 
-    const score = cert?.overallScore ?? null;
-    const grade = score !== null ? scoreGrade(score) : '?';
+      const score = cert?.overallScore ?? null;
+      const grade = score !== null ? scoreGrade(score) : '?';
 
-    const snippets = {
-      html: `<!-- Soroban Audit Widget -->
+      const snippets = {
+        html: `<!-- Soroban Audit Widget -->
 <script src="${base}/api/v1/audit/embed/widget.js" async></script>
 <div data-soroban-audit="${address}" data-theme="light"></div>`,
 
-      html_dark: `<!-- Soroban Audit Widget (dark theme) -->
+        html_dark: `<!-- Soroban Audit Widget (dark theme) -->
 <script src="${base}/api/v1/audit/embed/widget.js" async></script>
 <div data-soroban-audit="${address}" data-theme="dark"></div>`,
 
-      html_compact: `<!-- Soroban Audit Badge (compact) -->
+        html_compact: `<!-- Soroban Audit Badge (compact) -->
 <script src="${base}/api/v1/audit/embed/widget.js" async></script>
 <div data-soroban-audit="${address}" data-compact="true"></div>`,
 
-      badge_img: `<a href="${base}/api/v1/contracts/${address}/audit" target="_blank">
+        badge_img: `<a href="${base}/api/v1/contracts/${address}/audit" target="_blank">
   <img src="${base}/api/v1/contracts/${address}/audit/badge.svg" alt="Soroban Audit Score: ${score ?? 'N/A'}" />
 </a>`,
 
-      markdown: `[![Soroban Audit](${base}/api/v1/contracts/${address}/audit/badge.svg)](${base}/api/v1/contracts/${address}/audit)`,
+        markdown: `[![Soroban Audit](${base}/api/v1/contracts/${address}/audit/badge.svg)](${base}/api/v1/contracts/${address}/audit)`,
 
-      react: `import { useEffect, useRef } from 'react';
+        react: `import { useEffect, useRef } from 'react';
 
 export function AuditWidget({ address }) {
   const ref = useRef(null);
@@ -403,9 +409,9 @@ export function AuditWidget({ address }) {
 
 // Usage: <AuditWidget address="${address}" />`,
 
-      wordpress: `[soroban_audit address="${address}" theme="light"]`,
+        wordpress: `[soroban_audit address="${address}" theme="light"]`,
 
-      javascript: `<script>
+        javascript: `<script>
   // Programmatic usage — call after the script loads
 </script>
 <div id="my-audit"></div>
@@ -417,26 +423,27 @@ export function AuditWidget({ address }) {
   });
 "></script>`,
 
-      json_api: `curl "${base}/api/v1/audit/embed/data/${address}"`,
-    };
+        json_api: `curl "${base}/api/v1/audit/embed/data/${address}"`,
+      };
 
-    if (format !== 'all' && format in snippets) {
-      return res.type('text/plain').send(snippets[format as keyof typeof snippets]);
+      if (format !== 'all' && format in snippets) {
+        return res.type('text/plain').send(snippets[format as keyof typeof snippets]);
+      }
+
+      res.json({
+        contractAddress: address,
+        auditScore: score,
+        grade,
+        snippets,
+        widgetScriptUrl: `${base}/api/v1/audit/embed/widget.js`,
+        badgeUrl: `${base}/api/v1/contracts/${address}/audit/badge.svg`,
+        dataApiUrl: `${base}/api/v1/audit/embed/data/${address}`,
+      });
+    } catch (e) {
+      res.status(500).json({ error: String(e) });
     }
-
-    res.json({
-      contractAddress: address,
-      auditScore: score,
-      grade,
-      snippets,
-      widgetScriptUrl: `${base}/api/v1/audit/embed/widget.js`,
-      badgeUrl: `${base}/api/v1/contracts/${address}/audit/badge.svg`,
-      dataApiUrl: `${base}/api/v1/audit/embed/data/${address}`,
-    });
-  } catch (e) {
-    res.status(500).json({ error: String(e) });
-  }
-});
+  }),
+);
 
 // ── GET /wordpress-plugin.zip — WordPress plugin archive ─────────────────────
 // Serves a ready-to-install WordPress plugin that adds a [soroban_audit] shortcode.

@@ -189,7 +189,10 @@ describe('developer/keys', () => {
 
   it('validates update key schema is optional', async () => {
     const { z } = await import('zod');
-    const schema = z.object({ name: z.string().min(1).optional(), permissions: z.record(z.unknown()).optional() });
+    const schema = z.object({
+      name: z.string().min(1).optional(),
+      permissions: z.record(z.unknown()).optional(),
+    });
     expect(schema.safeParse({}).success).toBe(true);
     expect(schema.safeParse({ name: 'Updated' }).success).toBe(true);
   });
@@ -208,9 +211,16 @@ describe('developer/webhooks', () => {
       url: z.string().url(),
       events: z.array(z.string()).min(1),
     });
-    expect(schema.safeParse({ developerId: 'd1', url: 'https://example.com', events: ['tx.created'] }).success).toBe(true);
-    expect(schema.safeParse({ developerId: 'd1', url: 'not-a-url', events: ['tx.created'] }).success).toBe(false);
-    expect(schema.safeParse({ developerId: 'd1', url: 'https://example.com', events: [] }).success).toBe(false);
+    expect(
+      schema.safeParse({ developerId: 'd1', url: 'https://example.com', events: ['tx.created'] })
+        .success,
+    ).toBe(true);
+    expect(
+      schema.safeParse({ developerId: 'd1', url: 'not-a-url', events: ['tx.created'] }).success,
+    ).toBe(false);
+    expect(
+      schema.safeParse({ developerId: 'd1', url: 'https://example.com', events: [] }).success,
+    ).toBe(false);
   });
 
   it('generates unique webhook secrets', async () => {
@@ -259,7 +269,10 @@ describe('developer/billing', () => {
 
   it('validates payment currency is XLM, USDC, or TOKEN', async () => {
     const { z } = await import('zod');
-    const schema = z.object({ currency: z.enum(['XLM', 'USDC', 'TOKEN']), amount: z.number().positive() });
+    const schema = z.object({
+      currency: z.enum(['XLM', 'USDC', 'TOKEN']),
+      amount: z.number().positive(),
+    });
     expect(schema.safeParse({ currency: 'XLM', amount: 10 }).success).toBe(true);
     expect(schema.safeParse({ currency: 'ETH', amount: 10 }).success).toBe(false);
     expect(schema.safeParse({ currency: 'XLM', amount: -5 }).success).toBe(false);
@@ -288,7 +301,18 @@ describe('developer/portal', () => {
 
   it('validates SDK language options', async () => {
     const { z } = await import('zod');
-    const LANGUAGES = ['javascript', 'typescript', 'python', 'rust', 'go', 'java', 'kotlin', 'swift', 'php', 'ruby'];
+    const LANGUAGES = [
+      'javascript',
+      'typescript',
+      'python',
+      'rust',
+      'go',
+      'java',
+      'kotlin',
+      'swift',
+      'php',
+      'ruby',
+    ];
     const schema = z.object({ language: z.enum(LANGUAGES as [string, ...string[]]) });
     expect(schema.safeParse({ language: 'python' }).success).toBe(true);
     expect(schema.safeParse({ language: 'cobol' }).success).toBe(false);
@@ -296,9 +320,21 @@ describe('developer/portal', () => {
 
   it('validates support ticket requires subject and description', async () => {
     const { z } = await import('zod');
-    const schema = z.object({ developerId: z.string(), subject: z.string().min(5), description: z.string().min(10) });
-    expect(schema.safeParse({ developerId: 'd1', subject: 'Help me', description: 'I need assistance with auth' }).success).toBe(true);
-    expect(schema.safeParse({ developerId: 'd1', subject: 'Hi', description: 'Short' }).success).toBe(false);
+    const schema = z.object({
+      developerId: z.string(),
+      subject: z.string().min(5),
+      description: z.string().min(10),
+    });
+    expect(
+      schema.safeParse({
+        developerId: 'd1',
+        subject: 'Help me',
+        description: 'I need assistance with auth',
+      }).success,
+    ).toBe(true);
+    expect(
+      schema.safeParse({ developerId: 'd1', subject: 'Hi', description: 'Short' }).success,
+    ).toBe(false);
   });
 });
 

@@ -21,8 +21,7 @@ import type {
   OrderStatus,
 } from '../types';
 
-const BASE_URL =
-  process.env.RAMP_NETWORK_BASE_URL ?? 'https://api.ramp.network/api/host-api';
+const BASE_URL = process.env.RAMP_NETWORK_BASE_URL ?? 'https://api.ramp.network/api/host-api';
 const API_KEY = process.env.RAMP_NETWORK_API_KEY ?? '';
 const PLATFORM_FEE_PCT = parseFloat(process.env.RAMP_PLATFORM_FEE_PCT ?? '0.5') / 100;
 
@@ -155,9 +154,12 @@ export class RampNetworkAdapter implements RampProviderAdapter {
 
   async getOrderStatus(providerOrderId: string): Promise<ProviderOrderStatus> {
     try {
-      const data = await rampFetch<{ id: string; status: string; asset?: { amount: number }; txHash?: string }>(
-        `/purchase/${providerOrderId}`,
-      );
+      const data = await rampFetch<{
+        id: string;
+        status: string;
+        asset?: { amount: number };
+        txHash?: string;
+      }>(`/purchase/${providerOrderId}`);
       return {
         providerOrderId: data.id,
         status: mapStatus(data.status),

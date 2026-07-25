@@ -86,27 +86,16 @@ module.exports = {
                 (arg.type === 'ArrowFunctionExpression' || arg.type === 'FunctionExpression') &&
                 arg.async
               ) {
-                const body = arg.body;
-                let hasTopLevelTryCatch = false;
-                if (body.type === 'BlockStatement' && body.body.length > 0) {
-                  const tryStmts = body.body.filter((stmt) => stmt.type === 'TryStatement');
-                  if (tryStmts.length === 1 && body.body.length === 1) {
-                    hasTopLevelTryCatch = true;
-                  }
-                }
-
-                if (!hasTopLevelTryCatch) {
-                  context.report({
-                    node: arg,
-                    messageId: 'missingAsyncHandler',
-                    fix(fixer) {
-                      return [
-                        fixer.insertTextBefore(arg, 'asyncHandler('),
-                        fixer.insertTextAfter(arg, ')'),
-                      ];
-                    },
-                  });
-                }
+                context.report({
+                  node: arg,
+                  messageId: 'missingAsyncHandler',
+                  fix(fixer) {
+                    return [
+                      fixer.insertTextBefore(arg, 'asyncHandler('),
+                      fixer.insertTextAfter(arg, ')'),
+                    ];
+                  },
+                });
               }
             }
           },

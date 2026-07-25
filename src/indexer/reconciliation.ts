@@ -8,6 +8,7 @@
 import axios from 'axios';
 import { prismaRead as prisma } from '../db';
 import { config } from '../config';
+import { logger } from '../logger';
 
 export interface ReconciliationReport {
   timestamp: string;
@@ -80,13 +81,13 @@ async function sendAlert(message: string): Promise<void> {
         { text: `🚨 Soroban Indexer Alert\n${message}` },
         { timeout: 5_000 },
       );
-      console.log('[reconciliation] Alert sent to webhook');
+      logger.info('[reconciliation] Alert sent to webhook');
     } catch (err) {
-      console.error('[reconciliation] Failed to send webhook alert:', err);
+      logger.error('[reconciliation] Failed to send webhook alert:', err);
     }
   } else {
     // Fallback: log prominently to stderr
-    console.error(`\n${'='.repeat(60)}\n🚨 RECONCILIATION ALERT\n${message}\n${'='.repeat(60)}\n`);
+    logger.error(`\n${'='.repeat(60)}\n🚨 RECONCILIATION ALERT\n${message}\n${'='.repeat(60)}\n`);
   }
 }
 
@@ -98,7 +99,7 @@ export async function runReconciliation(lookbackLedgers = 1000): Promise<Reconci
   const timestamp = new Date().toISOString();
   const discrepancies: string[] = [];
 
-  console.log(`[reconciliation] Starting audit at ${timestamp}`);
+  logger.info(`[reconciliation] Starting audit at ${timestamp}`);
 
   // 1. Get local stats
   const [localLedgerCount, localTxCount, localLatestLedgerRow] = await Promise.all([
@@ -116,7 +117,7 @@ export async function runReconciliation(lookbackLedgers = 1000): Promise<Reconci
   } catch (err) {
     const msg = `Failed to reach Horizon: ${err}`;
     discrepancies.push(msg);
-    console.error(`[reconciliation] ${msg}`);
+    logger.error(`[reconciliation] ${msg}`);
   }
 
   // 3. Check ledger gap
@@ -157,7 +158,7 @@ export async function runReconciliation(lookbackLedgers = 1000): Promise<Reconci
   };
 
   // 5. Log report
-  console.log('[reconciliation] Report:', JSON.stringify(report, null, 2));
+  logger.info('[reconciliation] Report:', JSON.stringify(report, null, 2));
 
   // 6. Alert if unhealthy
   if (!healthy) {
@@ -171,7 +172,7 @@ export async function runReconciliation(lookbackLedgers = 1000): Promise<Reconci
     ].join('\n');
     await sendAlert(alertMsg);
   } else {
-    console.log('[reconciliation] ✅ All checks passed — no discrepancies found');
+    logger.info('[reconciliation] ✅ All checks passed — no discrepancies found');
   }
 
   return report;
@@ -184,14 +185,14 @@ export async function runReconciliation(lookbackLedgers = 1000): Promise<Reconci
 export function scheduleReconciliation(): NodeJS.Timeout {
   const INTERVAL_MS = 24 * 60 * 60 * 1000; // 24 hours
 
-  console.log('[reconciliation] Daily reconciliation job scheduled');
+  logger.info('[reconciliation] Daily reconciliation job scheduled');
 
   // Run once at startup (after a short delay to let the indexer warm up)
   const initialDelay = setTimeout(async () => {
     try {
       await runReconciliation();
     } catch (err) {
-      console.error('[reconciliation] Initial run failed:', err);
+      logger.error('[reconciliation] Initial run failed:', err);
     }
   }, 60_000); // 1 minute after startup
 
@@ -200,7 +201,7 @@ export function scheduleReconciliation(): NodeJS.Timeout {
     try {
       await runReconciliation();
     } catch (err) {
-      console.error('[reconciliation] Scheduled run failed:', err);
+      logger.error('[reconciliation] Scheduled run failed:', err);
     }
   }, INTERVAL_MS);
 

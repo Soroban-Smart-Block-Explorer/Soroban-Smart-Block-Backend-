@@ -86,10 +86,7 @@ export class GraphTemplates {
    * Template 2: K-Hop Neighborhood (Wallet Risk Assessment)
    * Analyze wallet's immediate network for risk scoring
    */
-  async kHopNeighborhood(params: {
-    address: string;
-    hops?: number;
-  }): Promise<GraphTemplateResult> {
+  async kHopNeighborhood(params: { address: string; hops?: number }): Promise<GraphTemplateResult> {
     const schema = z.object({
       address: z.string(),
       hops: z.number().int().min(1).max(5).optional().default(3),
@@ -173,9 +170,7 @@ export class GraphTemplates {
    * Template 4: Influence Maximization (DeFi Contract Hubs)
    * Identify most connected contracts using degree centrality
    */
-  async influenceMaximization(params: {
-    limit?: number;
-  }): Promise<GraphTemplateResult> {
+  async influenceMaximization(params: { limit?: number }): Promise<GraphTemplateResult> {
     const schema = z.object({
       limit: z.number().int().min(1).max(100).optional().default(50),
     });
@@ -404,7 +399,7 @@ export class GraphTemplates {
     for (const item of data) {
       const degree = item.degree || 0;
       const clusterKey = `cluster_${Math.floor(degree / 10)}`;
-      
+
       if (!clusters[clusterKey]) {
         clusters[clusterKey] = [];
       }
@@ -418,7 +413,8 @@ export class GraphTemplates {
         clusterId,
         members: members.map((m: any) => m.address),
         size: members.length,
-        avgDegree: members.reduce((sum: number, m: any) => sum + (m.degree || 0), 0) / members.length,
+        avgDegree:
+          members.reduce((sum: number, m: any) => sum + (m.degree || 0), 0) / members.length,
       }));
   }
 }

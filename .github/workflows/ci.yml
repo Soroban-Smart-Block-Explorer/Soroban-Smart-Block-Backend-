@@ -48,6 +48,18 @@ jobs:
       - name: Lint
         run: npm run lint
 
+      - name: Check formatting
+        run: npm run format
+
+      - name: Validate prisma imports (must use prismaRead or prismaWrite)
+        run: |
+          RESULT=$(grep -rn "import { prisma } from" --include='*.ts' src/ || true)
+          if [ -n "$RESULT" ]; then
+            echo "ERROR: Found deprecated 'prisma' imports. Use prismaRead or prismaWrite:"
+            echo "$RESULT"
+            exit 1
+          fi
+
       - name: Type-check (src)
         run: npm run build:strict || echo 'Type errors found (pre-existing)'
 

@@ -3,6 +3,7 @@ import { NextFunction, Request, Response } from 'express';
 import { config } from '../config';
 import { prismaRead } from '../db';
 import { logger } from '../logger';
+import { TIER_CONFIG } from '../auth/rbac';
 import {
   checkTokenBucket,
   RateLimitTier,
@@ -13,16 +14,17 @@ import {
 const developerKeys = new Set((process.env.API_KEYS_DEVELOPER ?? '').split(',').filter(Boolean));
 const premiumKeys = new Set((process.env.API_KEYS_PREMIUM ?? '').split(',').filter(Boolean));
 
-const DEFAULT_TIERS = {
-  premium: { windowMs: 60_000, max: 1000 },
-  developer: { windowMs: 60_000, max: 300 },
-  public: { windowMs: 60_000, max: 100 },
-} as const;
+const DEFAULT_TIERS: Record<TierName, TierConfig> = {
+  free: { windowMs: 60_000, max: TIER_CONFIG.free.rateLimit.perMinute },
+  developer: { windowMs: 60_000, max: TIER_CONFIG.developer.rateLimit.perMinute },
+  premium: { windowMs: 60_000, max: TIER_CONFIG.premium.rateLimit.perMinute },
+  enterprise: { windowMs: 60_000, max: TIER_CONFIG.enterprise.rateLimit.perMinute },
+};
 
-type TierName = keyof typeof DEFAULT_TIERS;
+type TierName = 'free' | 'developer' | 'premium' | 'enterprise';
 type TierConfig = { windowMs: number; max: number };
 type BucketState = { count: number; resetAt: number };
-type Limiters = Record<'premium' | 'developer' | 'public', RateLimitRequestHandler>;
+type Limiters = Record<TierName, RateLimitRequestHandler>;
 
 const overrideCache = new Map<string, { config: TierConfig; expiresAt: number }>();
 const requestBuckets = new Map<string, BucketState>();
@@ -36,7 +38,7 @@ export function normalizeTierConfig(
   input: Partial<Record<TierName, TierConfig>> = {},
 ): Record<TierName, TierConfig> {
   const raw = {
-    public: input.public ?? {
+    free: input.free ?? {
       windowMs: config.rateLimitPublicWindowMs,
       max: config.rateLimitPublicMax,
     },
@@ -48,12 +50,16 @@ export function normalizeTierConfig(
       windowMs: config.rateLimitPremiumWindowMs,
       max: config.rateLimitPremiumMax,
     },
+    enterprise: input.enterprise ?? {
+      windowMs: config.rateLimitPremiumWindowMs,
+      max: config.rateLimitPremiumMax,
+    },
   };
 
   return {
-    public: {
-      windowMs: sanitizeTierValue(raw.public?.windowMs, DEFAULT_TIERS.public.windowMs),
-      max: sanitizeTierValue(raw.public?.max, DEFAULT_TIERS.public.max),
+    free: {
+      windowMs: sanitizeTierValue(raw.free?.windowMs, DEFAULT_TIERS.free.windowMs),
+      max: sanitizeTierValue(raw.free?.max, DEFAULT_TIERS.free.max),
     },
     developer: {
       windowMs: sanitizeTierValue(raw.developer?.windowMs, DEFAULT_TIERS.developer.windowMs),
@@ -62,6 +68,10 @@ export function normalizeTierConfig(
     premium: {
       windowMs: sanitizeTierValue(raw.premium?.windowMs, DEFAULT_TIERS.premium.windowMs),
       max: sanitizeTierValue(raw.premium?.max, DEFAULT_TIERS.premium.max),
+    },
+    enterprise: {
+      windowMs: sanitizeTierValue(raw.enterprise?.windowMs, DEFAULT_TIERS.enterprise.windowMs),
+      max: sanitizeTierValue(raw.enterprise?.max, DEFAULT_TIERS.enterprise.max),
     },
   };
 }
@@ -73,13 +83,13 @@ export function getRateLimitTier(
 ): TierName {
   if (apiKey && premiumApiKeys.has(apiKey)) return 'premium';
   if (apiKey && developerApiKeys.has(apiKey)) return 'developer';
-  return 'public';
+  return 'free';
 }
 
 function getTierFromEnvKey(apiKey: string | undefined): RateLimitTier {
   if (apiKey && premiumKeys.has(apiKey)) return 'pro';
   if (apiKey && developerKeys.has(apiKey)) return 'developer';
-  return 'unauthenticated';
+  return 'free';
 }
 
 function applyAdaptiveThrottle(
@@ -125,7 +135,7 @@ async function getUserOverride(identifier: string, endpoint: string): Promise<Ti
 
     if (!override) {
       overrideCache.set(cacheKey, {
-        config: { windowMs: DEFAULT_TIERS.public.windowMs, max: DEFAULT_TIERS.public.max },
+        config: { windowMs: DEFAULT_TIERS.free.windowMs, max: DEFAULT_TIERS.free.max },
         expiresAt: Date.now() + 60_000,
       });
       return null;
@@ -146,7 +156,7 @@ export function clearRateLimitOverrideCache(): void {
 
 function buildLimiters(store?: Store): Limiters {
   const tiers = normalizeTierConfig();
-  const make = (tierName: keyof Limiters) =>
+  const make = (tierName: TierName) =>
     rateLimit({
       ...tiers[tierName],
       standardHeaders: true,
@@ -155,7 +165,12 @@ function buildLimiters(store?: Store): Limiters {
       ...(store ? { store } : {}),
     });
 
-  return { premium: make('premium'), developer: make('developer'), public: make('public') };
+  return {
+    free: make('free'),
+    developer: make('developer'),
+    premium: make('premium'),
+    enterprise: make('enterprise'),
+  };
 }
 
 let legacyLimiters: Limiters = buildLimiters();
@@ -278,11 +293,13 @@ export async function tieredRateLimit(
     return;
   }
 
-  const legacyTier =
-    tier === 'pro' || tier === 'enterprise'
-      ? 'premium'
-      : tier === 'developer'
-        ? 'developer'
-        : 'public';
+  const legacyTier: TierName =
+    tier === 'enterprise'
+      ? 'enterprise'
+      : tier === 'pro' || tier === 'premium'
+        ? 'premium'
+        : tier === 'developer'
+          ? 'developer'
+          : 'free';
   legacyLimiters[legacyTier](req, res, next);
 }

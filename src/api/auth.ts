@@ -12,6 +12,7 @@ import { issueTokens, hashToken, generateSessionId, REFRESH_TOKEN_TTL } from '..
 import { getJwks, rotateKeys } from '../auth/keys';
 import { getFeatures, featureList } from '../auth/rbac';
 import { requireAuth, requireRole } from '../auth/middleware';
+import { asyncHandler } from '../middleware/asyncHandler';
 
 export const authRouter = Router();
 

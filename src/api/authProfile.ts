@@ -2,6 +2,7 @@ import { Router, Request, Response } from 'express';
 import { prismaWrite as prisma } from '../db';
 import { requireAuth } from '../auth/middleware';
 import { cacheGet, cacheSet } from '../cache';
+import { asyncHandler } from '../middleware/asyncHandler';
 
 export const authProfileRouter = Router();
 

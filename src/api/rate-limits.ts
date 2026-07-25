@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { prismaWrite } from '../db';
 import { clearRateLimitOverrideCache } from '../middleware/rateLimit';
 import { asyncHandler } from '../middleware/asyncHandler';
+import { logger } from '../logger';
 
 const rateLimitOverrideSchema = z.object({
   identifier: z.string().min(1).max(128),
@@ -53,7 +54,7 @@ rateLimitAdminRouter.post(
         },
       });
     } catch (error) {
-      console.error('Failed to save rate limit override', error);
+      logger.error('Failed to save rate limit override', error);
       return res.status(500).json({ error: 'Unable to save rate limit override' });
     }
   }),

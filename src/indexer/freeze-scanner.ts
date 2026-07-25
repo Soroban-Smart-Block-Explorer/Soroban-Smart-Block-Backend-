@@ -10,6 +10,7 @@
  */
 import { xdr } from '@stellar/stellar-sdk';
 import { prismaWrite as prisma } from '../db';
+import { logger } from '../logger';
 
 // ── In-memory cache of active frozen keys ────────────────────────────────────
 
@@ -142,9 +143,9 @@ export async function recordFreezeViolation(
           frozenKeys,
           ledgerSequence,
         }),
-      }).catch((err) => console.error('[freeze-scanner] Failed to send alert webhook', err));
+      }).catch((err) => logger.error('[freeze-scanner] Failed to send alert webhook', err));
     } else {
-      console.warn(`[freeze-scanner] CRITICAL VIOLATION DETECTED for tx ${transactionHash}`);
+      logger.warn(`[freeze-scanner] CRITICAL VIOLATION DETECTED for tx ${transactionHash}`);
     }
   }
 }
@@ -175,7 +176,7 @@ export async function registerFrozenKey(
     },
   });
   invalidateFreezeCache();
-  console.log(
+  logger.info(
     `[freeze-scanner] Registered frozen key for contract ${contractAddress ?? 'unknown'} at ledger ${frozenAtLedger}`,
   );
 }

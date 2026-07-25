@@ -1,4 +1,4 @@
-import { prisma } from '../db';
+import { prismaRead } from '../db';
 import { detectAnomalousPatterns, detectAdminFunctions } from './heuristic-classifier';
 
 export interface AnomalyReport {
@@ -72,7 +72,7 @@ async function checkImpersonation(
   flags: AnomalyFlag[],
 ): Promise<void> {
   try {
-    const knownContracts = await prisma.contract.findMany({
+    const knownContracts = await prismaRead.contract.findMany({
       where: { address: { not: address }, name: { not: null } },
       select: { address: true, name: true, abi: true },
       take: 50,
@@ -108,9 +108,11 @@ async function checkImpersonation(
 }
 
 function computeSeverity(flags: AnomalyFlag[]): AnomalyReport['severity'] {
-  if (flags.some((f) => f.type === 'suspicious_function_name' || f.type === 'impersonation_risk')) return 'critical';
+  if (flags.some((f) => f.type === 'suspicious_function_name' || f.type === 'impersonation_risk'))
+    return 'critical';
   if (flags.some((f) => f.type === 'excessive_admin_functions')) return 'high';
   if (flags.some((f) => f.type === 'no_transfer_guard')) return 'medium';
-  if (flags.some((f) => f.type === 'no_contract_spec' || f.type === 'unverified_contract')) return 'low';
+  if (flags.some((f) => f.type === 'no_contract_spec' || f.type === 'unverified_contract'))
+    return 'low';
   return 'none';
 }

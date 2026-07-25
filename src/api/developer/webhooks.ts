@@ -21,10 +21,7 @@ const isAllowedUrl = (raw: string): boolean => {
   }
 };
 
-const httpsUrl = z
-  .string()
-  .url()
-  .refine(isAllowedUrl, { message: 'Webhook URL must use HTTPS' });
+const httpsUrl = z.string().url().refine(isAllowedUrl, { message: 'Webhook URL must use HTTPS' });
 
 const createWebhookSchema = z.object({
   developerId: z.string(),
