@@ -3,6 +3,7 @@ import { prismaRead } from '../db';
 import { z } from 'zod';
 import { validateAddressParam } from '../middleware/sanitize';
 import { classifyRisk, computeDecentralizationScore } from '../indexer/emergency-indexer';
+import { asyncHandler } from '../middleware/asyncHandler';
 
 export const emergencyRouter = Router();
 
@@ -16,78 +17,81 @@ function formatDuration(seconds: bigint | number | null): string {
 }
 
 // GET /emergency/overview
-emergencyRouter.get('/overview', async (_req: Request, res: Response) => {
-  try {
-    const [pausedStates, total24h, totalEvents, activeIncidents, criticalIncidents] =
-      await Promise.all([
-        prismaRead.emergencyState.findMany({
-          where: { isPaused: true },
+emergencyRouter.get(
+  '/overview',
+  asyncHandler(async (_req: Request, res: Response) => {
+    try {
+      const [pausedStates, total24h, totalEvents, activeIncidents, criticalIncidents] =
+        await Promise.all([
+          prismaRead.emergencyState.findMany({
+            where: { isPaused: true },
+          }),
+          prismaRead.pauseEvent.count({
+            where: {
+              eventType: 'pause',
+              timestamp: { gte: new Date(Date.now() - 86400_000) },
+            },
+          }),
+          prismaRead.pauseEvent.count(),
+          prismaRead.incidentReport.count({ where: { status: { in: ['open', 'investigating'] } } }),
+          prismaRead.incidentReport.count({
+            where: { severity: 'critical', status: { in: ['open', 'investigating'] } },
+          }),
+        ]);
+
+      const contractAddresses = pausedStates.map((s) => s.contractAddress);
+      const [contracts, currentPauseEvents] = await Promise.all([
+        prismaRead.contract.findMany({
+          where: { address: { in: contractAddresses } },
+          select: { address: true, name: true },
         }),
-        prismaRead.pauseEvent.count({
+        prismaRead.pauseEvent.findMany({
           where: {
+            contractAddress: { in: contractAddresses },
             eventType: 'pause',
-            timestamp: { gte: new Date(Date.now() - 86400_000) },
+            id: { in: pausedStates.filter((s) => s.currentPauseId).map((s) => s.currentPauseId!) },
           },
-        }),
-        prismaRead.pauseEvent.count(),
-        prismaRead.incidentReport.count({ where: { status: { in: ['open', 'investigating'] } } }),
-        prismaRead.incidentReport.count({
-          where: { severity: 'critical', status: { in: ['open', 'investigating'] } },
         }),
       ]);
 
-    const contractAddresses = pausedStates.map((s) => s.contractAddress);
-    const [contracts, currentPauseEvents] = await Promise.all([
-      prismaRead.contract.findMany({
-        where: { address: { in: contractAddresses } },
-        select: { address: true, name: true },
-      }),
-      prismaRead.pauseEvent.findMany({
-        where: {
-          contractAddress: { in: contractAddresses },
-          eventType: 'pause',
-          id: { in: pausedStates.filter((s) => s.currentPauseId).map((s) => s.currentPauseId!) },
-        },
-      }),
-    ]);
+      const contractMap = Object.fromEntries(contracts.map((c) => [c.address, c]));
+      const pauseMap = Object.fromEntries(currentPauseEvents.map((e) => [e.contractAddress, e]));
 
-    const contractMap = Object.fromEntries(contracts.map((c) => [c.address, c]));
-    const pauseMap = Object.fromEntries(currentPauseEvents.map((e) => [e.contractAddress, e]));
+      const pausedContracts = pausedStates.map((state) => {
+        const pe = pauseMap[state.contractAddress];
+        const durationSec = pe ? Math.round((Date.now() - pe.timestamp.getTime()) / 1000) : 0;
+        return {
+          contract: state.contractAddress,
+          name: contractMap[state.contractAddress]?.name ?? null,
+          pausedAt: pe?.timestamp ?? null,
+          pauser: pe?.pauserAddress ?? null,
+          duration: formatDuration(durationSec),
+          reason: pe?.reason ?? null,
+          severity: classifyRisk(Number(state.decentralizationScore ?? 0)),
+          pauserType: state.pauserType,
+          decentralizationScore: state.decentralizationScore,
+        };
+      });
 
-    const pausedContracts = pausedStates.map((state) => {
-      const pe = pauseMap[state.contractAddress];
-      const durationSec = pe ? Math.round((Date.now() - pe.timestamp.getTime()) / 1000) : 0;
-      return {
-        contract: state.contractAddress,
-        name: contractMap[state.contractAddress]?.name ?? null,
-        pausedAt: pe?.timestamp ?? null,
-        pauser: pe?.pauserAddress ?? null,
-        duration: formatDuration(durationSec),
-        reason: pe?.reason ?? null,
-        severity: classifyRisk(Number(state.decentralizationScore ?? 0)),
-        pauserType: state.pauserType,
-        decentralizationScore: state.decentralizationScore,
-      };
-    });
-
-    res.json({
-      pausedContracts,
-      totalPausedNow: pausedStates.length,
-      totalPaused24h: total24h,
-      totalHistoricalEvents: totalEvents,
-      activeIncidents,
-      criticalAlerts: criticalIncidents,
-    });
-  } catch (err) {
-    res.status(500).json({ error: String(err) });
-  }
-});
+      res.json({
+        pausedContracts,
+        totalPausedNow: pausedStates.length,
+        totalPaused24h: total24h,
+        totalHistoricalEvents: totalEvents,
+        activeIncidents,
+        criticalAlerts: criticalIncidents,
+      });
+    } catch (err) {
+      res.status(500).json({ error: String(err) });
+    }
+  }),
+);
 
 // GET /emergency/contracts/:address
 emergencyRouter.get(
   '/contracts/:address',
   validateAddressParam,
-  async (req: Request, res: Response) => {
+  asyncHandler(async (req: Request, res: Response) => {
     try {
       const { address } = req.params;
 
@@ -183,7 +187,7 @@ emergencyRouter.get(
     } catch (err) {
       res.status(500).json({ error: String(err) });
     }
-  },
+  }),
 );
 
 function computeDecScore(pa: {
@@ -209,47 +213,53 @@ const eventsQuerySchema = z.object({
 });
 
 // GET /emergency/events
-emergencyRouter.get('/events', async (req: Request, res: Response) => {
-  try {
-    const { contract, type, page, limit } = eventsQuerySchema.parse(req.query);
-    const skip = (page - 1) * limit;
-    const where: any = {
-      ...(contract ? { contractAddress: contract } : {}),
-      ...(type ? { eventType: type } : {}),
-    };
+emergencyRouter.get(
+  '/events',
+  asyncHandler(async (req: Request, res: Response) => {
+    try {
+      const { contract, type, page, limit } = eventsQuerySchema.parse(req.query);
+      const skip = (page - 1) * limit;
+      const where: any = {
+        ...(contract ? { contractAddress: contract } : {}),
+        ...(type ? { eventType: type } : {}),
+      };
 
-    const [data, total] = await Promise.all([
-      prismaRead.pauseEvent.findMany({
-        where,
-        orderBy: { timestamp: 'desc' },
-        skip,
-        take: limit,
-      }),
-      prismaRead.pauseEvent.count({ where }),
-    ]);
+      const [data, total] = await Promise.all([
+        prismaRead.pauseEvent.findMany({
+          where,
+          orderBy: { timestamp: 'desc' },
+          skip,
+          take: limit,
+        }),
+        prismaRead.pauseEvent.count({ where }),
+      ]);
 
-    res.json({ data, total, page, limit });
-  } catch (err) {
-    res.status(500).json({ error: String(err) });
-  }
-});
+      res.json({ data, total, page, limit });
+    } catch (err) {
+      res.status(500).json({ error: String(err) });
+    }
+  }),
+);
 
 // GET /emergency/events/:id
-emergencyRouter.get('/events/:id', async (req: Request, res: Response) => {
-  try {
-    const ev = await prismaRead.pauseEvent.findUnique({ where: { id: req.params.id } });
-    if (!ev) return res.status(404).json({ error: 'Not found' });
-    res.json(ev);
-  } catch (err) {
-    res.status(500).json({ error: String(err) });
-  }
-});
+emergencyRouter.get(
+  '/events/:id',
+  asyncHandler(async (req: Request, res: Response) => {
+    try {
+      const ev = await prismaRead.pauseEvent.findUnique({ where: { id: req.params.id } });
+      if (!ev) return res.status(404).json({ error: 'Not found' });
+      res.json(ev);
+    } catch (err) {
+      res.status(500).json({ error: String(err) });
+    }
+  }),
+);
 
 // GET /emergency/contracts/:address/events
 emergencyRouter.get(
   '/contracts/:address/events',
   validateAddressParam,
-  async (req: Request, res: Response) => {
+  asyncHandler(async (req: Request, res: Response) => {
     try {
       const events = await prismaRead.pauseEvent.findMany({
         where: { contractAddress: req.params.address },
@@ -260,89 +270,100 @@ emergencyRouter.get(
     } catch (err) {
       res.status(500).json({ error: String(err) });
     }
-  },
+  }),
 );
 
 // GET /emergency/stats
-emergencyRouter.get('/stats', async (_req: Request, res: Response) => {
-  try {
-    const [allEvents, byProtocol, byDayOfWeek] = await Promise.all([
-      prismaRead.pauseEvent.aggregate({
+emergencyRouter.get(
+  '/stats',
+  asyncHandler(async (_req: Request, res: Response) => {
+    try {
+      const [allEvents, byProtocol, byDayOfWeek] = await Promise.all([
+        prismaRead.pauseEvent.aggregate({
+          _count: { id: true },
+          _avg: { durationSeconds: true },
+          _max: { durationSeconds: true },
+          _sum: { durationSeconds: true },
+        }),
+        prismaRead.pauseEvent.groupBy({
+          by: ['contractAddress'],
+          _count: { id: true },
+          _sum: { durationSeconds: true },
+          where: { eventType: 'pause' },
+        }),
+        prismaRead.pauseEvent.findMany({
+          where: { eventType: 'pause' },
+          select: { timestamp: true },
+        }),
+      ]);
+
+      const dayNames = [
+        'sunday',
+        'monday',
+        'tuesday',
+        'wednesday',
+        'thursday',
+        'friday',
+        'saturday',
+      ];
+      const byDay: Record<string, number> = Object.fromEntries(dayNames.map((d) => [d, 0]));
+      for (const ev of byDayOfWeek) {
+        byDay[dayNames[ev.timestamp.getDay()]]++;
+      }
+
+      const contractAddresses = byProtocol.map((b) => b.contractAddress);
+      const contracts = await prismaRead.contract.findMany({
+        where: { address: { in: contractAddresses } },
+        select: { address: true, name: true },
+      });
+      const healthScores = await prismaRead.protocolHealthScore.findMany({
+        where: { contractAddress: { in: contractAddresses } },
+        select: { contractAddress: true, riskLevel: true },
+      });
+      const nameMap = Object.fromEntries(contracts.map((c) => [c.address, c.name]));
+      const riskMap = Object.fromEntries(healthScores.map((h) => [h.contractAddress, h.riskLevel]));
+
+      const uniqueContracts = new Set(byProtocol.map((b) => b.contractAddress)).size;
+
+      const pauseTypes = await prismaRead.emergencyState.groupBy({
+        by: ['pauserType'],
         _count: { id: true },
-        _avg: { durationSeconds: true },
-        _max: { durationSeconds: true },
-        _sum: { durationSeconds: true },
-      }),
-      prismaRead.pauseEvent.groupBy({
-        by: ['contractAddress'],
-        _count: { id: true },
-        _sum: { durationSeconds: true },
-        where: { eventType: 'pause' },
-      }),
-      prismaRead.pauseEvent.findMany({
-        where: { eventType: 'pause' },
-        select: { timestamp: true },
-      }),
-    ]);
+        where: { pauserType: { not: null } },
+      });
+      const byPauserType: Record<string, number> = {};
+      for (const pt of pauseTypes) {
+        if (pt.pauserType) byPauserType[pt.pauserType] = pt._count.id;
+      }
 
-    const dayNames = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
-    const byDay: Record<string, number> = Object.fromEntries(dayNames.map((d) => [d, 0]));
-    for (const ev of byDayOfWeek) {
-      byDay[dayNames[ev.timestamp.getDay()]]++;
+      res.json({
+        overall: {
+          totalPauseEvents: allEvents._count.id,
+          uniquePausedContracts: uniqueContracts,
+          avgPauseDuration: formatDuration(allEvents._avg.durationSeconds ?? 0),
+          longestPause: formatDuration(allEvents._max.durationSeconds ?? 0),
+          totalDowntimeAllContracts: formatDuration(allEvents._sum.durationSeconds ?? 0),
+        },
+        byProtocol: byProtocol.map((b) => ({
+          protocol: nameMap[b.contractAddress] ?? b.contractAddress,
+          address: b.contractAddress,
+          pauses: b._count.id,
+          totalDowntime: formatDuration(b._sum.durationSeconds ?? 0),
+          riskLevel: riskMap[b.contractAddress] ?? 'unknown',
+        })),
+        byDayOfWeek: byDay,
+        byPauserType,
+      });
+    } catch (err) {
+      res.status(500).json({ error: String(err) });
     }
-
-    const contractAddresses = byProtocol.map((b) => b.contractAddress);
-    const contracts = await prismaRead.contract.findMany({
-      where: { address: { in: contractAddresses } },
-      select: { address: true, name: true },
-    });
-    const healthScores = await prismaRead.protocolHealthScore.findMany({
-      where: { contractAddress: { in: contractAddresses } },
-      select: { contractAddress: true, riskLevel: true },
-    });
-    const nameMap = Object.fromEntries(contracts.map((c) => [c.address, c.name]));
-    const riskMap = Object.fromEntries(healthScores.map((h) => [h.contractAddress, h.riskLevel]));
-
-    const uniqueContracts = new Set(byProtocol.map((b) => b.contractAddress)).size;
-
-    const pauseTypes = await prismaRead.emergencyState.groupBy({
-      by: ['pauserType'],
-      _count: { id: true },
-      where: { pauserType: { not: null } },
-    });
-    const byPauserType: Record<string, number> = {};
-    for (const pt of pauseTypes) {
-      if (pt.pauserType) byPauserType[pt.pauserType] = pt._count.id;
-    }
-
-    res.json({
-      overall: {
-        totalPauseEvents: allEvents._count.id,
-        uniquePausedContracts: uniqueContracts,
-        avgPauseDuration: formatDuration(allEvents._avg.durationSeconds ?? 0),
-        longestPause: formatDuration(allEvents._max.durationSeconds ?? 0),
-        totalDowntimeAllContracts: formatDuration(allEvents._sum.durationSeconds ?? 0),
-      },
-      byProtocol: byProtocol.map((b) => ({
-        protocol: nameMap[b.contractAddress] ?? b.contractAddress,
-        address: b.contractAddress,
-        pauses: b._count.id,
-        totalDowntime: formatDuration(b._sum.durationSeconds ?? 0),
-        riskLevel: riskMap[b.contractAddress] ?? 'unknown',
-      })),
-      byDayOfWeek: byDay,
-      byPauserType,
-    });
-  } catch (err) {
-    res.status(500).json({ error: String(err) });
-  }
-});
+  }),
+);
 
 // GET /emergency/contracts/:address/recovery-simulation
 emergencyRouter.get(
   '/contracts/:address/recovery-simulation',
   validateAddressParam,
-  async (req: Request, res: Response) => {
+  asyncHandler(async (req: Request, res: Response) => {
     try {
       const ra = await prismaRead.recoveryAnalysis.findUnique({
         where: { contractAddress: req.params.address },
@@ -418,5 +439,5 @@ emergencyRouter.get(
     } catch (err) {
       res.status(500).json({ error: String(err) });
     }
-  },
+  }),
 );

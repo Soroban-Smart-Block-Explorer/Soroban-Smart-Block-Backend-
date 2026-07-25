@@ -12,6 +12,7 @@ import path from 'path';
 import axios from 'axios';
 import { SorobanRpc, xdr, scValToNative } from '@stellar/stellar-sdk';
 import { config } from '../config';
+import { logger } from '../logger';
 
 // ─── Config ───────────────────────────────────────────────────────────────────
 
@@ -209,7 +210,7 @@ export async function scrapeNftMetadata(
       writeCache(meta);
       return meta;
     } catch (err) {
-      console.warn(`[nft-scraper] Failed to fetch ${uri}: ${(err as Error).message}`);
+      logger.warn(`[nft-scraper] Failed to fetch ${uri}: ${(err as Error).message}`);
       return null;
     }
   });

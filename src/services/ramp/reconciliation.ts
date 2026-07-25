@@ -69,15 +69,15 @@ export async function runReconciliation(
     if (!order.providerOrderId) continue;
 
     try {
-      const providerStatus = await getProviderOrderStatus(
-        provider,
-        order.providerOrderId,
-      );
+      const providerStatus = await getProviderOrderStatus(provider, order.providerOrderId);
 
       const platformStatus = order.status as OrderStatus;
       const remoteStatus = providerStatus.status;
 
-      if (remoteStatus !== platformStatus && isSignificantDiscrepancy(platformStatus, remoteStatus)) {
+      if (
+        remoteStatus !== platformStatus &&
+        isSignificantDiscrepancy(platformStatus, remoteStatus)
+      ) {
         discrepancyCount++;
         discrepancies.push({
           orderId: order.id,

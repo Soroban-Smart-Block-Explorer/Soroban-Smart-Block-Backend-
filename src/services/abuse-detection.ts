@@ -16,12 +16,12 @@
 import { prismaRead, prismaWrite } from '../db';
 import { logger } from '../logger';
 
-const ANALYSIS_WINDOW_MS = 5 * 60 * 1000;  // 5-minute sliding window
-const SCAN_INTERVAL_MS   = 5 * 60 * 1000;  // run every 5 min
+const ANALYSIS_WINDOW_MS = 5 * 60 * 1000; // 5-minute sliding window
+const SCAN_INTERVAL_MS = 5 * 60 * 1000; // run every 5 min
 
 // Score thresholds
 const THROTTLE_THRESHOLD = 0.5;
-const BLOCK_THRESHOLD    = 0.8;
+const BLOCK_THRESHOLD = 0.8;
 
 // ─── Pattern detectors ────────────────────────────────────────────────────────
 
@@ -158,7 +158,7 @@ function scoreToAction(score: number): string {
 export async function runAbuseDetection(): Promise<void> {
   const cutoff = new Date(Date.now() - ANALYSIS_WINDOW_MS);
 
-  const logs = await prismaRead.apiAuditLog.findMany({
+  const logs = (await prismaRead.apiAuditLog.findMany({
     where: { createdAt: { gte: cutoff } },
     select: {
       ip: true,
@@ -169,7 +169,7 @@ export async function runAbuseDetection(): Promise<void> {
       createdAt: true,
     },
     take: 10000,
-  }) as LogSample[];
+  })) as LogSample[];
 
   if (logs.length === 0) return;
 
@@ -178,31 +178,36 @@ export async function runAbuseDetection(): Promise<void> {
     scores: Map<string, number>;
     isKey: boolean;
   }> = [
-    { pattern: 'credential_stuffing',   scores: detectCredentialStuffing(logs),  isKey: false },
-    { pattern: 'scraping',              scores: detectScraping(logs),            isKey: false },
-    { pattern: 'ddos',                  scores: detectDdos(logs),                isKey: false },
+    { pattern: 'credential_stuffing', scores: detectCredentialStuffing(logs), isKey: false },
+    { pattern: 'scraping', scores: detectScraping(logs), isKey: false },
+    { pattern: 'ddos', scores: detectDdos(logs), isKey: false },
     { pattern: 'sequential_pagination', scores: detectSequentialPagination(logs), isKey: false },
-    { pattern: 'rapid_auth_failure',    scores: detectRapidAuthFailure(logs),    isKey: true  },
+    { pattern: 'rapid_auth_failure', scores: detectRapidAuthFailure(logs), isKey: true },
   ];
 
   for (const { pattern, scores, isKey } of detectors) {
     for (const [entity, score] of scores) {
       const action = scoreToAction(score);
       const blockedUntil =
-        action === 'block' ? new Date(Date.now() + 60 * 60 * 1000) : // 1h block
-        action === 'throttle' ? new Date(Date.now() + 15 * 60 * 1000) : null;
+        action === 'block'
+          ? new Date(Date.now() + 60 * 60 * 1000) // 1h block
+          : action === 'throttle'
+            ? new Date(Date.now() + 15 * 60 * 1000)
+            : null;
 
-      await prismaWrite.abuseEvent.create({
-        data: {
-          pattern,
-          ip: isKey ? null : entity,
-          apiKeyId: isKey ? entity : null,
-          score,
-          action,
-          blockedUntil,
-          evidence: { window: `${ANALYSIS_WINDOW_MS / 1000}s`, entity, logCount: logs.length },
-        },
-      }).catch(() => {});
+      await prismaWrite.abuseEvent
+        .create({
+          data: {
+            pattern,
+            ip: isKey ? null : entity,
+            apiKeyId: isKey ? entity : null,
+            score,
+            action,
+            blockedUntil,
+            evidence: { window: `${ANALYSIS_WINDOW_MS / 1000}s`, entity, logCount: logs.length },
+          },
+        })
+        .catch(() => {});
 
       if (action !== 'monitor') {
         logger.warn({ pattern, entity, score, action }, '[abuse-detection] Abuse detected');
@@ -213,27 +218,31 @@ export async function runAbuseDetection(): Promise<void> {
 
 /** Check if an IP is currently blocked */
 export async function isIpBlocked(ip: string): Promise<boolean> {
-  const block = await prismaRead.abuseEvent.findFirst({
-    where: {
-      ip,
-      action: 'block',
-      blockedUntil: { gt: new Date() },
-      resolvedAt: null,
-    },
-  }).catch(() => null);
+  const block = await prismaRead.abuseEvent
+    .findFirst({
+      where: {
+        ip,
+        action: 'block',
+        blockedUntil: { gt: new Date() },
+        resolvedAt: null,
+      },
+    })
+    .catch(() => null);
   return !!block;
 }
 
 /** Check if a key is currently blocked */
 export async function isKeyBlocked(apiKeyId: string): Promise<boolean> {
-  const block = await prismaRead.abuseEvent.findFirst({
-    where: {
-      apiKeyId,
-      action: 'block',
-      blockedUntil: { gt: new Date() },
-      resolvedAt: null,
-    },
-  }).catch(() => null);
+  const block = await prismaRead.abuseEvent
+    .findFirst({
+      where: {
+        apiKeyId,
+        action: 'block',
+        blockedUntil: { gt: new Date() },
+        resolvedAt: null,
+      },
+    })
+    .catch(() => null);
   return !!block;
 }
 

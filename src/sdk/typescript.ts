@@ -198,7 +198,7 @@ export class SorobanWebSocket {
             const data = JSON.parse(e.data);
             callback(data);
           } catch (err) {
-            console.error('Failed to parse WebSocket message:', err);
+            logger.error('Failed to parse WebSocket message:', err);
           }
         };
         break;
@@ -269,6 +269,7 @@ export class SorobanSSE {
 // Example usage:
 /*
 import { SorobanFeed } from '@soroban/feed-sdk';
+import { logger } from '../logger';
 
 const feed = new SorobanFeed({ apiKey: 'my-key' });
 
@@ -286,11 +287,11 @@ const sub = await feed.subscribe({
 
 // WebSocket connection
 const ws = feed.connectWebSocket(['trades'], { pools: ['C...'] });
-ws.on('message', (trade) => console.log(trade));
+ws.on('message', (trade) => logger.info(trade));
 
 // Server-Sent Events
 const sse = feed.connectSSE(['events']);
-sse.on('message', (event) => console.log(event));
+sse.on('message', (event) => logger.info(event));
 
 // Backfill historical data
 const backfill = await feed.backfill({

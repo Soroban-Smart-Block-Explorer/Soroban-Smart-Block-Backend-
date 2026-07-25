@@ -93,7 +93,15 @@ export function simulateSwap(
 ): SwapSimulation {
   const midPrice = reserveIn > 0 ? reserveOut / reserveIn : 0;
   if (amountIn <= 0 || reserveIn <= 0 || reserveOut <= 0) {
-    return { amountIn, amountOut: 0, midPrice, executionPrice: 0, slippagePct: 0, priceImpactPct: 0, feePaid: 0 };
+    return {
+      amountIn,
+      amountOut: 0,
+      midPrice,
+      executionPrice: 0,
+      slippagePct: 0,
+      priceImpactPct: 0,
+      feePaid: 0,
+    };
   }
 
   const fee = feeBps / 10_000;
@@ -188,7 +196,9 @@ export function impermanentLossPct(priceRatio: number): number {
 /**
  * Classify IL severity for warnings. Thresholds are on the magnitude of loss.
  */
-export function impermanentLossSeverity(ilPct: number): 'none' | 'low' | 'moderate' | 'high' | 'severe' {
+export function impermanentLossSeverity(
+  ilPct: number,
+): 'none' | 'low' | 'moderate' | 'high' | 'severe' {
   const m = Math.abs(ilPct);
   if (m < 0.5) return 'none';
   if (m < 2) return 'low';

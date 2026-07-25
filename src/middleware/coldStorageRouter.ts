@@ -15,19 +15,17 @@ import { AppError } from './errorHandler';
 import { logger } from '../logger';
 import * as parquetjs from 'parquetjs-lite';
 
-const RECENT_LEDGER_DAYS = parseInt(process.env.RECENT_LEDGER_DAYS ?? '30');
-const RECENT_LEDGER_THRESHOLD = Math.floor(
-  (Date.now() - RECENT_LEDGER_DAYS * 24 * 60 * 60 * 1000) / 1000,
-);
+const RECENT_LEDGER_COUNT = parseInt(process.env.RECENT_LEDGER_COUNT ?? '10000');
+let currentLedger = 0;
 
 interface ColdStorageConfig {
-  recentThresholdSeconds: number;
+  recentLedgerCount: number;
   coldStorageType: 'parquet' | 'glacier' | 'archive';
   coldStoragePath?: string;
 }
 
 const coldStorageConfig: ColdStorageConfig = {
-  recentThresholdSeconds: RECENT_LEDGER_THRESHOLD,
+  recentLedgerCount: RECENT_LEDGER_COUNT,
   coldStorageType:
     (process.env.COLD_STORAGE_TYPE as 'parquet' | 'glacier' | 'archive') ?? 'parquet',
   coldStoragePath: process.env.COLD_STORAGE_PATH,
@@ -51,6 +49,14 @@ const s3 = new S3Client({
 });
 
 export { coldStorageConfig };
+
+export function setCurrentLedger(seq: number): void {
+  currentLedger = seq;
+}
+
+export function getRecentLedgerThreshold(): number {
+  return currentLedger - coldStorageConfig.recentLedgerCount;
+}
 
 // ── Prometheus metrics ────────────────────────────────────────────────
 
@@ -668,7 +674,7 @@ export function coldStorageRouter(req: Request, res: Response, next: NextFunctio
     return next();
   }
 
-  const isDeepHistory = ledgerSeq < coldStorageConfig.recentThresholdSeconds;
+  const isDeepHistory = ledgerSeq < getRecentLedgerThreshold();
 
   if (isDeepHistory) {
     req.coldStorage = {

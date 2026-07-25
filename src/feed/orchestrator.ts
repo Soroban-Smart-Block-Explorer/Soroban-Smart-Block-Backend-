@@ -4,7 +4,7 @@ import { feedPublisher } from './publisher';
 import { deliveryService } from './deliveryService';
 import { SubscriptionManager } from './subscriptionManager';
 import { FeedWebSocketServer } from './websocketServer';
-import { prismaRead } from '../db';
+import { logger } from '../logger';
 
 export class FeedOrchestrator extends EventEmitter {
   private subscriptionManager = new SubscriptionManager();
@@ -31,7 +31,7 @@ export class FeedOrchestrator extends EventEmitter {
     // Start metrics collection
     this.startMetricsCollection();
 
-    console.log('Feed orchestrator initialized');
+    logger.info('Feed orchestrator initialized');
   }
 
   private async distributeMessage(message: any) {
@@ -44,7 +44,7 @@ export class FeedOrchestrator extends EventEmitter {
       // Deliver to each subscription
       for (const subscription of subscriptions) {
         deliveryService.deliverMessage(subscription.id, message).catch((error) => {
-          console.error(`Delivery failed for subscription ${subscription.id}:`, error);
+          logger.error(`Delivery failed for subscription ${subscription.id}:`, error);
         });
       }
 
@@ -56,7 +56,7 @@ export class FeedOrchestrator extends EventEmitter {
       // Emit for SSE and other real-time handlers
       this.emit('message', message);
     } catch (error) {
-      console.error('Failed to distribute message:', error);
+      logger.error('Failed to distribute message:', error);
     }
   }
 
@@ -183,7 +183,7 @@ export class FeedOrchestrator extends EventEmitter {
         // Collect and publish system metrics
         await this.collectSystemMetrics();
       } catch (error) {
-        console.error('Failed to collect metrics:', error);
+        logger.error('Failed to collect metrics:', error);
       }
     }, 60000); // Every minute
   }
@@ -289,7 +289,7 @@ export class FeedOrchestrator extends EventEmitter {
   }
 
   async shutdown() {
-    console.log('Shutting down feed orchestrator...');
+    logger.info('Shutting down feed orchestrator...');
 
     clearInterval(this.metricsInterval);
 
@@ -301,7 +301,7 @@ export class FeedOrchestrator extends EventEmitter {
 
     this.removeAllListeners();
 
-    console.log('Feed orchestrator shutdown complete');
+    logger.info('Feed orchestrator shutdown complete');
   }
 }
 
