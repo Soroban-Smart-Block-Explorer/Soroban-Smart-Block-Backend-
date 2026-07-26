@@ -1,9 +1,9 @@
 import { featureStore } from '../indexer/feature-store';
 import { config } from '../config';
+import { logger } from '../logger';
 import { EnsembleForecaster } from './ensemble';
-import { IForecastingModel } from './models';
+import { IForecastingModel, ArimaSimulation, XgboostSimulation, LstmSimulation } from './models';
 import { LinearTrendModel, SeasonalMeanModel } from './production-models';
-import { ArimaMock, XgboostMock, LstmMock } from './models';
 import { prismaWrite as prisma } from '../db';
 
 export interface TrainingMetrics {
@@ -70,8 +70,8 @@ export class ModelTrainingService {
       this.lastTrainingTime = new Date();
       const trainingDuration = Date.now() - startTime;
 
-      console.log(`Model training completed in ${trainingDuration}ms`);
-      console.log(`Trained ${models.length} models on ${availableMetrics.length} metrics`);
+      logger.info(`Model training completed in ${trainingDuration}ms`);
+      logger.info(`Trained ${models.length} models on ${availableMetrics.length} metrics`);
 
       return forecaster;
     } finally {
@@ -103,7 +103,7 @@ export class ModelTrainingService {
 
     // Fallback to configured metrics if no data is available
     if (availableMetrics.length === 0) {
-      console.warn('No metrics found in database, using configured fallback metrics');
+      logger.warn('No metrics found in database, using configured fallback metrics');
       return this.trainingConfig.metrics;
     }
 
@@ -121,7 +121,7 @@ export class ModelTrainingService {
       return [new LinearTrendModel(), new SeasonalMeanModel()];
     } else {
       // Demo mode - but still train with real data instead of mocks
-      return [new ArimaMock(seed), new XgboostMock(seed), new LstmMock(seed)];
+      return [new ArimaSimulation(seed), new XgboostSimulation(seed), new LstmSimulation(seed)];
     }
   }
 
@@ -138,7 +138,7 @@ export class ModelTrainingService {
         const trainingData = await this.prepareTrainingData(primaryMetric);
 
         if (trainingData.length < this.trainingConfig.minDataPoints) {
-          console.warn(
+          logger.warn(
             `Insufficient data for ${model.name}: ${trainingData.length} points, minimum required: ${this.trainingConfig.minDataPoints}`,
           );
           continue;
@@ -166,11 +166,11 @@ export class ModelTrainingService {
           lastTrainedAt: new Date(),
         });
 
-        console.log(
+        logger.info(
           `Trained ${model.name}: ${trainData.length} data points, MSE: ${validationMse.toFixed(4)}`,
         );
       } catch (error) {
-        console.error(`Failed to train model ${model.name}:`, error);
+        logger.error(`Failed to train model ${model.name}:`, { error });
         // Continue training other models even if one fails
       }
     }
@@ -185,14 +185,14 @@ export class ModelTrainingService {
       const data = await featureStore.getHistoricalData(metric, this.trainingConfig.maxDataPoints);
 
       if (data.length === 0) {
-        console.warn(`No historical data found for metric: ${metric}`);
+        logger.warn(`No historical data found for metric: ${metric}`);
         return [];
       }
 
       // Basic data preprocessing
       return this.preprocessData(data);
     } catch (error) {
-      console.error(`Error preparing training data for ${metric}:`, error);
+      logger.error(`Error preparing training data for ${metric}:`, { error });
       return [];
     }
   }
@@ -213,7 +213,7 @@ export class ModelTrainingService {
           features[metric] = this.preprocessData(data);
         }
       } catch (error) {
-        console.warn(`Failed to prepare feature ${metric}:`, error);
+        logger.warn(`Failed to prepare feature ${metric}:`, { error });
       }
     }
 
@@ -283,7 +283,7 @@ export class ModelTrainingService {
 
       return sumSquaredError / Math.min(predictions.length, expectedData.length);
     } catch (error) {
-      console.warn(`Error calculating validation MSE for ${model.name}:`, error);
+      logger.warn(`Error calculating validation MSE for ${model.name}:`, { error });
       return 0;
     }
   }
