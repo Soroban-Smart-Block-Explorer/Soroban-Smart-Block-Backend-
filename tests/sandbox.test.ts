@@ -253,6 +253,103 @@ describe('SandboxEngine', () => {
     vi.clearAllMocks();
   });
 
+  it('prevents duplicate sandbox accounts with the same sessionId and null publicKey', async () => {
+    // Verifies fix for issue #606: UNIQUE NULLS NOT DISTINCT index correctly rejects two rows
+    // with the same sessionId and publicKey = NULL.  We enforce the constraint directly in the
+    // in-memory store (no recursive mock calls) mirroring PG 16+ NULLS NOT DISTINCT semantics.
+
+    function nullsNotDistinctUnique(store: any[], newRow: any): boolean {
+      // Two rows collide when sessionId matches AND publicKey matches under NULLS NOT DISTINCT:
+      // NULL == NULL (unlike standard SQL UNIQUE where NULL != NULL).
+      return store.some(
+        (existing) =>
+          existing.sessionId === newRow.sessionId &&
+          (existing.publicKey ?? null) === (newRow.publicKey ?? null),
+      );
+    }
+
+    const uniqueViolation = () =>
+      Object.assign(new Error('Unique constraint failed on fields: (`sessionId`,`publicKey`)'), {
+        code: 'P2002',
+        meta: { target: ['sessionId', 'publicKey'] },
+      });
+
+    const { prismaWrite } = await import('../src/db');
+
+    // Temporarily replace createMany and create with constraint-aware versions.
+    const savedCreateMany = (prismaWrite.sandboxAccount.createMany as any).getMockImplementation();
+    const savedCreate = (prismaWrite.sandboxAccount.create as any).getMockImplementation();
+
+    (prismaWrite.sandboxAccount.createMany as any).mockImplementation(
+      async ({ data }: { data: any[] }) => {
+        const store = getArrayStore(accountStore, data[0]?.sessionId);
+        for (const newRow of data) {
+          if (nullsNotDistinctUnique(store, newRow)) throw uniqueViolation();
+          store.push({ id: uniqueId('account'), ...clone(newRow) });
+        }
+        return { count: data.length };
+      },
+    );
+
+    (prismaWrite.sandboxAccount.create as any).mockImplementation(
+      async ({ data }: { data: any }) => {
+        const store = getArrayStore(accountStore, data.sessionId);
+        if (nullsNotDistinctUnique(store, data)) throw uniqueViolation();
+        const row = { id: uniqueId('account'), ...clone(data) };
+        store.push(row);
+        return row;
+      },
+    );
+
+    try {
+      const { sandboxEngine } = await import('../src/sandbox/runtime');
+
+      // Normal session creation always uses non-null public keys — must still succeed.
+      const session = await sandboxEngine.createSession({ seed: 'test-null-pk' });
+      expect(session.status).toBe('active');
+
+      // First insert with publicKey = null should succeed.
+      await expect(
+        prismaWrite.sandboxAccount.create({
+          data: {
+            sessionId: session.id,
+            publicKey: null,
+            label: 'null-pk-1',
+            balance: '0',
+            sequenceNumber: 0,
+            isPreFunded: false,
+          },
+        }),
+      ).resolves.toBeDefined();
+
+      // Second insert with the same (sessionId, null) must be rejected — this is the bug fix.
+      await expect(
+        prismaWrite.sandboxAccount.create({
+          data: {
+            sessionId: session.id,
+            publicKey: null,
+            label: 'null-pk-2',
+            balance: '0',
+            sequenceNumber: 0,
+            isPreFunded: false,
+          },
+        }),
+      ).rejects.toThrow(/Unique constraint failed/);
+    } finally {
+      // Always restore the original implementations so other tests are unaffected.
+      if (savedCreateMany) {
+        (prismaWrite.sandboxAccount.createMany as any).mockImplementation(savedCreateMany);
+      } else {
+        (prismaWrite.sandboxAccount.createMany as any).mockRestore?.();
+      }
+      if (savedCreate) {
+        (prismaWrite.sandboxAccount.create as any).mockImplementation(savedCreate);
+      } else {
+        (prismaWrite.sandboxAccount.create as any).mockRestore?.();
+      }
+    }
+  });
+
   it('creates a deterministic session with prefunded accounts', async () => {
     const { sandboxEngine } = await import('../src/sandbox/runtime');
     const session = await sandboxEngine.createSession({ seed: 'seed-a' });

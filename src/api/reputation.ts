@@ -133,19 +133,11 @@ reputationRouter.get(
     // Load all profiles from DB
     const profiles = await prismaRead.reputationProfile.findMany();
 
-    // Transform profiles back to ChainReputationData for calculation
-    const mockChainData: ChainReputationData[] = [];
-    for (const p of profiles) {
-      mockChainData.push({
-        chainId: p.chain,
-        address: p.address,
-        transactionCount: 10,
-        successfulTransactionCount: 10,
-        sybilRisk: p.combinedScore && p.combinedScore < 300 ? 0.8 : 0.1,
-      });
-    }
+    // Fetch real on-chain data for every address in parallel
+    const chainDataArrays = await Promise.all(profiles.map((p) => fetchProfileData(p.address)));
+    const allChainData: ChainReputationData[] = chainDataArrays.flat();
 
-    const leaderboard = createLeaderboard(mockChainData, category, limit);
+    const leaderboard = createLeaderboard(allChainData, category, limit);
     return res.json({ category, leaderboard });
   }),
 );
