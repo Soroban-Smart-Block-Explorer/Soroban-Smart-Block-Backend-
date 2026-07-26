@@ -4,9 +4,24 @@
  * Handles Stellar Protocol 26 features including state archival, contract
  * instance TTL management, persistent/temporary entry management, and
  * footprint optimization for Soroban smart contracts.
+ *
+ * The POST /contracts/:contractId/extend-ttl endpoint now performs a real
+ * Soroban RPC simulateTransaction call instead of returning a hardcoded
+ * "simulated" stub (fix for issue #636).
  */
 import { Router, Request, Response } from 'express';
 import { z } from 'zod';
+import {
+  SorobanRpc,
+  TransactionBuilder,
+  Account,
+  Operation,
+  BASE_FEE,
+  xdr,
+} from '@stellar/stellar-sdk';
+import { rpc } from '../indexer/rpc';
+import { config } from '../config';
+import { asyncHandler } from '../middleware/asyncHandler';
 
 export const protocol26Router = Router();
 
@@ -23,6 +38,9 @@ const FootprintSchema = z.object({
   readOnly: z.array(z.string()).default([]),
   readWrite: z.array(z.string()).default([]),
 });
+
+// Dummy source account for simulation-only transactions (never submitted)
+const DUMMY_SOURCE = 'GAAZI4TCR3TY5OJHCTJC2A4QSY6CJWJH5IAJTGKIN2ER7LBNVKOCCWN';
 
 // ── GET / ─────────────────────────────────────────────────────────────────────
 
@@ -123,6 +141,10 @@ protocol26Router.get('/contracts/:contractId/ttl', (req: Request, res: Response)
  * /protocol26/contracts/{contractId}/extend-ttl:
  *   post:
  *     summary: Extend the TTL for a contract's state entries
+ *     description: >
+ *       Builds an ExtendFootprintTTLOp transaction and simulates it against the
+ *       Soroban RPC to return real status, resource usage, and fee estimates.
+ *       Submit the returned transaction XDR to the Stellar network to apply.
  *     tags: [Protocol 26]
  *     parameters:
  *       - in: path
@@ -137,38 +159,208 @@ protocol26Router.get('/contracts/:contractId/ttl', (req: Request, res: Response)
  *             type: object
  *             required: [ledgersToLive]
  *             properties:
- *               ledgersToLive: { type: number }
- *               entryType: { type: string, enum: [instance, persistent, temporary] }
+ *               ledgersToLive:
+ *                 type: number
+ *                 description: Number of ledgers to extend the entry TTL by
+ *               entryType:
+ *                 type: string
+ *                 enum: [instance, persistent, temporary]
  *     responses:
  *       200:
- *         description: TTL extension result
+ *         description: TTL extension simulation result
  *       400:
  *         description: Validation error
+ *       502:
+ *         description: RPC request failed
  */
-protocol26Router.post('/contracts/:contractId/extend-ttl', (req: Request, res: Response) => {
-  const parsed = ContractTtlSchema.safeParse({ contractId: req.params.contractId, ...req.body });
-  if (!parsed.success) {
-    return res.status(400).json({ error: parsed.error.flatten() });
-  }
+protocol26Router.post(
+  '/contracts/:contractId/extend-ttl',
+  asyncHandler(async (req: Request, res: Response) => {
+    const parsed = ContractTtlSchema.safeParse({
+      contractId: req.params.contractId,
+      ...req.body,
+    });
+    if (!parsed.success) {
+      return res.status(400).json({ error: parsed.error.flatten() });
+    }
 
-  const { contractId, ledgersToLive, entryType } = parsed.data;
-  const currentLedger = Math.floor(Date.now() / 5000);
-  const newTtl = currentLedger + ledgersToLive;
-  const feeLumens = Math.ceil(ledgersToLive * 0.000001); // approximate fee
+    const { contractId, ledgersToLive, entryType } = parsed.data;
+    const currentLedger = Math.floor(Date.now() / 5000);
+    const newLiveUntilLedger = currentLedger + ledgersToLive;
 
-  res.json({
-    contractId,
-    entryType,
-    operation: 'extend_ttl',
-    ledgersExtended: ledgersToLive,
-    newLiveUntilLedger: newTtl,
-    estimatedFeeLumens: feeLumens,
-    status: 'simulated',
-    note: 'Submit to Stellar network to apply. This is a simulation response.',
-    expiresAt: new Date(Date.now() + ledgersToLive * 5000).toISOString(),
-    submittedAt: new Date().toISOString(),
-  });
-});
+    try {
+      // Build a real ExtendFootprintTTLOp transaction for simulation
+      const txAccount = new Account(DUMMY_SOURCE, '0');
+
+      // Build the ledger key for the contract entry based on entryType
+      let ledgerKey: xdr.LedgerKey;
+      try {
+        const contractIdBytes = xdr.ScAddress.fromXDR(
+          xdr.ScAddress.envelopeTypeScp().toXDR('base64')
+        );
+        // Use the contract ID hash directly
+        const contractIdHash = Buffer.from(contractId, 'hex');
+
+        switch (entryType) {
+          case 'instance':
+            ledgerKey = xdr.LedgerKey.contractData(
+              new xdr.LedgerKeyContractData({
+                contract: xdr.ScAddress.contract(
+                  xdr.Hash.fromXDR(contractIdHash)
+                ),
+                key: xdr.ScVal.scvLedgerKeyContractInstance(),
+                durability: xdr.ContractDataDurability.persistent(),
+              }),
+            );
+            break;
+          case 'persistent':
+            ledgerKey = xdr.LedgerKey.contractData(
+              new xdr.LedgerKeyContractData({
+                contract: xdr.ScAddress.contract(
+                  xdr.Hash.fromXDR(contractIdHash)
+                ),
+                key: xdr.ScVal.scvSymbol('__storage_persistent'),
+                durability: xdr.ContractDataDurability.persistent(),
+              }),
+            );
+            break;
+          case 'temporary':
+            ledgerKey = xdr.LedgerKey.contractData(
+              new xdr.LedgerKeyContractData({
+                contract: xdr.ScAddress.contract(
+                  xdr.Hash.fromXDR(contractIdHash)
+                ),
+                key: xdr.ScVal.scvSymbol('__storage_temporary'),
+                durability: xdr.ContractDataDurability.temporary(),
+              }),
+            );
+            break;
+          default:
+            ledgerKey = xdr.LedgerKey.contractData(
+              new xdr.LedgerKeyContractData({
+                contract: xdr.ScAddress.contract(
+                  xdr.Hash.fromXDR(contractIdHash)
+                ),
+                key: xdr.ScVal.scvLedgerKeyContractInstance(),
+                durability: xdr.ContractDataDurability.persistent(),
+              }),
+            );
+        }
+      } catch {
+        return res.status(400).json({
+          error: 'Invalid contract ID format',
+          detail: 'Contract ID must be a valid hex-encoded hash',
+        });
+      }
+
+      // Build the extend operation with the ledger key in the footprint
+      const extendOp = Operation.extendFootprintTtl({
+        extendTo: newLiveUntilLedger,
+      });
+
+      // Build the transaction with the proper footprint
+      const tx = new TransactionBuilder(txAccount, {
+        fee: BASE_FEE,
+        networkPassphrase: config.networkPassphrase,
+        // Set the soroban data with the footprint
+        sorobanData: new xdr.SorobanTransactionData({
+          extensionPoint: xdr.ExtensionPoint.extensionPointLeV0(),
+          resources: new xdr.SorobanResources({
+            ledgerReadWrite: [
+              ledgerKey,
+            ],
+            instructions: 0,
+            readBytes: 0,
+          }),
+          resourceFee: xdr.Int64.fromString('0'),
+        }),
+      })
+        .addOperation(extendOp)
+        .setTimeout(0) // Use 0 timeout for simulation
+        .build();
+
+      // Simulate the transaction against the Soroban RPC
+      const simulationResult = await rpc.simulateTransaction(tx);
+
+      // Check if the simulation succeeded or returned a restore/error response
+      if (
+        SorobanRpc.Api.isSimulationSuccess(simulationResult) ||
+        SorobanRpc.Api.isSimulationRestore(simulationResult)
+      ) {
+        // Extract resource info
+        const cpuInsns = Number(
+          (simulationResult.cost as SorobanRpc.Api.Cost)?.cpuInsns ?? 0,
+        );
+        const memBytes = Number(
+          (simulationResult.cost as SorobanRpc.Api.Cost)?.memBytes ?? 0,
+        );
+        const minResourceFee = simulationResult.minResourceFee ?? '0';
+
+        return res.json({
+          contractId,
+          entryType,
+          operation: 'extend_ttl',
+          ledgersExtended: ledgersToLive,
+          newLiveUntilLedger,
+          status: 'success',
+          simulation: {
+            minResourceFee,
+            cpuInstructions: cpuInsns,
+            memoryBytes: memBytes,
+            transactionXdr: simulationResult.transactionData
+              ? simulationResult.transactionData.toXDR('base64')
+              : null,
+            result: simulationResult.result?.retval
+              ? simulationResult.result.retval.toXDR('base64')
+              : null,
+          },
+          estimatedFeeLumens: Math.ceil(
+            Number(minResourceFee) / 10_000_000,
+          ),
+          note: 'Submit this transaction or a newly built one with the returned footprint to the Stellar network to apply.',
+          expiresAt: new Date(newLiveUntilLedger * 5000).toISOString(),
+          submittedAt: new Date().toISOString(),
+          raw: simulationResult,
+        });
+      }
+
+      // Simulation returned an error
+      const errorResult = simulationResult as SorobanRpc.Api.SimulateTransactionErrorResponse;
+      return res.status(422).json({
+        contractId,
+        entryType,
+        operation: 'extend_ttl',
+        ledgersExtended: ledgersToLive,
+        newLiveUntilLedger,
+        status: 'failed',
+        error: errorResult.error ?? 'Simulation failed',
+        diagnostics: {
+          rpcError: errorResult.error,
+        },
+        note: 'The simulation failed. The contract may not exist or the entry type may be incorrect.',
+        submittedAt: new Date().toISOString(),
+      });
+    } catch (err: unknown) {
+      const errorMessage = err instanceof Error ? err.message : String(err);
+      const isTimeout =
+        errorMessage.toLowerCase().includes('timeout') ||
+        errorMessage.toLowerCase().includes('timed out');
+
+      return res.status(isTimeout ? 504 : 502).json({
+        contractId,
+        entryType,
+        operation: 'extend_ttl',
+        ledgersExtended: ledgersToLive,
+        newLiveUntilLedger,
+        status: 'error',
+        error: isTimeout ? 'Simulation timed out' : 'RPC request failed',
+        detail: errorMessage,
+        note: 'Could not reach the Soroban RPC node. Please try again later.',
+        submittedAt: new Date().toISOString(),
+      });
+    }
+  }),
+);
 
 // ── GET /contracts/:contractId/entries ──────────────────────────────────────────
 
