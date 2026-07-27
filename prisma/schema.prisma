@@ -4597,3 +4597,51 @@ model FraudRetrainingLog {
   completedAt    DateTime @default(now()) @map("completed_at")
 
 }
+
+// ─── Search Index Models (Issue #660) ────────────────────────────────────────
+
+model ContractSource {
+  id              String   @id @default(cuid())
+  contractAddress String   @unique
+  imports         Json     @default("[]")
+  exports         Json     @default("[]")
+  events          Json     @default("[]")
+  errors          Json     @default("[]")
+  storageVariables Json    @default("[]")
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  functionDetails ContractSourceFunctionDetail[]
+
+  @@index([contractAddress])
+}
+
+model ContractSourceFunctionDetail {
+  id              String   @id @default(cuid())
+  contractAddress String
+  name            String
+  pseudoCode      String?
+  params          Json     @default("[]")
+  returns         Json     @default("[]")
+  selector        String
+  complexity      String?
+  createdAt       DateTime @default(now())
+
+  contractSource ContractSource @relation(fields: [contractAddress], references: [contractAddress], onDelete: Cascade)
+
+  @@index([contractAddress])
+  @@index([name])
+}
+
+model SearchIndexEntry {
+  id              String   @id @default(cuid())
+  contractAddress String
+  contentType     String
+  content         String
+  metadata        Json?
+  createdAt       DateTime @default(now())
+
+  @@index([contractAddress])
+  @@index([contentType])
+  @@index([content])
+}
