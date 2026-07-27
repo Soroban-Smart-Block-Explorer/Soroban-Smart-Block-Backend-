@@ -155,7 +155,10 @@ app.use(
 // Request size guard before body parsing (Issue #274)
 app.use(requestSizeGuard(1_048_576)); // 1 MB
 
+// Explicit request body size limits (Issue #659)
 app.use(express.json({ limit: '1mb' }));
+app.use(express.urlencoded({ limit: '1mb', extended: true }));
+app.use(express.raw({ limit: '1mb', type: 'application/octet-stream' }));
 app.use(networkRouter);
 
 // Request context FIRST (generates requestId + start time for correlation)
