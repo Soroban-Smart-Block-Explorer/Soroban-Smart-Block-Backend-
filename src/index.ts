@@ -140,7 +140,7 @@ app.use(
   cors({
     origin: corsOrigin,
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization', 'X-Api-Key', 'X-Request-Id'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'X-Api-Key', 'X-Request-Id', 'X-CSRF-Token'],
     credentials: true,
   }),
 );
@@ -151,6 +151,43 @@ morgan.token('request-id', (req) => (req as express.Request).requestId ?? '-');
 app.use(
   morgan(':method :url :status :res[content-length] - :response-time ms request-id=:request-id'),
 );
+
+// CSRF Protection (Issue #658) ───────────────────────────────────────────────────
+// Add CSRF token middleware for cookie-based endpoints
+// Bearer token endpoints are CSRF-protected by design
+const csrfProtection = (req: express.Request, res: express.Response, next: express.NextFunction) => {
+  // Skip CSRF check for API key and Bearer token auth (stateless)
+  const authHeader = req.headers['authorization'];
+  const apiKey = req.headers['x-api-key'];
+  if (authHeader?.startsWith('Bearer ') || apiKey) {
+    return next();
+  }
+
+  // For cookie-based sessions, validate CSRF token from header
+  const csrfToken = req.headers['x-csrf-token'];
+  const sessionToken = req.cookies?.['__session'];
+
+  if (sessionToken && !csrfToken) {
+    return res.status(403).json({ error: 'CSRF token required' });
+  }
+  next();
+};
+app.use(csrfProtection);
+
+// Set SameSite cookie policy (Issue #658)
+app.use((req: express.Request, res: express.Response, next: express.NextFunction) => {
+  const originalSend = res.send;
+  res.send = function (data: any) {
+    res.setHeader('Set-Cookie', (res.getHeader('Set-Cookie') || []).map((cookie: string) => {
+      if (!cookie.includes('SameSite')) {
+        return `${cookie}; SameSite=Strict; Secure; HttpOnly`;
+      }
+      return cookie;
+    }));
+    return originalSend.call(this, data);
+  };
+  next();
+});
 
 // Request size guard before body parsing (Issue #274)
 app.use(requestSizeGuard(1_048_576)); // 1 MB
