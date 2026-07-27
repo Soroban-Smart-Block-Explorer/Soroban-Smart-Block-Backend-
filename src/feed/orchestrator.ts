@@ -4,6 +4,7 @@ import { feedPublisher } from './publisher';
 import { deliveryService } from './deliveryService';
 import { SubscriptionManager } from './subscriptionManager';
 import { FeedWebSocketServer } from './websocketServer';
+import { streamingServer } from './streamingServer';
 import { logger } from '../logger';
 import { getTokenMetadata } from '../indexer/token-metadata';
 
@@ -49,13 +50,8 @@ export class FeedOrchestrator extends EventEmitter {
         });
       }
 
-      // Broadcast to WebSocket connections
-      if (this.wsServer) {
-        this.wsServer.broadcast(message.channelName, message);
-      }
-
-      // Emit for SSE and other real-time handlers
-      this.emit('message', message);
+      // Broadcast to all real-time streaming connections (WebSocket + SSE)
+      streamingServer.broadcast(message.channelName, message);
     } catch (error) {
       logger.error('Failed to distribute message:', error);
     }
@@ -186,11 +182,9 @@ export class FeedOrchestrator extends EventEmitter {
   }
 
   private async collectSystemMetrics() {
-    const now = new Date();
-
     // Connection metrics
-    const connectionCount = this.wsServer?.getConnectionCount() || 0;
-    await this.publishMetric('websocket_connections', connectionCount, '1m');
+    const connectionCount = streamingServer.getConnectionCount();
+    await this.publishMetric('streaming_connections', connectionCount, '1m');
 
     // Active subscriptions
     const activeSubscriptions = await this.subscriptionManager.listSubscriptions();
@@ -198,7 +192,7 @@ export class FeedOrchestrator extends EventEmitter {
     await this.publishMetric('active_subscriptions', activeCount, '1m');
 
     // Channel activity
-    const channels = this.wsServer?.getActiveChannels() || [];
+    const channels = streamingServer.getActiveChannels();
     await this.publishMetric('active_channels', channels.length, '1m');
 
     // Mock additional metrics (in real implementation, these would come from actual data)
@@ -209,8 +203,8 @@ export class FeedOrchestrator extends EventEmitter {
 
   getStats() {
     return {
-      connections: this.wsServer?.getConnectionCount() || 0,
-      activeChannels: this.wsServer?.getActiveChannels() || [],
+      connections: streamingServer.getConnectionCount(),
+      activeChannels: streamingServer.getActiveChannels(),
       uptime: process.uptime(),
     };
   }
@@ -219,6 +213,8 @@ export class FeedOrchestrator extends EventEmitter {
     logger.info('Shutting down feed orchestrator...');
 
     clearInterval(this.metricsInterval);
+
+    streamingServer.shutdown();
 
     if (this.wsServer) {
       this.wsServer.shutdown();
