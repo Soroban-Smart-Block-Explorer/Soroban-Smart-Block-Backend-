@@ -8,3 +8,8 @@ node/
 tests/**/*.js
 tests/**/*.js.map
 tests/**/*.d.ts
+
+# Test snapshots and coverage output — generated, not source
+tests/**/__snapshots__/
+coverage/
+.nyc_output/

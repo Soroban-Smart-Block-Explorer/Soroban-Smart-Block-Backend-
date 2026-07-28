@@ -5,6 +5,7 @@ import express from 'express';
 import { createServer, Server } from 'http';
 import cors from 'cors';
 import helmet from 'helmet';
+import hpp from 'hpp';
 import morgan from 'morgan';
 import swaggerUi from 'swagger-ui-express';
 import { correlationMiddleware } from './middleware/correlation';
@@ -156,6 +157,12 @@ app.use(
 app.use(requestSizeGuard(1_048_576)); // 1 MB
 
 app.use(express.json({ limit: '1mb' }));
+
+// HTTP Parameter Pollution protection (Issue #712)
+// Must run before any router/route handlers — keeps only the last value for
+// duplicate query/body params, preventing bypass of downstream input validation.
+app.use(hpp());
+
 app.use(networkRouter);
 
 // Request context FIRST (generates requestId + start time for correlation)
@@ -254,7 +261,21 @@ app.get('/livez', (_req, res) => {
   res.json(liveness);
 });
 
+// /healthz — Kubernetes liveness probe (Issue #704)
+// Returns 200 while the process is alive; 503 during graceful shutdown.
+// K8s probe config: initialDelaySeconds: 15, periodSeconds: 20, failureThreshold: 3
+app.get('/healthz', (_req, res) => {
+  if (isShuttingDown) {
+    return res.status(503).json({ status: 'dead', reason: 'shutting_down' });
+  }
+
+  const liveness = getLivenessStatus(SERVICE_START_TIME);
+  res.json(liveness);
+});
+
 // Readiness probe - detailed check if service can handle traffic
+// /readyz — Kubernetes readiness probe (Issue #704)
+// K8s probe config: initialDelaySeconds: 10, periodSeconds: 10, failureThreshold: 3
 app.get('/readyz', (_req, res) => {
   if (isShuttingDown) {
     return res.status(503).json({ status: 'not_ready', reason: 'shutting_down' });
