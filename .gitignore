@@ -1,10 +1,59 @@
+# Dependencies
 node_modules/
+
+# Build output
 dist/
 dist-esm/
+build/
+out/
+
+# Environment secrets
 .env
+.env.*
+!.env.example
+
+# Logs
 *.log
+logs/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Runtime / temp
 node/
 *.bak
+*.tmp
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+
+# Test artifacts — compiled JS, maps, types and snapshots
 tests/**/*.js
 tests/**/*.js.map
 tests/**/*.d.ts
+tests/**/__snapshots__/
+**/__snapshots__/
+*.snap
+
+# Coverage reports
+coverage/
+.nyc_output/
+
+# TypeScript incremental build info
+*.tsbuildinfo
+
+# IDE / editor
+.vscode/
+.idea/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+
+# Prisma generated client (regenerated at deploy time)
+prisma/generated/
+
+# Parcel / webpack cache
+.cache/
+.parcel-cache/

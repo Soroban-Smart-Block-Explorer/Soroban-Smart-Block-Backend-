@@ -8,6 +8,26 @@ import { streamingServer } from './streamingServer';
 import { logger } from '../logger';
 import { getTokenMetadata } from '../indexer/token-metadata';
 
+// Maximum concurrent subscription deliveries when fanning out a single message (#725)
+const ORCHESTRATOR_CONCURRENCY = parseInt(process.env.FEED_ORCHESTRATOR_CONCURRENCY ?? '20', 10);
+
+/**
+ * Run `fn` over every item with at most `concurrency` tasks in flight at once.
+ * Uses Promise.allSettled per batch so a single failure never aborts the rest (#725).
+ */
+async function runWithConcurrency<T>(
+  items: T[],
+  concurrency: number,
+  fn: (item: T) => Promise<void>,
+): Promise<void> {
+  if (items.length === 0) return;
+  const queue = [...items];
+  while (queue.length > 0) {
+    const batch = queue.splice(0, concurrency);
+    await Promise.allSettled(batch.map(fn));
+  }
+}
+
 export class FeedOrchestrator extends EventEmitter {
   private subscriptionManager = new SubscriptionManager();
   private wsServer?: FeedWebSocketServer;
@@ -43,12 +63,12 @@ export class FeedOrchestrator extends EventEmitter {
         message.channelName,
       );
 
-      // Deliver to each subscription
-      for (const subscription of subscriptions) {
+      // Deliver to each subscription concurrently, bounded by ORCHESTRATOR_CONCURRENCY (#725)
+      await runWithConcurrency(subscriptions, ORCHESTRATOR_CONCURRENCY, async (subscription) => {
         deliveryService.deliverMessage(subscription.id, message).catch((error) => {
           logger.error(`Delivery failed for subscription ${subscription.id}:`, error);
         });
-      }
+      });
 
       // Broadcast to all real-time streaming connections (WebSocket + SSE)
       streamingServer.broadcast(message.channelName, message);
