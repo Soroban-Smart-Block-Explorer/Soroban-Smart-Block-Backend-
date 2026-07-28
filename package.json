@@ -119,7 +119,12 @@
       "eslint --fix --max-warnings 250"
     ]
   },
+  "commitlint": {
+    "extends": ["@commitlint/config-conventional"]
+  },
   "devDependencies": {
+    "@commitlint/cli": "^18.6.1",
+    "@commitlint/config-conventional": "^18.6.3",
     "@opentelemetry/auto-instrumentations-node": "^0.78.0",
     "@opentelemetry/exporter-trace-otlp-http": "^0.220.0",
     "@opentelemetry/resources": "^2.9.0",
