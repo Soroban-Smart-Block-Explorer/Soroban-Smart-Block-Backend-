@@ -16,7 +16,7 @@
     "start:devnet": "STELLAR_NETWORK=devnet node dist/index.js",
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev",
-    "prisma:push": "prisma db push",
+    "prisma:deploy": "prisma migrate deploy",
     "index": "ts-node src/indexer/run.ts",
     "index:testnet": "STELLAR_NETWORK=testnet ts-node src/indexer/run.ts",
     "index:mainnet": "STELLAR_NETWORK=mainnet ts-node src/indexer/run.ts",
