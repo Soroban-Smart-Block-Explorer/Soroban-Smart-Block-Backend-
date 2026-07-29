@@ -1,8 +1,8 @@
 import { prismaRead, prismaWrite } from '../../db';
+import { logger } from '../../logger';
 import { computeCompositePrice } from './composite-price';
 import { updateStablecoinMonitoring, autoDetectStablecoin } from './stablecoin-peg';
 import { discoverExternalPrice } from './external-api-source';
-import { logger } from '../../logger';
 
 let isRunning = false;
 let activeInterval: ReturnType<typeof setInterval> | null = null;
@@ -39,7 +39,7 @@ export async function runActivePriceUpdate(): Promise<void> {
       WHERE "updatedAt" < NOW() - INTERVAL '5 minutes'
     `);
   } catch (err) {
-    logger.error('[PriceUpdater] Active update error:', err);
+    logger.error('[PriceUpdater] Active update error:', { error: err });
   } finally {
     isRunning = false;
   }
@@ -58,7 +58,7 @@ export async function runSlowPriceUpdate(): Promise<void> {
       await Promise.allSettled(batch.map((t) => computeCompositePrice(t.address, t.tokenSymbol)));
     }
   } catch (err) {
-    logger.error('[PriceUpdater] Slow update error:', err);
+    logger.error('[PriceUpdater] Slow update error:', { error: err });
   }
 }
 
@@ -107,7 +107,7 @@ export async function runExternalApiUpdate(): Promise<void> {
       }
     }
   } catch (err) {
-    logger.error('[PriceUpdater] External API update error:', err);
+    logger.error('[PriceUpdater] External API update error:', { error: err });
   }
 }
 
@@ -159,7 +159,7 @@ export async function runStablecoinUpdate(): Promise<void> {
       }
     }
   } catch (err) {
-    logger.error('[PriceUpdater] Stablecoin update error:', err);
+    logger.error('[PriceUpdater] Stablecoin update error:', { error: err });
   }
 }
 

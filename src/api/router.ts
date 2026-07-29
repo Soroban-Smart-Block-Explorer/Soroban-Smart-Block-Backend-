@@ -35,16 +35,22 @@ import { complianceRouter } from './compliance';
 import { nlqRouter } from './nlq';
 import { dataMarketRouter } from './data-market';
 
-// ── Pricing & Market Intelligence ──────────────────────────────────────────────
+// ── Search API (#662 - Orphaned routes) ────────────────────────────────────────
+import { searchRouter } from './search';
+
+// ── Contract Analysis ──────────────────────────────────────────────────────────
+import { reentrancyRouter } from './reentrancy';
+import { composabilityRouter } from './composability';
+
+// ── DEX & Pricing & Market Intelligence ────────────────────────────────────────
+import { dexRouter } from './dex';
+import { dexAnalyticsRouter } from './dex-analytics';
 import { marketRouter } from './market';
 import { tokenPricesRouter } from './token-prices';
 import { portfolioRouter } from './portfolio';
 import { exportsRouter } from './exports';
-import { syncStateRouter } from './sync-state';
-import { governanceRouter } from './governance';
 import { systemicRouter } from './systemic';
 import { benchmarkRouter } from './benchmarks';
-import { networkRouter } from './network';
 import { emergencyBaseRouter } from './emergency-router';
 import { stellarRouter } from './stellar';
 import { privacyRouter } from './privacy';
@@ -53,13 +59,15 @@ import { developerRouter } from './developer/router';
 import { scheduleRouter } from './schedule';
 import feedRouter from './feed';
 import backfillRouter from './backfill';
-import marketRouter from './market';
 import feedSSERouter from './feedSSE';
 import { arbitrageRouter } from './arbitrage';
 import { auditRouter } from './audit';
 import { rateLimitAdminRouter } from './rate-limits';
 import { alertsRouter } from './alerts';
 import { oracleIntelligenceRouter } from './oracle-intelligence';
+
+// ── SAC Trustlines (#637) ─────────────────────────────────────────────────────
+import { sacTrustlinesRouter } from './sac-trustlines';
 
 // ── Admin ─────────────────────────────────────────────────────────────────────
 import { adminErrorsRouter } from './admin/errors';
@@ -101,6 +109,17 @@ router.use('/aa', requireApiKey, aaRouter);
 // compliance contains write mutations and sensitive analysis — key required
 router.use('/compliance', requireApiKey, complianceRouter);
 
+// ── Search (#662) ─────────────────────────────────────────────────────────────
+router.use('/search', searchRouter);
+
+// ── Contract Analysis ─────────────────────────────────────────────────────────
+router.use('/reentrancy', reentrancyRouter);
+router.use('/composability', composabilityRouter);
+
+// ── DEX & Pricing ──────────────────────────────────────────────────────────────
+router.use('/dex', dexRouter);
+router.use('/dex-analytics', dexAnalyticsRouter);
+
 // ── Token Pricing & Valuation ─────────────────────────────────────────────────
 router.use('/token-prices', tokenPricesRouter);
 router.use('/market', marketRouter);
@@ -124,6 +143,9 @@ router.use('/data-market', requireApiKey, dataMarketRouter);
 // ── NFT Collection Discovery, Rarity Engine, Marketplace Analytics & Portfolio ──
 import { nftRouter } from './nft';
 router.use('/nft', nftRouter);
+
+// ── SAC Trustlines (#637) ─────────────────────────────────────────────────────
+router.use('/sac-trustlines', sacTrustlinesRouter);
 
 // ── Admin Dashboards ──────────────────────────────────────────────────────────
 router.use('/admin/errors', adminErrorsRouter);
@@ -154,7 +176,6 @@ router.use('/webhooks', webhooksRouter);
 // over the /governance/:wildcard-style proposal routes.
 import { governanceTreasuryRouter } from './governance-treasury';
 router.use('/governance/treasury', governanceTreasuryRouter);
-import { governanceRouter } from './governance';
 router.use('/governance', governanceRouter);
 router.use('/systemic', systemicRouter);
 router.use('/benchmarks', benchmarkRouter);

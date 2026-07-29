@@ -1,0 +1,135 @@
+---
+# Deployment — Soroban Explorer API Server
+# Serves REST, GraphQL, and WebSocket traffic.
+# Probes use /healthz (liveness) and /readyz (readiness) as per issue #704.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: soroban-api
+  namespace: soroban
+  labels:
+    app.kubernetes.io/name: soroban-explorer
+    app.kubernetes.io/component: api
+    app.kubernetes.io/version: "1.0.0"
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: soroban-api
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0   # Zero-downtime rolling updates
+  template:
+    metadata:
+      labels:
+        app: soroban-api
+        app.kubernetes.io/name: soroban-explorer
+        app.kubernetes.io/component: api
+      annotations:
+        # Restart pods when the ConfigMap changes (requires Reloader controller or manual rollout)
+        checksum/config: "placeholder-update-on-configmap-change"
+    spec:
+      # Run as non-root user (matches Dockerfile USER appuser uid=1001)
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1001
+        runAsGroup: 1001
+        fsGroup: 1001
+
+      # Graceful shutdown — give the app time to drain connections (matches SHUTDOWN_TIMEOUT_MS)
+      terminationGracePeriodSeconds: 40
+
+      containers:
+        - name: api
+          image: soroban-explorer-api:latest   # Replace with your registry image
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 3000
+              protocol: TCP
+            - name: p2p
+              containerPort: 4001
+              protocol: TCP
+
+          # Environment from ConfigMap
+          envFrom:
+            - configMapRef:
+                name: soroban-explorer-config
+            - secretRef:
+                name: soroban-explorer-secrets
+
+          # Override DISABLE_INDEXER — the API pod does NOT run the indexer
+          env:
+            - name: DISABLE_INDEXER
+              value: "true"
+
+          # Liveness probe — if this fails, K8s restarts the container (issue #704)
+          # /healthz: returns 200 while alive, 503 during shutdown
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 15
+            periodSeconds: 20
+            timeoutSeconds: 5
+            failureThreshold: 3
+            successThreshold: 1
+
+          # Readiness probe — if this fails, K8s removes the pod from the Service load-balancer (issue #704)
+          # /readyz: returns 200 only when all dependencies (DB, cache, indexer) are ready
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+            successThreshold: 1
+
+          # Startup probe — gives the app extra time on cold start before liveness kicks in
+          startupProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 5
+            timeoutSeconds: 5
+            failureThreshold: 12   # 12 * 5s = 60s max startup time
+
+          resources:
+            requests:
+              cpu: "250m"
+              memory: "512Mi"
+            limits:
+              cpu: "1000m"
+              memory: "1Gi"
+
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: false   # app writes to /tmp/state
+            capabilities:
+              drop:
+                - ALL
+
+          # Writable tmpfs for shutdown state dump (matches STATE_DUMP_PATH=/tmp/state)
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+
+      volumes:
+        - name: tmp
+          emptyDir:
+            medium: Memory
+            sizeLimit: 64Mi
+
+      # Spread pods across nodes/zones for HA
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: DoNotSchedule
+          labelSelector:
+            matchLabels:
+              app: soroban-api

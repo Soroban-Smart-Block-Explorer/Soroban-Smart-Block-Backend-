@@ -20,10 +20,30 @@ export interface DeliveryConfig {
   };
 }
 
+// Configurable batching interval for endpoint-grouped deliveries (ms) (#726)
+const ENDPOINT_BATCH_INTERVAL_MS = parseInt(
+  process.env.FEED_ENDPOINT_BATCH_INTERVAL_MS ?? '200',
+  10,
+);
+
+// Maximum number of messages to hold per endpoint before flushing early (#726)
+const ENDPOINT_BATCH_MAX_SIZE = parseInt(process.env.FEED_ENDPOINT_BATCH_MAX_SIZE ?? '50', 10);
+
+/** Pending work grouped by endpoint URL for batched delivery (#726). */
+interface EndpointBatchEntry {
+  subscriptionId: string;
+  config: any;
+  message: any;
+}
+
 export class DeliveryService extends EventEmitter {
   private subscriptionManager = new SubscriptionManager();
   private deliveryQueues = new Map<string, any[]>();
   private batchTimers = new Map<string, NodeJS.Timeout>();
+
+  // Endpoint-level batching maps: keyed by endpoint URL (#726)
+  private endpointQueues = new Map<string, EndpointBatchEntry[]>();
+  private endpointTimers = new Map<string, NodeJS.Timeout>();
 
   async deliverMessage(subscriptionId: string, message: any) {
     try {
@@ -112,7 +132,10 @@ export class DeliveryService extends EventEmitter {
 
     switch (subscription.deliveryType) {
       case 'webhook':
-        await this.deliverWebhook(subscription.id, config, messages);
+        // Route through endpoint batcher to group by URL (#726)
+        for (const message of messages) {
+          await this.enqueueEndpointBatch(subscription.id, config, message);
+        }
         break;
       case 'websocket':
         await this.deliverWebSocket(subscription.id, config, messages);
@@ -123,6 +146,85 @@ export class DeliveryService extends EventEmitter {
       case 'queue':
         await this.deliverQueue(subscription.id, config, messages);
         break;
+    }
+  }
+
+  /**
+   * Enqueue a webhook message into the per-endpoint batch.
+   * Messages sharing the same URL are held for up to ENDPOINT_BATCH_INTERVAL_MS
+   * before being flushed as a single HTTP request (#726).
+   */
+  private async enqueueEndpointBatch(subscriptionId: string, config: any, message: any) {
+    const endpointUrl: string = config.url;
+    if (!endpointUrl) {
+      // Fallback: deliver immediately if no URL configured
+      await this.deliverWebhook(subscriptionId, config, [message]);
+      return;
+    }
+
+    if (!this.endpointQueues.has(endpointUrl)) {
+      this.endpointQueues.set(endpointUrl, []);
+    }
+
+    const queue = this.endpointQueues.get(endpointUrl)!;
+    queue.push({ subscriptionId, config, message });
+
+    // Flush immediately when the per-endpoint batch reaches max size
+    if (queue.length >= ENDPOINT_BATCH_MAX_SIZE) {
+      await this.flushEndpointBatch(endpointUrl);
+      return;
+    }
+
+    // Schedule a flush if one isn't already pending
+    if (!this.endpointTimers.has(endpointUrl)) {
+      const timer = setTimeout(async () => {
+        await this.flushEndpointBatch(endpointUrl);
+      }, ENDPOINT_BATCH_INTERVAL_MS);
+      this.endpointTimers.set(endpointUrl, timer);
+    }
+  }
+
+  /**
+   * Flush all queued messages for a given endpoint URL.
+   * Entries from different subscriptions that share the same URL are sent in
+   * a single HTTP request — one POST per unique endpoint (#726).
+   */
+  private async flushEndpointBatch(endpointUrl: string) {
+    // Cancel the pending timer (if any)
+    const timer = this.endpointTimers.get(endpointUrl);
+    if (timer) {
+      clearTimeout(timer);
+      this.endpointTimers.delete(endpointUrl);
+    }
+
+    const queue = this.endpointQueues.get(endpointUrl);
+    if (!queue || queue.length === 0) return;
+
+    // Drain the queue
+    const entries = queue.splice(0, queue.length);
+    if (entries.length === 0) return;
+
+    // Use the config from the first entry (all share the same endpoint URL)
+    const { config } = entries[0];
+
+    // Collect all messages — include subscriptionId per message for traceability
+    const messages = entries.map((e) => ({ ...e.message, subscriptionId: e.subscriptionId }));
+
+    // Deliver as a single batched request; update stats for each subscription
+    const uniqueSubIds = [...new Set(entries.map((e) => e.subscriptionId))];
+    try {
+      await this.deliverWebhook(uniqueSubIds[0], config, messages);
+      for (const subId of uniqueSubIds) {
+        await this.subscriptionManager.updateDeliveryStats(subId, true);
+      }
+    } catch (error) {
+      for (const subId of uniqueSubIds) {
+        await this.subscriptionManager.updateDeliveryStats(
+          subId,
+          false,
+          error instanceof Error ? error.message : 'Unknown error',
+        );
+      }
     }
   }
 
@@ -212,12 +314,19 @@ export class DeliveryService extends EventEmitter {
   }
 
   async shutdown() {
-    // Clear all batch timers
+    // Clear all per-subscription batch timers
     for (const timer of this.batchTimers.values()) {
       clearTimeout(timer);
     }
     this.batchTimers.clear();
     this.deliveryQueues.clear();
+
+    // Flush and clear endpoint-level batch timers (#726)
+    for (const timer of this.endpointTimers.values()) {
+      clearTimeout(timer);
+    }
+    this.endpointTimers.clear();
+    this.endpointQueues.clear();
   }
 }
 

@@ -8,7 +8,9 @@
     "strict": true,
     "esModuleInterop": true,
     "skipLibCheck": true,
-    "resolveJsonModule": true
+    "resolveJsonModule": true,
+    "rootDir": ".",
+    "outDir": null
   },
   "include": ["scripts/**/*.ts"],
   "exclude": ["node_modules", "dist"]
