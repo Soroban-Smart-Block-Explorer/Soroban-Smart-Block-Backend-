@@ -32,28 +32,13 @@ Thumbs.db
 tests/**/*.js
 tests/**/*.js.map
 tests/**/*.d.ts
-tests/**/__snapshots__/
-**/__snapshots__/
+
+# Test snapshots
 *.snap
+*.snap.new
+**/__snapshots__/
+**/snapshots/
 
-# Coverage reports
-coverage/
-.nyc_output/
-
-# TypeScript incremental build info
-*.tsbuildinfo
-
-# IDE / editor
-.vscode/
-.idea/
-*.suo
-*.ntvs*
-*.njsproj
-*.sln
-
-# Prisma generated client (regenerated at deploy time)
-prisma/generated/
-
-# Parcel / webpack cache
-.cache/
-.parcel-cache/
+# Temporary files
+*.tmp
+*.orig

@@ -88,6 +88,7 @@ model Transaction {
   @@index([sourceAccount, ledgerSequence, id])
   @@index([status, ledgerSequence, id])
   @@index([ledgerSequence, id])
+  @@index([ledgerCloseTime, id])
 }
 
 model Event {
@@ -116,6 +117,7 @@ model Event {
   @@index([contractAddress, topicSymbol])
   @@index([contractAddress, ledgerSequence, id])
   @@index([contractAddress, eventType, ledgerSequence])
+  @@index([ledgerSequence, id])
 }
 
 model EventDefinition {
@@ -285,23 +287,35 @@ model SessionAuthorization {
 
 model DexPool {
   id              String   @id @default(cuid())
-  poolAddress     String   @unique
-  chain           String
-  protocol        String
-  poolType        String   // "constant_product" | "stable" | "concentrated"
-  feeBps          Int      // fee in basis points
+  poolAddress     String   @unique @default("")
+  chain           String   @default("stellar")
+  protocol        String   @default("")
+  poolType        String   @default("constant_product") // "constant_product" | "stable" | "concentrated"
+  feeBps          Int      @default(0) // fee in basis points
+
+  // ── Fields required by pool-price-monitor, arbitrage-engine, arbitrage-scanner ──
+  /// Human-readable DEX name (e.g. "StellarSwap", "Aquarius")
+  dexName         String   @default("")
+  /// On-chain contract address for the pool (unique per pool)
+  contractAddress String   @unique @default("") @db.VarChar(56)
+  /// Fee tier as a fraction (e.g. 0.003 = 0.3%). Derived from feeBps when not set.
+  feeTier         Decimal? @db.Decimal(10, 6)
+  /// Total liquidity in the pool (USD value or raw token units depending on context)
+  totalLiquidity  Decimal? @db.Decimal(30, 7)
+  /// Whether this pool is actively monitored
+  isActive        Boolean  @default(true)
 
   // Token A
-  tokenA          String
-  tokenASymbol    String
-  tokenADecimals  Int
-  reserveA        Decimal  @db.Decimal(30, 7)
+  tokenA          String   @default("")
+  tokenASymbol    String   @default("")
+  tokenADecimals  Int      @default(7)
+  reserveA        Decimal  @default(0) @db.Decimal(30, 7)
 
   // Token B
-  tokenB          String
-  tokenBSymbol    String
-  tokenBDecimals  Int
-  reserveB        Decimal  @db.Decimal(30, 7)
+  tokenB          String   @default("")
+  tokenBSymbol    String   @default("")
+  tokenBDecimals  Int      @default(7)
+  reserveB        Decimal  @default(0) @db.Decimal(30, 7)
 
   // Price data
   priceAUsd       Float?
@@ -311,6 +325,8 @@ model DexPool {
   tvlUsd          Float?
   volume1hUsd     Float?
   volume24hUsd    Float?
+  /// Alias for volume24hUsd used by the arbitrage API groupBy queries
+  volume24h       Decimal? @db.Decimal(30, 7)
   volume7dUsd     Float?
   volume30dUsd    Float?
   fees24hUsd      Float?
@@ -327,10 +343,13 @@ model DexPool {
   priceDevB       PriceDeviation[] @relation("priceDevB")
   buyPool         ArbitrageOpportunity[] @relation("buyPool")
   sellPool        ArbitrageOpportunity[] @relation("sellPool")
+  poolPrices      PoolPrice[]
 
   @@index([poolAddress])
   @@index([protocol])
   @@index([tvlUsd(sort: Desc)])
+  @@index([isActive])
+  @@index([dexName])
 }
 
 model VulnerabilityAdvisory {
@@ -815,6 +834,7 @@ model PauseEvent {
   @@index([eventType])
   @@index([timestamp])
   @@index([pauserAddress])
+  @@index([contractAddress, timestamp])
 }
 
 model PauserAnalysis {
@@ -1845,6 +1865,167 @@ model ArbitrageAlert {
   updatedAt       DateTime  @default(now())
 
   @@index([isActive])
+}
+
+// =========================================================================
+// Migration: 20260728000000_dex_pool_price_and_fee_models
+// Resolves #630 — adds PoolPrice, FeeEvent, ProtocolRevenue, YieldSnapshot,
+// ProtocolProfile, and RevenueAlert required by the five gated features:
+//   - Privacy WebSocket broadcaster
+//   - Composability WebSocket broadcaster
+//   - Arbitrage WebSocket broadcaster + scanner
+//   - Pool price monitor
+//   - Fee aggregator
+// =========================================================================
+
+/// Per-block spot price snapshot for a DEX pool.
+/// Written by pool-price-monitor every ~2.5 s. Enables TWAP computation
+/// and cross-DEX deviation detection used by the arbitrage scanner.
+model PoolPrice {
+  id          BigInt   @id @default(autoincrement())
+  poolId      String
+  blockNumber BigInt
+  timestamp   DateTime
+  /// Token A reserve (raw integer units, stored as string to avoid JS BigInt overflow)
+  reserveA    Decimal  @db.Decimal(30, 0)
+  /// Token B reserve
+  reserveB    Decimal  @db.Decimal(30, 0)
+  /// Instantaneous spot price (reserveB / reserveA)
+  spotPrice   Float
+  /// 1-minute TWAP
+  twap1m      Float?
+  /// 5-minute TWAP
+  twap5m      Float?
+  /// 1-hour TWAP
+  twap1h      Float?
+
+  pool DexPool @relation(fields: [poolId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+
+  @@unique([poolId, blockNumber], name: "poolId_blockNumber")
+  @@index([poolId, timestamp])
+  @@index([timestamp])
+}
+
+/// Individual fee emission detected on-chain and classified by fee-classifier.
+/// One row per fee-bearing event. Aggregated hourly/daily into ProtocolRevenue.
+model FeeEvent {
+  id              BigInt   @id @default(autoincrement())
+  txHash          String   @db.VarChar(64)
+  contractAddress String   @db.VarChar(56)
+  /// Classified fee type: SWAP | WITHDRAWAL | PERFORMANCE | PROTOCOL |
+  /// LIQUIDATION | INTEREST_SPREAD | FLASH_LOAN | REFERRAL | INSURANCE_CONTRIBUTION
+  feeType         String   @db.VarChar(40)
+  /// Where the fee goes: LP_REWARDS | TREASURY | BUYBACK_BURN | STAKER_REWARDS |
+  /// INSURANCE_FUND | ECOSYSTEM_FUND | TEAM_VESTING
+  destination     String   @db.VarChar(40)
+  /// Fee amount (string to preserve precision)
+  amount          Decimal  @db.Decimal(30, 7)
+  /// Token symbol or contract address
+  token           String   @db.VarChar(56)
+  /// USD equivalent at time of detection (nullable if price feed unavailable)
+  usdValue        Float?
+  sender          String?  @db.VarChar(56)
+  receiver        String?  @db.VarChar(56)
+  blockNumber     BigInt
+  timestamp       DateTime
+
+  @@unique([txHash, feeType, destination], name: "feeEvent_unique")
+  @@index([contractAddress, timestamp])
+  @@index([feeType])
+  @@index([timestamp])
+}
+
+/// Aggregated protocol revenue for a contract over a calendar bucket.
+/// Written by fee-aggregator on HOUR / DAY / WEEK / MONTH schedules.
+model ProtocolRevenue {
+  id              String   @id
+  contractAddress String   @db.VarChar(56)
+  protocolName    String?  @db.VarChar(120)
+  /// Aggregation period: HOUR | DAY | WEEK | MONTH
+  period          String   @db.VarChar(10)
+  /// Bucket start time (aligned to period boundary)
+  timestamp       DateTime
+  totalFees       Decimal  @db.Decimal(30, 7)
+  swapFees        Decimal? @db.Decimal(30, 7)
+  withdrawFees    Decimal? @db.Decimal(30, 7)
+  performanceFees Decimal? @db.Decimal(30, 7)
+  protocolFees    Decimal? @db.Decimal(30, 7)
+  liquidationFees Decimal? @db.Decimal(30, 7)
+  interestSpread  Decimal? @db.Decimal(30, 7)
+  flashLoanFees   Decimal? @db.Decimal(30, 7)
+  referralFees    Decimal? @db.Decimal(30, 7)
+  lpRewards       Decimal? @db.Decimal(30, 7)
+  treasuryAmount  Decimal? @db.Decimal(30, 7)
+  burnedAmount    Decimal? @db.Decimal(30, 7)
+  stakerRewards   Decimal? @db.Decimal(30, 7)
+  insuranceFund   Decimal? @db.Decimal(30, 7)
+  ecosystemFund   Decimal? @db.Decimal(30, 7)
+  teamVesting     Decimal? @db.Decimal(30, 7)
+  feeToken        String?  @db.VarChar(56)
+  usdValue        Float?
+  txCount         Int?
+  uniqueUsers     Int?
+
+  @@unique([contractAddress, period, timestamp])
+  @@index([contractAddress, period, timestamp])
+  @@index([period, timestamp])
+}
+
+/// Point-in-time yield (APR) snapshot for LP and stakers, computed by
+/// fee-aggregator from 1d/7d/30d rolling ProtocolRevenue windows.
+model YieldSnapshot {
+  id               BigInt   @id @default(autoincrement())
+  contractAddress  String   @db.VarChar(56)
+  protocolName     String?  @db.VarChar(120)
+  timestamp        DateTime
+  lpApr1d          Float?
+  lpApr7d          Float?
+  lpApr30d         Float?
+  stakingApr1d     Float?
+  stakingApr7d     Float?
+  stakingApr30d    Float?
+  /// Total value locked at snapshot time (USD)
+  totalValueLocked Decimal? @db.Decimal(30, 7)
+  /// USD value of staked tokens
+  stakedValue      Decimal? @db.Decimal(30, 7)
+  /// (revenue / tvl) * 100 — revenue share percentage
+  revenueShare     Float?
+
+  @@index([contractAddress, timestamp])
+  @@index([timestamp])
+}
+
+/// Lightweight protocol registry — maps contract address to a human-readable
+/// name and TVL. Used by fee-aggregator to enrich ProtocolRevenue rows and by
+/// YieldSnapshot for TVL context.
+model ProtocolProfile {
+  id              String   @id @default(cuid())
+  contractAddress String   @unique @db.VarChar(56)
+  protocolName    String   @db.VarChar(120)
+  /// Current TVL estimate (USD). Updated by the fee aggregator.
+  tvl             Decimal? @db.Decimal(30, 7)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([protocolName])
+}
+
+/// Anomaly alert raised by fee-classifier's detectAnomalies() when revenue
+/// spikes or drops exceed thresholds vs. the 7-day baseline.
+model RevenueAlert {
+  id              BigInt   @id @default(autoincrement())
+  contractAddress String   @db.VarChar(56)
+  /// Type tag: revenue_spike | revenue_drop
+  alertType       String   @db.VarChar(40)
+  /// Severity: info | warning | critical
+  severity        String   @db.VarChar(20)
+  message         String
+  metadata        Json?
+  detectedAt      DateTime @default(now())
+
+  @@index([contractAddress, detectedAt])
+  @@index([severity])
+  @@index([detectedAt])
 }
 
 // =========================================================================
@@ -4596,4 +4777,52 @@ model FraudRetrainingLog {
   recallAfter    Float    @map("recall_after")
   completedAt    DateTime @default(now()) @map("completed_at")
 
+}
+
+// ─── Search Index Models (Issue #660) ────────────────────────────────────────
+
+model ContractSource {
+  id              String   @id @default(cuid())
+  contractAddress String   @unique
+  imports         Json     @default("[]")
+  exports         Json     @default("[]")
+  events          Json     @default("[]")
+  errors          Json     @default("[]")
+  storageVariables Json    @default("[]")
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  functionDetails ContractSourceFunctionDetail[]
+
+  @@index([contractAddress])
+}
+
+model ContractSourceFunctionDetail {
+  id              String   @id @default(cuid())
+  contractAddress String
+  name            String
+  pseudoCode      String?
+  params          Json     @default("[]")
+  returns         Json     @default("[]")
+  selector        String
+  complexity      String?
+  createdAt       DateTime @default(now())
+
+  contractSource ContractSource @relation(fields: [contractAddress], references: [contractAddress], onDelete: Cascade)
+
+  @@index([contractAddress])
+  @@index([name])
+}
+
+model SearchIndexEntry {
+  id              String   @id @default(cuid())
+  contractAddress String
+  contentType     String
+  content         String
+  metadata        Json?
+  createdAt       DateTime @default(now())
+
+  @@index([contractAddress])
+  @@index([contentType])
+  @@index([content])
 }
