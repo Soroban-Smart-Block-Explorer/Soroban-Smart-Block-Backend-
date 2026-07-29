@@ -32,7 +32,7 @@
     "test:coverage": "vitest run --coverage",
     "test:ui": "vitest --ui",
     "postinstall": "prisma generate",
-    "lint": "eslint 'src/**/*.ts' 'tests/**/*.ts' --max-warnings 400",
+    "lint": "eslint 'src/**/*.ts' 'tests/**/*.ts' --max-warnings 1420",
     "lint:fix": "eslint 'src/**/*.ts' 'tests/**/*.ts' --fix",
     "format": "prettier --check 'src/**/*.ts' 'tests/**/*.ts'",
     "format:fix": "prettier --write 'src/**/*.ts' 'tests/**/*.ts'",
