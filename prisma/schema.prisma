@@ -1464,6 +1464,7 @@ model Developer {
   webhooks     DevWebhook[]
   usageRecords UsageRecord[]
   exportJobs   ExportJob[]
+  keyRotationAudits KeyRotationAudit[] @relation("KeyRotationAudits")
 
   @@index([email])
   @@index([planId])
@@ -1497,6 +1498,27 @@ model DevApiKey {
   @@index([keyHash])
   @@index([status])
   @@index([tier])
+}
+
+model KeyRotationAudit {
+  id               String    @id @default(cuid())
+  developerId      String
+  oldKeyId         String
+  newKeyId         String
+  reason           String? // "manual", "compromised", "rotation_policy", "security_review"
+  ipAddress        String?
+  userAgent        String?
+  wasSuccessful    Boolean   @default(true)
+  errorMessage     String?
+  metadata         Json?
+  rotatedAt        DateTime  @default(now())
+
+  developer Developer @relation("KeyRotationAudits", fields: [developerId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+
+  @@index([developerId])
+  @@index([oldKeyId])
+  @@index([newKeyId])
+  @@index([rotatedAt])
 }
 
 model DevWebhook {

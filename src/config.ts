@@ -170,6 +170,7 @@ export const config = {
   networkPassphrase: profile.networkPassphrase,
   apiSubdomain: profile.apiSubdomain,
   cacheUrl: profile.cacheUrl,
+  cacheMode: profile.cacheMode,
 
   // ── Database (resolved from profile) ─────────────────────────────────────
   databaseUrl: profile.databaseUrl,
