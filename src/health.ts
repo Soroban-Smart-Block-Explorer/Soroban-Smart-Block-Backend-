@@ -1,8 +1,11 @@
 import { prismaRead, prismaWrite } from './db';
-import { isCacheReady } from './cache';
+import { isCacheReady, cacheBackendType, pingRedis } from './cache';
 import { getIndexerStatus } from './indexer-state';
 import { getReadinessState } from './readiness';
 import { getConnectedPeerCount, isP2pEnabled } from './p2p';
+import { measureReplicaLag } from './db/replicaGateway';
+import { getLatestLedger } from './indexer/rpc';
+import { getLastIndexedLedger } from './indexer/indexer';
 
 /**
  * Health check status for individual dependencies
@@ -15,6 +18,23 @@ export interface DependencyHealth {
 }
 
 /**
+ * System metrics definition
+ */
+export interface SystemMetrics {
+  memory: {
+    rss: number;
+    heapTotal: number;
+    heapUsed: number;
+    external: number;
+  };
+  cpu: {
+    user: number;
+    system: number;
+  };
+  uptime: number;
+}
+
+/**
  * Overall health response structure
  */
 export interface HealthResponse {
@@ -23,10 +43,12 @@ export interface HealthResponse {
   dependencies: {
     database: DependencyHealth;
     cache: DependencyHealth;
+    rpc: DependencyHealth;
     indexer: DependencyHealth;
     worker: DependencyHealth;
     p2p: DependencyHealth;
   };
+  system: SystemMetrics;
   readiness: {
     ready: boolean;
     dependencies: Record<string, boolean>;
@@ -53,7 +75,7 @@ export interface ReadinessResponse {
 }
 
 /**
- * Check database health by attempting a simple query
+ * Check database health by attempting a simple query and checking replica lag
  */
 async function checkDatabaseHealth(): Promise<DependencyHealth> {
   const startTime = Date.now();
@@ -65,18 +87,27 @@ async function checkDatabaseHealth(): Promise<DependencyHealth> {
     await prismaWrite.$queryRaw`SELECT 1`;
 
     const responseTime = Date.now() - startTime;
+    const replicaLag = await measureReplicaLag().catch(() => 0);
+
+    const isDegraded = responseTime > 1000 || replicaLag > 2;
 
     return {
-      status: responseTime > 1000 ? 'degraded' : 'healthy',
-      message: responseTime > 1000 ? 'High database latency' : 'Database responsive',
+      status: isDegraded ? 'degraded' : 'healthy',
+      message:
+        replicaLag > 2
+          ? `High replica lag: ${replicaLag} ledgers`
+          : responseTime > 1000
+            ? 'High database latency'
+            : 'Database responsive',
       details: {
         responseTimeMs: responseTime,
         readReplica: 'connected',
         writePrimary: 'connected',
+        replicaLagLedgers: replicaLag,
       },
       lastChecked: new Date().toISOString(),
     };
-  } catch (error) {
+  } catch (error: any) {
     return {
       status: 'unhealthy',
       message: `Database connection failed: ${error instanceof Error ? error.message : 'Unknown error'}`,
@@ -89,58 +120,128 @@ async function checkDatabaseHealth(): Promise<DependencyHealth> {
 }
 
 /**
- * Check cache health
+ * Check cache health and Redis connectivity
  */
-function checkCacheHealth(): DependencyHealth {
+async function checkCacheHealth(): Promise<DependencyHealth> {
   const ready = isCacheReady();
+  const type = cacheBackendType();
+  const redisConnected = await pingRedis().catch(() => false);
+
+  const status = type === 'redis' && !redisConnected ? 'unhealthy' : ready ? 'healthy' : 'degraded';
 
   return {
-    status: ready ? 'healthy' : 'degraded',
-    message: ready ? 'Cache operational' : 'Cache unavailable, using fallback',
+    status,
+    message:
+      status === 'healthy'
+        ? `Cache operational (${type})`
+        : `Cache degraded/disconnected (${type})`,
     details: {
       ready,
-      type: ready ? 'redis' : 'memory',
+      type,
+      connected: type === 'redis' ? redisConnected : true,
     },
     lastChecked: new Date().toISOString(),
   };
 }
 
 /**
- * Check indexer health
+ * Check RPC node connectivity
  */
-function checkIndexerHealth(): DependencyHealth {
+async function checkRpcHealth(): Promise<DependencyHealth> {
+  const startTime = Date.now();
+  try {
+    const latestLedger = await getLatestLedger();
+    const responseTime = Date.now() - startTime;
+
+    return {
+      status: responseTime > 2000 ? 'degraded' : 'healthy',
+      message: `RPC responsive, latest network ledger: ${latestLedger}`,
+      details: {
+        responseTimeMs: responseTime,
+        latestNetworkLedger: latestLedger,
+      },
+      lastChecked: new Date().toISOString(),
+    };
+  } catch (error: any) {
+    return {
+      status: 'unhealthy',
+      message: `RPC node connection failed: ${error instanceof Error ? error.message : 'Unknown error'}`,
+      details: {
+        error: error instanceof Error ? error.message : 'Unknown error',
+      },
+      lastChecked: new Date().toISOString(),
+    };
+  }
+}
+
+/**
+ * Check indexer health, including last indexed ledger and lag
+ */
+async function checkIndexerHealth(latestNetworkLedger: number | null): Promise<DependencyHealth> {
   const { healthy, failureReason } = getIndexerStatus();
 
-  return {
-    status: healthy ? 'healthy' : 'unhealthy',
-    message: healthy ? 'Indexer operational' : `Indexer failure: ${failureReason}`,
-    details: {
-      healthy,
-      ...(failureReason && { failureReason }),
-    },
-    lastChecked: new Date().toISOString(),
-  };
+  if (process.env.DISABLE_INDEXER === 'true') {
+    return {
+      status: 'healthy',
+      message: 'Indexer disabled (DISABLE_INDEXER=true)',
+      details: {
+        disabled: true,
+      },
+      lastChecked: new Date().toISOString(),
+    };
+  }
+
+  try {
+    const lastIndexed = await getLastIndexedLedger().catch(() => 0);
+    const lag =
+      latestNetworkLedger !== null ? Math.max(0, latestNetworkLedger - lastIndexed) : null;
+
+    // Consider degraded/unhealthy if lag is extremely high (e.g. > 100 ledgers)
+    const isLagging = lag !== null && lag > 100;
+    const status = !healthy ? 'unhealthy' : isLagging ? 'degraded' : 'healthy';
+
+    return {
+      status,
+      message: !healthy
+        ? `Indexer failure: ${failureReason}`
+        : isLagging
+          ? `Indexer lagging by ${lag} ledgers`
+          : 'Indexer operational',
+      details: {
+        healthy,
+        lastIndexedLedger: lastIndexed,
+        lagLedgers: lag,
+        ...(failureReason && { failureReason }),
+      },
+      lastChecked: new Date().toISOString(),
+    };
+  } catch (error: any) {
+    return {
+      status: 'unhealthy',
+      message: `Indexer health check failed: ${error instanceof Error ? error.message : 'Unknown error'}`,
+      details: {
+        healthy,
+        error: error instanceof Error ? error.message : 'Unknown error',
+      },
+      lastChecked: new Date().toISOString(),
+    };
+  }
 }
 
 /**
  * Check worker health (background jobs, price updater, etc.)
  */
 function checkWorkerHealth(): DependencyHealth {
-  // For now, we'll consider workers healthy if the service is running
-  // In the future, this could check actual worker status, queue depths, etc.
   return {
     status: 'healthy',
     message: 'Workers operational',
-    details: {
-      // Could add worker-specific metrics here
-    },
+    details: {},
     lastChecked: new Date().toISOString(),
   };
 }
 
 /**
- * Check P2P subsystem health. Single-node deployments (P2P_ENABLED unset)
- * always report healthy — this dependency only matters once P2P is on.
+ * Check P2P subsystem health.
  */
 function checkP2pHealth(): DependencyHealth {
   if (!isP2pEnabled()) {
@@ -164,15 +265,18 @@ function checkP2pHealth(): DependencyHealth {
  * Get overall health status
  */
 export async function getHealthStatus(): Promise<HealthResponse> {
-  const [database, cache, indexer, worker] = await Promise.all([
-    checkDatabaseHealth(),
-    Promise.resolve(checkCacheHealth()),
-    Promise.resolve(checkIndexerHealth()),
-    Promise.resolve(checkWorkerHealth()),
-  ]);
+  const database = await checkDatabaseHealth();
+  const cache = await checkCacheHealth();
+  const rpc = await checkRpcHealth();
+
+  const latestNetworkLedger =
+    rpc.status !== 'unhealthy' && rpc.details ? (rpc.details.latestNetworkLedger as number) : null;
+
+  const indexer = await checkIndexerHealth(latestNetworkLedger);
+  const worker = checkWorkerHealth();
   const p2p = checkP2pHealth();
 
-  const dependencies = { database, cache, indexer, worker, p2p };
+  const dependencies = { database, cache, rpc, indexer, worker, p2p };
 
   // Determine overall status
   const statuses = Object.values(dependencies).map((d) => d.status);
@@ -189,10 +293,28 @@ export async function getHealthStatus(): Promise<HealthResponse> {
   const readinessState = getReadinessState();
   const ready = Object.values(readinessState).every(Boolean);
 
+  // Collect system metrics
+  const mem = process.memoryUsage();
+  const cpu = process.cpuUsage();
+  const system: SystemMetrics = {
+    memory: {
+      rss: mem.rss,
+      heapTotal: mem.heapTotal,
+      heapUsed: mem.heapUsed,
+      external: mem.external,
+    },
+    cpu: {
+      user: cpu.user,
+      system: cpu.system,
+    },
+    uptime: process.uptime(),
+  };
+
   return {
     status: overallStatus,
     timestamp: new Date().toISOString(),
     dependencies,
+    system,
     readiness: {
       ready,
       dependencies: readinessState,
