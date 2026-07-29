@@ -80,7 +80,7 @@ export interface WebhookPayload {
   eventType: string;
   topicSymbol?: string | null;
   decoded: unknown;
-  ledger: number;
+  ledgerSequence: number;
   ledgerCloseTime: Date;
   transactionHash: string;
 }
@@ -242,7 +242,7 @@ async function deliverOnce(
       eventType: ev.eventType,
       topicSymbol: ev.topicSymbol,
       decoded: ev.decoded,
-      ledger: ev.ledgerSequence,
+      ledgerSequence: ev.ledgerSequence,
       ledgerCloseTime: ev.ledgerCloseTime,
       transactionHash: ev.transactionHash,
     };
