@@ -42,9 +42,6 @@ export function assertValidStellarAddress(addr: string, field = 'address'): void
 const HTML_TAG_RE = /<[^>]*>/g;
 const DANGEROUS_PROTO_RE = /\b(javascript|vbscript|data):/gi;
 const INLINE_HANDLER_RE = /\bon\w+\s*=/gi;
-// SQL injection patterns
-const SQL_PATTERN =
-  /('|--|;|\/\*|\*\/|xp_|exec\s+|union\s+select|drop\s+table|insert\s+into|delete\s+from)/i;
 // Prototype pollution: reject keys that would climb the prototype chain
 const PROTO_POLLUTION_KEYS = new Set(['__proto__', 'constructor', 'prototype']);
 // Maximum input size limits
@@ -71,15 +68,20 @@ export function encodeForHtml(value: string): string {
   return he.encode(value, { useNamedReferences: false });
 }
 
-/** Strip or reject strings containing SQL injection or residual attack patterns. */
+/**
+ * Strip HTML/XSS vectors from a string and enforce a maximum length.
+ *
+ * Note: this does NOT attempt to detect or reject SQL injection patterns.
+ * All database access goes through Prisma, which uses parameterized queries
+ * and is not vulnerable to SQL injection via string content. A regex-based
+ * SQL blocklist here would be trivially bypassable by a real attacker while
+ * rejecting legitimate input (e.g. names containing an apostrophe or a
+ * semicolon), so it provided false security rather than real protection.
+ */
 export function sanitizeString(value: string): string {
   // Enforce size limit first to avoid ReDoS via oversized inputs
   const trimmed = value.trim().slice(0, MAX_STRING_LEN);
-  const stripped = stripHtml(trimmed);
-  if (SQL_PATTERN.test(stripped)) {
-    throw Object.assign(new Error('Input contains disallowed characters'), { statusCode: 400 });
-  }
-  return stripped;
+  return stripHtml(trimmed);
 }
 
 /** Recursively sanitize all string values in an object, blocking prototype pollution. */

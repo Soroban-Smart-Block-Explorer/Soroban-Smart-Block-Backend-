@@ -10,6 +10,8 @@
 
 export type NetworkName = 'testnet' | 'mainnet' | 'devnet';
 
+export type CacheMode = 'standalone' | 'sentinel';
+
 export interface NetworkProfile {
   name: NetworkName;
 
@@ -27,7 +29,8 @@ export interface NetworkProfile {
   apiSubdomain: string; // e.g. "testnet-api.example.com"
 
   // ── Cache node ───────────────────────────────────────────────────────────
-  cacheUrl: string; // Redis DSN or in-process sentinel "memory://"
+  cacheUrl: string; // Redis URL (redis://...) or Sentinel URL (sentinel://...)
+  cacheMode: CacheMode; // 'standalone' or 'sentinel'
 }
 
 // ─── Profile registry ─────────────────────────────────────────────────────────
@@ -47,6 +50,7 @@ const PROFILES: Record<NetworkName, NetworkProfile> = {
       '',
     apiSubdomain: process.env.TESTNET_API_SUBDOMAIN ?? 'testnet-api.localhost',
     cacheUrl: process.env.TESTNET_CACHE_URL ?? 'memory://',
+    cacheMode: (process.env.TESTNET_CACHE_MODE ?? 'standalone') as CacheMode,
   },
 
   mainnet: {
@@ -60,6 +64,7 @@ const PROFILES: Record<NetworkName, NetworkProfile> = {
     readReplicaUrl: process.env.MAINNET_READ_REPLICA_URL ?? process.env.MAINNET_DATABASE_URL ?? '',
     apiSubdomain: process.env.MAINNET_API_SUBDOMAIN ?? 'api.localhost',
     cacheUrl: process.env.MAINNET_CACHE_URL ?? 'memory://',
+    cacheMode: (process.env.MAINNET_CACHE_MODE ?? 'standalone') as CacheMode,
   },
 
   devnet: {
@@ -77,6 +82,7 @@ const PROFILES: Record<NetworkName, NetworkProfile> = {
       'postgresql://postgres:password@localhost:5433/soroban_devnet',
     apiSubdomain: process.env.DEVNET_API_SUBDOMAIN ?? 'devnet-api.localhost',
     cacheUrl: process.env.DEVNET_CACHE_URL ?? 'memory://',
+    cacheMode: (process.env.DEVNET_CACHE_MODE ?? 'standalone') as CacheMode,
   },
 };
 
@@ -99,7 +105,7 @@ function isDbUrl(s: string): boolean {
  * Throws with an actionable message on the first violation found.
  */
 export function validateProfile(profile: NetworkProfile): void {
-  const { name, databaseUrl, rpcUrl, rpcWsUrl, horizonUrl } = profile;
+  const { name, databaseUrl, rpcUrl, rpcWsUrl, horizonUrl, networkPassphrase } = profile;
 
   // ── Required fields ──────────────────────────────────────────────────────
   if (!databaseUrl) {
@@ -110,6 +116,14 @@ export function validateProfile(profile: NetworkProfile): void {
   }
   if (!rpcWsUrl) {
     throw new Error(`[${name}] rpcWsUrl is required. Set ${name.toUpperCase()}_RPC_WS_URL.`);
+  }
+  if (!horizonUrl) {
+    throw new Error(`[${name}] horizonUrl is required. Set ${name.toUpperCase()}_HORIZON_URL.`);
+  }
+  if (!networkPassphrase) {
+    throw new Error(
+      `[${name}] networkPassphrase is required. Set ${name.toUpperCase()}_PASSPHRASE.`,
+    );
   }
 
   // ── URL protocol validation ───────────────────────────────────────────────

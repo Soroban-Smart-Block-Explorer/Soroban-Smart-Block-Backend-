@@ -178,6 +178,33 @@ revenueRouter.get(
           timestamp: { gte: since },
         },
         orderBy: { timestamp: 'asc' },
+        select: {
+          id: true,
+          contractAddress: true,
+          protocolName: true,
+          period: true,
+          timestamp: true,
+          totalFees: true,
+          swapFees: true,
+          withdrawFees: true,
+          performanceFees: true,
+          protocolFees: true,
+          liquidationFees: true,
+          interestSpread: true,
+          flashLoanFees: true,
+          referralFees: true,
+          lpRewards: true,
+          treasuryAmount: true,
+          burnedAmount: true,
+          stakerRewards: true,
+          insuranceFund: true,
+          ecosystemFund: true,
+          teamVesting: true,
+          feeToken: true,
+          usdValue: true,
+          txCount: true,
+          uniqueUsers: true,
+        },
       });
 
       res.json({
@@ -403,6 +430,13 @@ revenueRouter.get(
       const profiles = await prismaRead.protocolProfile.findMany({
         where: profileWhere,
         take: 200,
+        select: {
+          contractAddress: true,
+          protocolName: true,
+          category: true,
+          avgFeePercent: true,
+          tvl: true,
+        },
       });
       const addresses = profiles.map((p) => p.contractAddress);
 
@@ -579,6 +613,7 @@ revenueRouter.post(
         where: { contractAddress: address, period: 'DAY' },
         orderBy: { timestamp: 'asc' },
         take: 90,
+        select: { totalFees: true },
       });
 
       if (history.length < 3) {
@@ -623,6 +658,7 @@ revenueRouter.get(
       const events = await prismaRead.feeEvent.findMany({
         where: { sender: userAddress, timestamp: { gte: since } },
         orderBy: { timestamp: 'asc' },
+        select: { contractAddress: true, amount: true, usdValue: true },
       });
 
       const byProtocol = new Map<string, { earned: number; usd: number }>();
@@ -640,11 +676,15 @@ revenueRouter.get(
       // Enrich with protocol names and yield snapshots
       const addresses = Array.from(byProtocol.keys());
       const [profiles, snapshots] = await Promise.all([
-        prismaRead.protocolProfile.findMany({ where: { contractAddress: { in: addresses } } }),
+        prismaRead.protocolProfile.findMany({
+          where: { contractAddress: { in: addresses } },
+          select: { contractAddress: true, protocolName: true, category: true },
+        }),
         prismaRead.yieldSnapshot.findMany({
           where: { contractAddress: { in: addresses } },
           orderBy: { timestamp: 'desc' },
           distinct: ['contractAddress'],
+          select: { contractAddress: true, lpApr30d: true },
         }),
       ]);
 
@@ -699,6 +739,15 @@ revenueRouter.get(
         where,
         take: q.limit,
         orderBy: { lastUpdatedAt: 'desc' },
+        select: {
+          contractAddress: true,
+          protocolName: true,
+          category: true,
+          avgFeePercent: true,
+          feeStructure: true,
+          tvl: true,
+          lastUpdatedAt: true,
+        },
       });
 
       res.json({
@@ -801,6 +850,33 @@ revenueRouter.get(
         where,
         orderBy: { timestamp: 'desc' },
         take: q.limit,
+        select: {
+          id: true,
+          contractAddress: true,
+          protocolName: true,
+          period: true,
+          timestamp: true,
+          totalFees: true,
+          swapFees: true,
+          withdrawFees: true,
+          performanceFees: true,
+          protocolFees: true,
+          liquidationFees: true,
+          interestSpread: true,
+          flashLoanFees: true,
+          referralFees: true,
+          lpRewards: true,
+          treasuryAmount: true,
+          burnedAmount: true,
+          stakerRewards: true,
+          insuranceFund: true,
+          ecosystemFund: true,
+          teamVesting: true,
+          feeToken: true,
+          usdValue: true,
+          txCount: true,
+          uniqueUsers: true,
+        },
       });
 
       if (q.format === 'csv') {

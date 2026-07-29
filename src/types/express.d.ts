@@ -1,5 +1,6 @@
 import { NetworkName, NetworkProfile } from '../profiles';
 import { ApiKeyContext } from '../middleware/apiKeyAuth';
+import { SessionContext } from '../middleware/cookieAuth';
 import { TokenBucketResult } from '../middleware/tokenBucket';
 import { Role, Tier } from '../auth/rbac';
 import { SupportedLanguage } from '../i18n/engine';
@@ -7,6 +8,35 @@ import { SupportedLanguage } from '../i18n/engine';
 declare global {
   // eslint-disable-next-line @typescript-eslint/no-namespace
   namespace Express {
+    interface Response {
+      /**
+       * Send response in standard envelope format with requestId and timestamp.
+       *
+       * Usage: res.sendEnveloped({ items: [...] })
+       * Output: { success: true, data: {...}, meta: { requestId, timestamp } }
+       */
+      sendEnveloped<T>(data: T, statusCode?: number): Response;
+
+      /**
+       * Send offset-based paginated response in standard envelope format.
+       *
+       * Usage: res.sendPaginated(items, { total: 100, page: 1, limit: 20 })
+       * Includes pagination metadata: total, page, limit, pages
+       */
+      sendPaginated<T>(
+        data: T,
+        pagination: { total: number; page: number; limit: number },
+      ): Response;
+
+      /**
+       * Send cursor-based paginated response in standard envelope format.
+       *
+       * Usage: res.sendCursorPaginated(items, { next: 'cursor', hasMore: true })
+       * Includes cursor metadata: next, hasMore
+       */
+      sendCursorPaginated<T>(data: T, cursor: { next?: string | null; hasMore: boolean }): Response;
+    }
+
     interface Request {
       coldStorage?: {
         enabled: boolean;
@@ -20,6 +50,8 @@ declare global {
       requestId?: string;
       startedAt?: number;
       apiKey?: ApiKeyContext;
+      /** Session data from validated session cookie (cookieAuth middleware). */
+      session?: SessionContext;
       rateLimitResult?: TokenBucketResult;
       user?: {
         id: string;
