@@ -14,6 +14,7 @@
  */
 import { Router, Request, Response } from 'express';
 import { z } from 'zod';
+import { asyncHandler } from '../middleware/asyncHandler';
 import {
   getTrustlinesByAccount,
   getTrustlinesBySac,
@@ -74,56 +75,59 @@ sacTrustlinesRouter.get('/', (_req: Request, res: Response) => {
  *       200:
  *         description: Trustline holders list read from the indexer database
  */
-sacTrustlinesRouter.get('/assets/:assetCode', asyncHandler(async (req: Request, res: Response) => {
-  try {
-    const { assetCode } = req.params;
-    const authorized =
-      req.query.authorized !== undefined ? req.query.authorized === 'true' : undefined;
-    const limit = Math.min(200, parseInt((req.query.limit as string) ?? '50', 10));
+sacTrustlinesRouter.get(
+  '/assets/:assetCode',
+  asyncHandler(async (req: Request, res: Response) => {
+    try {
+      const { assetCode } = req.params;
+      const authorized =
+        req.query.authorized !== undefined ? req.query.authorized === 'true' : undefined;
+      const limit = Math.min(200, parseInt((req.query.limit as string) ?? '50', 10));
 
-    // Resolve the SAC address for this asset from the sacMapping table
-    const sacMapping = await prisma.sacMapping.findFirst({
-      where: { assetCode: assetCode.toUpperCase() },
-    });
-
-    let trustlines;
-    if (sacMapping) {
-      // Use the indexed SAC address to query trustlines
-      trustlines = await getTrustlinesBySac(sacMapping.sacAddress, limit);
-    } else {
-      // Fall back to a direct query by assetCode in case the SAC mapping is
-      // not yet indexed but individual trustline records exist
-      const records = await prisma.sacTrustlineMapping.findMany({
-        where: {
-          assetCode: assetCode.toUpperCase(),
-          ...(authorized !== undefined ? { status: authorized ? 'active' : 'deactivated' } : {}),
-        },
-        orderBy: { ledgerSequence: 'desc' },
-        take: limit,
+      // Resolve the SAC address for this asset from the sacMapping table
+      const sacMapping = await prisma.sacMapping.findFirst({
+        where: { assetCode: assetCode.toUpperCase() },
       });
-      trustlines = records;
+
+      let trustlines;
+      if (sacMapping) {
+        // Use the indexed SAC address to query trustlines
+        trustlines = await getTrustlinesBySac(sacMapping.sacAddress, limit);
+      } else {
+        // Fall back to a direct query by assetCode in case the SAC mapping is
+        // not yet indexed but individual trustline records exist
+        const records = await prisma.sacTrustlineMapping.findMany({
+          where: {
+            assetCode: assetCode.toUpperCase(),
+            ...(authorized !== undefined ? { status: authorized ? 'active' : 'deactivated' } : {}),
+          },
+          orderBy: { ledgerSequence: 'desc' },
+          take: limit,
+        });
+        trustlines = records;
+      }
+
+      // Apply the `authorized` filter after fetch when using the mapper helper
+      const filtered =
+        authorized !== undefined
+          ? trustlines.filter((t: any) =>
+              authorized ? t.status === 'active' : t.status !== 'active',
+            )
+          : trustlines;
+
+      res.json({
+        assetCode: assetCode.toUpperCase(),
+        sacAddress: sacMapping?.sacAddress ?? null,
+        trustlines: filtered,
+        total: filtered.length,
+        limit,
+        filter: { authorized },
+      });
+    } catch (err) {
+      res.status(500).json({ error: 'Failed to fetch trustlines for asset' });
     }
-
-    // Apply the `authorized` filter after fetch when using the mapper helper
-    const filtered =
-      authorized !== undefined
-        ? trustlines.filter((t: any) =>
-            authorized ? t.status === 'active' : t.status !== 'active',
-          )
-        : trustlines;
-
-    res.json({
-      assetCode: assetCode.toUpperCase(),
-      sacAddress: sacMapping?.sacAddress ?? null,
-      trustlines: filtered,
-      total: filtered.length,
-      limit,
-      filter: { authorized },
-    });
-  } catch (err) {
-    res.status(500).json({ error: 'Failed to fetch trustlines for asset' });
-  }
-}));
+  }),
+);
 
 // ── GET /accounts/:address ──────────────────────────────────────────────────────
 
@@ -145,22 +149,25 @@ sacTrustlinesRouter.get('/assets/:assetCode', asyncHandler(async (req: Request, 
  *       200:
  *         description: Account trustlines read from the indexer database
  */
-sacTrustlinesRouter.get('/accounts/:address', asyncHandler(async (req: Request, res: Response) => {
-  try {
-    const { address } = req.params;
-    const limit = Math.min(200, parseInt((req.query.limit as string) ?? '50', 10));
+sacTrustlinesRouter.get(
+  '/accounts/:address',
+  asyncHandler(async (req: Request, res: Response) => {
+    try {
+      const { address } = req.params;
+      const limit = Math.min(200, parseInt((req.query.limit as string) ?? '50', 10));
 
-    const trustlines = await getTrustlinesByAccount(address, limit);
+      const trustlines = await getTrustlinesByAccount(address, limit);
 
-    res.json({
-      address,
-      trustlines,
-      total: trustlines.length,
-    });
-  } catch (err) {
-    res.status(500).json({ error: 'Failed to fetch trustlines for account' });
-  }
-}));
+      res.json({
+        address,
+        trustlines,
+        total: trustlines.length,
+      });
+    } catch (err) {
+      res.status(500).json({ error: 'Failed to fetch trustlines for account' });
+    }
+  }),
+);
 
 // ── GET /accounts/:address/authorized ───────────────────────────────────────────
 
@@ -179,23 +186,26 @@ sacTrustlinesRouter.get('/accounts/:address', asyncHandler(async (req: Request, 
  *       200:
  *         description: Active (authorized) trustlines for the account
  */
-sacTrustlinesRouter.get('/accounts/:address/authorized', asyncHandler(async (req: Request, res: Response) => {
-  try {
-    const { address } = req.params;
-    const limit = Math.min(200, parseInt((req.query.limit as string) ?? '50', 10));
+sacTrustlinesRouter.get(
+  '/accounts/:address/authorized',
+  asyncHandler(async (req: Request, res: Response) => {
+    try {
+      const { address } = req.params;
+      const limit = Math.min(200, parseInt((req.query.limit as string) ?? '50', 10));
 
-    const all = await getTrustlinesByAccount(address, limit);
-    const authorized = all.filter((t) => t.status === 'active');
+      const all = await getTrustlinesByAccount(address, limit);
+      const authorized = all.filter((t) => t.status === 'active');
 
-    res.json({
-      address,
-      authorizedTrustlines: authorized,
-      total: authorized.length,
-    });
-  } catch (err) {
-    res.status(500).json({ error: 'Failed to fetch authorized trustlines for account' });
-  }
-}));
+      res.json({
+        address,
+        authorizedTrustlines: authorized,
+        total: authorized.length,
+      });
+    } catch (err) {
+      res.status(500).json({ error: 'Failed to fetch authorized trustlines for account' });
+    }
+  }),
+);
 
 // ── POST /authorize ────────────────────────────────────────────────────────────
 
@@ -223,43 +233,48 @@ sacTrustlinesRouter.get('/accounts/:address/authorized', asyncHandler(async (req
  *       400:
  *         description: Validation error
  */
-sacTrustlinesRouter.post('/authorize', asyncHandler(async (req: Request, res: Response) => {
-  const schema = z.object({
-    assetCode: z.string().min(1).max(12),
-    accountAddress: z.string().min(1),
-    adminKey: z.string().min(1),
-    authorizeFlags: z.number().int().min(0).max(3).default(1),
-  });
+sacTrustlinesRouter.post(
+  '/authorize',
+  asyncHandler(async (req: Request, res: Response) => {
+    const schema = z.object({
+      assetCode: z.string().min(1).max(12),
+      accountAddress: z.string().min(1),
+      adminKey: z.string().min(1),
+      authorizeFlags: z.number().int().min(0).max(3).default(1),
+    });
 
-  const parsed = schema.safeParse(req.body);
-  if (!parsed.success) {
-    return res.status(400).json({ error: parsed.error.flatten() });
-  }
+    const parsed = schema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({ error: parsed.error.flatten() });
+    }
 
-  // Look up the SAC mapping to enrich the response with the contract address
-  const sacMapping = await prisma.sacMapping.findFirst({
-    where: { assetCode: parsed.data.assetCode.toUpperCase() },
-  });
+    // Look up the SAC mapping to enrich the response with the contract address
+    const sacMapping = await prisma.sacMapping.findFirst({
+      where: { assetCode: parsed.data.assetCode.toUpperCase() },
+    });
 
-  // Look up the current trustline state from the indexer
-  const existingTrustlines = sacMapping
-    ? await getTrustlinesBySac(sacMapping.sacAddress, 1000)
-    : [];
-  const existing = existingTrustlines.find((t) => t.gAccount === parsed.data.accountAddress);
+    // Look up the current trustline state from the indexer
+    const existingTrustlines = sacMapping
+      ? await getTrustlinesBySac(sacMapping.sacAddress, 1000)
+      : [];
+    const existing = existingTrustlines.find((t) => t.gAccount === parsed.data.accountAddress);
 
-  return res.json({
-    ...parsed.data,
-    sacAddress: sacMapping?.sacAddress ?? null,
-    assetIssuer: sacMapping?.assetIssuer ?? null,
-    operation: 'authorize_trustline',
-    // The operation must be signed and submitted to the Stellar network by the caller.
-    // This endpoint constructs the required parameters; it does not sign or submit.
-    status: 'pending_submission',
-    currentState: existing ? { status: existing.status, isUnlimited: existing.isUnlimited } : null,
-    note: 'Build a SetTrustLineFlags operation with these parameters and submit to the Stellar network.',
-    preparedAt: new Date().toISOString(),
-  });
-}));
+    return res.json({
+      ...parsed.data,
+      sacAddress: sacMapping?.sacAddress ?? null,
+      assetIssuer: sacMapping?.assetIssuer ?? null,
+      operation: 'authorize_trustline',
+      // The operation must be signed and submitted to the Stellar network by the caller.
+      // This endpoint constructs the required parameters; it does not sign or submit.
+      status: 'pending_submission',
+      currentState: existing
+        ? { status: existing.status, isUnlimited: existing.isUnlimited }
+        : null,
+      note: 'Build a SetTrustLineFlags operation with these parameters and submit to the Stellar network.',
+      preparedAt: new Date().toISOString(),
+    });
+  }),
+);
 
 // ── POST /revoke ───────────────────────────────────────────────────────────────
 
@@ -287,42 +302,47 @@ sacTrustlinesRouter.post('/authorize', asyncHandler(async (req: Request, res: Re
  *       400:
  *         description: Validation error
  */
-sacTrustlinesRouter.post('/revoke', asyncHandler(async (req: Request, res: Response) => {
-  const schema = z.object({
-    assetCode: z.string().min(1).max(12),
-    accountAddress: z.string().min(1),
-    adminKey: z.string().min(1),
-    reason: z.string().optional(),
-  });
+sacTrustlinesRouter.post(
+  '/revoke',
+  asyncHandler(async (req: Request, res: Response) => {
+    const schema = z.object({
+      assetCode: z.string().min(1).max(12),
+      accountAddress: z.string().min(1),
+      adminKey: z.string().min(1),
+      reason: z.string().optional(),
+    });
 
-  const parsed = schema.safeParse(req.body);
-  if (!parsed.success) {
-    return res.status(400).json({ error: parsed.error.flatten() });
-  }
+    const parsed = schema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({ error: parsed.error.flatten() });
+    }
 
-  // Look up the SAC mapping to enrich the response with the contract address
-  const sacMapping = await prisma.sacMapping.findFirst({
-    where: { assetCode: parsed.data.assetCode.toUpperCase() },
-  });
+    // Look up the SAC mapping to enrich the response with the contract address
+    const sacMapping = await prisma.sacMapping.findFirst({
+      where: { assetCode: parsed.data.assetCode.toUpperCase() },
+    });
 
-  // Look up the current trustline state from the indexer
-  const existingTrustlines = sacMapping
-    ? await getTrustlinesBySac(sacMapping.sacAddress, 1000)
-    : [];
-  const existing = existingTrustlines.find((t) => t.gAccount === parsed.data.accountAddress);
+    // Look up the current trustline state from the indexer
+    const existingTrustlines = sacMapping
+      ? await getTrustlinesBySac(sacMapping.sacAddress, 1000)
+      : [];
+    const existing = existingTrustlines.find((t) => t.gAccount === parsed.data.accountAddress);
 
-  return res.json({
-    ...parsed.data,
-    sacAddress: sacMapping?.sacAddress ?? null,
-    assetIssuer: sacMapping?.assetIssuer ?? null,
-    operation: 'revoke_trustline',
-    // The operation must be signed and submitted to the Stellar network by the caller.
-    status: 'pending_submission',
-    currentState: existing ? { status: existing.status, isUnlimited: existing.isUnlimited } : null,
-    note: 'Build a SetTrustLineFlags operation with these parameters and submit to the Stellar network.',
-    preparedAt: new Date().toISOString(),
-  });
-}));
+    return res.json({
+      ...parsed.data,
+      sacAddress: sacMapping?.sacAddress ?? null,
+      assetIssuer: sacMapping?.assetIssuer ?? null,
+      operation: 'revoke_trustline',
+      // The operation must be signed and submitted to the Stellar network by the caller.
+      status: 'pending_submission',
+      currentState: existing
+        ? { status: existing.status, isUnlimited: existing.isUnlimited }
+        : null,
+      note: 'Build a SetTrustLineFlags operation with these parameters and submit to the Stellar network.',
+      preparedAt: new Date().toISOString(),
+    });
+  }),
+);
 
 // ── GET /stats ─────────────────────────────────────────────────────────────────
 
@@ -336,14 +356,17 @@ sacTrustlinesRouter.post('/revoke', asyncHandler(async (req: Request, res: Respo
  *       200:
  *         description: Aggregate trustline stats read from the indexer database
  */
-sacTrustlinesRouter.get('/stats', asyncHandler(async (_req: Request, res: Response) => {
-  try {
-    const stats = await getSacTrustlineStats();
-    res.json({
-      ...stats,
-      computedAt: new Date().toISOString(),
-    });
-  } catch (err) {
-    res.status(500).json({ error: 'Failed to fetch SAC trustline statistics' });
-  }
-}));
+sacTrustlinesRouter.get(
+  '/stats',
+  asyncHandler(async (_req: Request, res: Response) => {
+    try {
+      const stats = await getSacTrustlineStats();
+      res.json({
+        ...stats,
+        computedAt: new Date().toISOString(),
+      });
+    } catch (err) {
+      res.status(500).json({ error: 'Failed to fetch SAC trustline statistics' });
+    }
+  }),
+);
