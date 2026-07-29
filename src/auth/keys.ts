@@ -1,5 +1,6 @@
 import * as forge from 'node-forge';
 import { cacheGet, cacheSet } from '../cache';
+import { config } from '../config';
 
 export interface KeyPair {
   kid: string;
@@ -45,6 +46,14 @@ export async function getOrCreateKeyPair(): Promise<forge.pki.KeyPair> {
     };
     await cacheSet(KEYS_CACHE_KEY, currentKeyPair, KEY_TTL);
     return currentKeyPair;
+  }
+
+  if (config.nodeEnv === 'production') {
+    throw new Error(
+      'JWT signing keys are not configured: set JWT_PRIVATE_KEY and JWT_PUBLIC_KEY in production. ' +
+        'Falling back to in-memory key generation is unsafe because the keys are not durable — ' +
+        'losing the cache (e.g. a Redis restart) regenerates them and invalidates every issued token.',
+    );
   }
 
   currentKeyPair = generateRsaKeyPair();
