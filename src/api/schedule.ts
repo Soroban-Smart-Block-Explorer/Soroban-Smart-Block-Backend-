@@ -646,6 +646,14 @@ scheduleRouter.get(
         where: { triggerTime: { gte: now, lte: until } },
         orderBy: { triggerTime: 'asc' },
         take: 500,
+        select: {
+          id: true,
+          contractAddress: true,
+          functionName: true,
+          timerType: true,
+          triggerTime: true,
+          status: true,
+        },
       });
 
       const formatDt = (d: Date) =>

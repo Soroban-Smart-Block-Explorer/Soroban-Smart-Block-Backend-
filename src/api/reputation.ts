@@ -131,7 +131,7 @@ reputationRouter.get(
     const limit = Math.min(100, Math.max(1, Number(req.query.limit ?? 10)));
 
     // Load all profiles from DB
-    const profiles = await prismaRead.reputationProfile.findMany();
+    const profiles = await prismaRead.reputationProfile.findMany({ select: { address: true } });
 
     // Fetch real on-chain data for every address in parallel
     const chainDataArrays = await Promise.all(profiles.map((p) => fetchProfileData(p.address)));
@@ -1894,8 +1894,12 @@ reputationRouter.get(
     const address = canonicalAddress(req.params.address);
 
     // Fetch all balances and delegations
-    const delegations = await prismaRead.reputationDelegation.findMany();
-    const profiles = await prismaRead.reputationProfile.findMany();
+    const delegations = await prismaRead.reputationDelegation.findMany({
+      select: { delegator: true, delegatee: true, amount: true },
+    });
+    const profiles = await prismaRead.reputationProfile.findMany({
+      select: { address: true, combinedScore: true },
+    });
 
     const accounts = profiles.map((p) => ({
       address: p.address,

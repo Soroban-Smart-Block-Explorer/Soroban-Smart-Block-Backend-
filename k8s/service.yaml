@@ -1,0 +1,47 @@
+---
+# ClusterIP Service — internal cluster access to the API (used by Ingress, other pods)
+apiVersion: v1
+kind: Service
+metadata:
+  name: soroban-api
+  namespace: soroban
+  labels:
+    app.kubernetes.io/name: soroban-explorer
+    app.kubernetes.io/component: api
+spec:
+  type: ClusterIP
+  selector:
+    app: soroban-api
+  ports:
+    - name: http
+      port: 80
+      targetPort: http
+      protocol: TCP
+    - name: p2p
+      port: 4001
+      targetPort: p2p
+      protocol: TCP
+
+---
+# LoadBalancer Service — direct external exposure (use instead of/alongside Ingress
+# depending on cloud provider setup; annotate for your provider's LB controller).
+apiVersion: v1
+kind: Service
+metadata:
+  name: soroban-api-lb
+  namespace: soroban
+  labels:
+    app.kubernetes.io/name: soroban-explorer
+    app.kubernetes.io/component: api
+  annotations:
+    # Example for AWS NLB — replace/remove for your cloud provider
+    service.beta.kubernetes.io/aws-load-balancer-type: "nlb"
+spec:
+  type: LoadBalancer
+  selector:
+    app: soroban-api
+  ports:
+    - name: http
+      port: 80
+      targetPort: http
+      protocol: TCP

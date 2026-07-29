@@ -230,7 +230,12 @@ authRouter.post(
   requireRole('admin'),
   asyncHandler(async (_req, res) => {
     const kp = await rotateKeys();
-    res.json({ kid: kp.kid, createdAt: new Date(kp.createdAt).toISOString() });
+    res.json({
+      kid: kp.kid,
+      createdAt: new Date(kp.createdAt).toISOString(),
+      warning:
+        'All previously-issued access tokens are now invalid and require re-authentication or a token refresh. Refresh tokens are unaffected.',
+    });
   }),
 );
 

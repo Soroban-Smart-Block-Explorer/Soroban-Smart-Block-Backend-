@@ -162,6 +162,7 @@ sdksRouter.get(
     const versions = await prismaRead.sdkVersion.findMany({
       where: { isDeprecated: false },
       orderBy: { publishedAt: 'desc' },
+      select: { language: true, version: true, downloadCount: true },
     });
 
     const versionMap = new Map<string, { version: string; downloadCount: number }>();
@@ -214,6 +215,7 @@ sdksRouter.get(
     const downloads = await prismaRead.sdkDownload.findMany({
       orderBy: { downloadedAt: 'desc' },
       take: 10000,
+      select: { language: true, downloadedAt: true },
     });
 
     const byLanguage: Record<string, number> = {};
@@ -227,6 +229,13 @@ sdksRouter.get(
     const versions = await prismaRead.sdkVersion.findMany({
       orderBy: { publishedAt: 'desc' },
       take: 50,
+      select: {
+        language: true,
+        version: true,
+        downloadCount: true,
+        isDeprecated: true,
+        publishedAt: true,
+      },
     });
 
     const versionAdoption = versions.map((v) => ({

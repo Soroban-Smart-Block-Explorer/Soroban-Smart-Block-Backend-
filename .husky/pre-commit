@@ -1,1 +1,13 @@
+. "$(dirname "$0")/_/husky.sh"
+
+# Check for compiled test artifacts
+echo "🔍 Checking for committed build artifacts..."
+if bash .husky/pre-commit-check-artifacts.sh; then
+  echo "✓ No build artifacts in staging"
+else
+  exit 1
+fi
+
+# Run lint-staged for TypeScript formatting & linting
+echo "🧹 Running lint-staged..."
 npx lint-staged

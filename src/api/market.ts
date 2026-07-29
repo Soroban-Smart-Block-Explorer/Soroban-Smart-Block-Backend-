@@ -16,9 +16,18 @@ marketRouter.get(
     const tokenPrices = await prismaRead.tokenPrice.findMany({
       orderBy: { volume24hUsd: 'desc' },
       where: { priceUsd: { gt: 0 } },
+      select: {
+        tokenAddress: true,
+        marketCapUsd: true,
+        volume24hUsd: true,
+        liquidityUsd: true,
+        priceChange24h: true,
+      },
     });
 
-    const tokenMarketData = await prismaRead.tokenMarketData.findMany({});
+    const tokenMarketData = await prismaRead.tokenMarketData.findMany({
+      select: { tokenAddress: true, symbol: true, isStablecoin: true, pegDeviation24h: true },
+    });
     const marketDataMap = new Map(tokenMarketData.map((d) => [d.tokenAddress, d]));
 
     let totalMarketCap = 0;
@@ -107,6 +116,19 @@ marketRouter.get(
       orderBy: { volume24hUsd: 'desc' },
       skip: offset,
       take: limit,
+      select: {
+        tokenAddress: true,
+        priceUsd: true,
+        priceXlm: true,
+        volume24hUsd: true,
+        marketCapUsd: true,
+        liquidityUsd: true,
+        priceChange1h: true,
+        priceChange24h: true,
+        priceChange7d: true,
+        confidence: true,
+        source: true,
+      },
     });
 
     const addresses = tokenPrices.map((t) => t.tokenAddress);
@@ -118,6 +140,15 @@ marketRouter.get(
 
     const marketData = await prismaRead.tokenMarketData.findMany({
       where: { tokenAddress: { in: addresses } },
+      select: {
+        tokenAddress: true,
+        symbol: true,
+        name: true,
+        holderCount: true,
+        transferCount24h: true,
+        isStablecoin: true,
+        tags: true,
+      },
     });
     const marketDataMap = new Map(marketData.map((m) => [m.tokenAddress, m]));
 
@@ -189,6 +220,12 @@ marketRouter.get(
       where: { priceChange24h: { gt: 0 }, volume24hUsd: { gt: 0 } },
       orderBy: { volume24hUsd: 'desc' },
       take: 100,
+      select: {
+        tokenAddress: true,
+        volume24hUsd: true,
+        priceChange24h: true,
+        priceChange1h: true,
+      },
     });
 
     const trending = tokenPrices
@@ -257,6 +294,13 @@ marketRouter.get(
             ? { priceChange24h: { lt: 0 } }
             : { priceUsd: { gt: 0 } },
       take: limit,
+      select: {
+        tokenAddress: true,
+        volume24hUsd: true,
+        marketCapUsd: true,
+        priceChange24h: true,
+        priceUsd: true,
+      },
     });
 
     const addresses = tokenPrices.map((t) => t.tokenAddress);
@@ -354,11 +398,20 @@ marketRouter.get(
   asyncHandler(async (_req: Request, res: Response) => {
     const stablecoins = await prismaRead.tokenMarketData.findMany({
       where: { isStablecoin: true },
+      select: {
+        tokenAddress: true,
+        symbol: true,
+        stablecoinPeg: true,
+        pegDeviation24h: true,
+        pegStabilityScore: true,
+        tags: true,
+      },
     });
 
     const addresses = stablecoins.map((s) => s.tokenAddress);
     const tokenPrices = await prismaRead.tokenPrice.findMany({
       where: { tokenAddress: { in: addresses } },
+      select: { tokenAddress: true, priceUsd: true },
     });
     const priceMap = new Map(tokenPrices.map((p) => [p.tokenAddress, p]));
 
@@ -433,6 +486,13 @@ marketRouter.get(
     const stablecoins = await prismaRead.tokenMarketData.findMany({
       where: { isStablecoin: true, pegDeviation24h: { gt: 0.01 } },
       orderBy: { pegDeviation24h: 'desc' },
+      select: {
+        tokenAddress: true,
+        symbol: true,
+        pegDeviation24h: true,
+        pegStabilityScore: true,
+        updatedAt: true,
+      },
     });
 
     res.json({
@@ -464,6 +524,22 @@ marketRouter.get(
       orderBy: { tvlUsd: 'desc' },
       skip: offset,
       take: limit,
+      select: {
+        poolAddress: true,
+        contractAddress: true,
+        dexName: true,
+        tokenA: true,
+        tokenB: true,
+        tokenASymbol: true,
+        tokenBSymbol: true,
+        reserveA: true,
+        reserveB: true,
+        tvlUsd: true,
+        volume24hUsd: true,
+        fees24hUsd: true,
+        feeBps: true,
+        aprPct: true,
+      },
     });
 
     const total = await prismaRead.dexPool.count({ where: { isActive: true } });
@@ -507,6 +583,7 @@ marketRouter.get(
       where: { poolAddress: address },
       orderBy: { createdAt: 'desc' },
       take: 50,
+      select: { id: true, createdAt: true, amountIn: true },
     });
 
     res.json({
@@ -549,6 +626,7 @@ marketRouter.get(
   asyncHandler(async (_req: Request, res: Response) => {
     const pools = await prismaRead.dexPool.findMany({
       where: { isActive: true },
+      select: { dexName: true, volume24hUsd: true, tvlUsd: true, fees24hUsd: true },
     });
 
     const dexMap = new Map<

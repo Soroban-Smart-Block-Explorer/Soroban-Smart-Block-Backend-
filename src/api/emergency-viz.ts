@@ -12,6 +12,12 @@ vizRouter.get(
       const events = await prismaRead.pauseEvent.findMany({
         orderBy: { timestamp: 'asc' },
         take: 500,
+        select: {
+          contractAddress: true,
+          eventType: true,
+          timestamp: true,
+          durationSeconds: true,
+        },
       });
 
       const contracts = new Set(events.map((e) => e.contractAddress));
@@ -65,6 +71,14 @@ vizRouter.get(
       const scores = await prismaRead.protocolHealthScore.findMany({
         orderBy: { healthScore: 'desc' },
         take: 20,
+        select: {
+          protocolName: true,
+          contractAddress: true,
+          totalPauses30d: true,
+          recoveryScore: true,
+          decentralizationScore: true,
+          healthScore: true,
+        },
       });
 
       const radarData = scores.map((s) => ({
@@ -160,6 +174,17 @@ vizRouter.get(
       const events = await prismaRead.pauseEvent.findMany({
         orderBy: { timestamp: 'desc' },
         take: 10000,
+        select: {
+          id: true,
+          contractAddress: true,
+          eventType: true,
+          pauserAddress: true,
+          reason: true,
+          txHash: true,
+          blockNumber: true,
+          timestamp: true,
+          durationSeconds: true,
+        },
       });
 
       const header =
