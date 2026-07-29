@@ -11,6 +11,36 @@ import {
   TokenBucketResult,
 } from './tokenBucket';
 
+/**
+ * Standard rate limit headers set on all responses for intelligent client backoff.
+ * Follows RFC 6585 convention for rate limiting.
+ */
+interface RateLimitHeaders {
+  'X-RateLimit-Limit': string; // Maximum requests allowed
+  'X-RateLimit-Remaining': string; // Requests remaining in current window
+  'X-RateLimit-Reset': string; // Unix timestamp when limit resets (seconds)
+  'X-RateLimit-Tier'?: string; // API tier (free, developer, premium, enterprise)
+  'X-RateLimit-Policy'?: string; // Policy applied (user-override, adaptive-throttle)
+  'Retry-After'?: string; // Seconds to wait before retrying (429 only)
+}
+
+/**
+ * Set standard rate limit headers on the response.
+ * Ensures consistent header format across all rate limiting paths.
+ */
+function setRateLimitHeaders(res: Response, headers: Partial<RateLimitHeaders>): void {
+  if (headers['X-RateLimit-Limit'])
+    res.setHeader('X-RateLimit-Limit', headers['X-RateLimit-Limit']);
+  if (headers['X-RateLimit-Remaining'])
+    res.setHeader('X-RateLimit-Remaining', headers['X-RateLimit-Remaining']);
+  if (headers['X-RateLimit-Reset'])
+    res.setHeader('X-RateLimit-Reset', headers['X-RateLimit-Reset']);
+  if (headers['X-RateLimit-Tier']) res.setHeader('X-RateLimit-Tier', headers['X-RateLimit-Tier']);
+  if (headers['X-RateLimit-Policy'])
+    res.setHeader('X-RateLimit-Policy', headers['X-RateLimit-Policy']);
+  if (headers['Retry-After']) res.setHeader('Retry-After', headers['Retry-After']);
+}
+
 const developerKeys = new Set((process.env.API_KEYS_DEVELOPER ?? '').split(',').filter(Boolean));
 const premiumKeys = new Set((process.env.API_KEYS_PREMIUM ?? '').split(',').filter(Boolean));
 
@@ -156,14 +186,62 @@ export function clearRateLimitOverrideCache(): void {
 
 function buildLimiters(store?: Store): Limiters {
   const tiers = normalizeTierConfig();
-  const make = (tierName: TierName) =>
-    rateLimit({
+  const make = (tierName: TierName) => {
+    const limiter = rateLimit({
       ...tiers[tierName],
-      standardHeaders: true,
+      standardHeaders: false, // We set headers manually for consistency
       legacyHeaders: false,
       keyGenerator: (req: Request) => `${tierName}:${req.ip ?? 'unknown'}`,
+      handler: (req: Request, res: Response) => {
+        // This handler is only called when the rate limit is exceeded.
+        // For requests within the limit, express-rate-limit calls next() automatically.
+        const resetTimestamp = Math.ceil((Date.now() + tiers[tierName].windowMs) / 1000);
+
+        setRateLimitHeaders(res, {
+          'X-RateLimit-Limit': String(tiers[tierName].max),
+          'X-RateLimit-Remaining': '0',
+          'X-RateLimit-Reset': String(resetTimestamp),
+          'X-RateLimit-Tier': tierName,
+          'Retry-After': String(Math.ceil(tiers[tierName].windowMs / 1000)),
+        });
+
+        res.status(429).json({
+          error: 'Rate limit exceeded',
+          tier: tierName,
+          retryAfter: Math.ceil(tiers[tierName].windowMs / 1000),
+          resetAt: new Date(resetTimestamp * 1000).toISOString(),
+        });
+      },
+      skip: (_req: Request) => false,
       ...(store ? { store } : {}),
     });
+
+    // Wrap the limiter to set headers on all responses (allowed and rate-limited)
+    return (req: Request, res: Response, next: NextFunction) => {
+      const originalJson = res.json.bind(res);
+
+      // Hook into response to add headers before sending
+      res.json = function (body: any) {
+        if (!res.headersSent) {
+          const rateLimit = (req as any).rateLimit;
+          if (rateLimit) {
+            const resetTimestamp = Math.ceil((Date.now() + tiers[tierName].windowMs) / 1000);
+            setRateLimitHeaders(res, {
+              'X-RateLimit-Limit': String(tiers[tierName].max),
+              'X-RateLimit-Remaining': String(
+                Math.max(0, tiers[tierName].max - (rateLimit.current ?? 0)),
+              ),
+              'X-RateLimit-Reset': String(resetTimestamp),
+              'X-RateLimit-Tier': tierName,
+            });
+          }
+        }
+        return originalJson(body);
+      } as any;
+
+      limiter(req, res, next);
+    };
+  };
 
   return {
     free: make('free'),
@@ -227,15 +305,28 @@ function runLocalRateLimit(req: Request, res: Response, next: NextFunction): voi
       resetAt: now + effectiveConfig.windowMs,
     };
     const remaining = Math.max(0, effectiveConfig.max - bucket.count);
-    res.setHeader('X-RateLimit-Limit', `${effectiveConfig.max}`);
-    res.setHeader('X-RateLimit-Remaining', `${remaining}`);
-    res.setHeader('X-RateLimit-Reset', `${Math.ceil(bucket.resetAt / 1000)}`);
+    const resetTimestamp = Math.ceil(bucket.resetAt / 1000);
 
-    if (configOverride) res.setHeader('X-RateLimit-Policy', 'user-override');
+    setRateLimitHeaders(res, {
+      'X-RateLimit-Limit': String(effectiveConfig.max),
+      'X-RateLimit-Remaining': String(remaining),
+      'X-RateLimit-Reset': String(resetTimestamp),
+      'X-RateLimit-Tier': tier,
+      'X-RateLimit-Policy': configOverride ? 'user-override' : undefined,
+    });
 
     if (bucket.count > effectiveConfig.max) {
-      res.setHeader('X-RateLimit-Remaining', '0');
-      res.status(429).json({ error: 'Too many requests' });
+      const retryAfter = Math.max(1, resetTimestamp - Math.floor(Date.now() / 1000));
+      setRateLimitHeaders(res, {
+        'X-RateLimit-Remaining': '0',
+        'Retry-After': String(retryAfter),
+      });
+      res.status(429).json({
+        error: 'Rate limit exceeded',
+        tier,
+        retryAfter,
+        resetAt: new Date(resetTimestamp * 1000).toISOString(),
+      });
       return;
     }
 
@@ -263,20 +354,26 @@ export async function tieredRateLimit(
         keyCtx?.rateLimitOverride,
       );
 
-      res.setHeader('X-RateLimit-Limit', result.limit);
-      res.setHeader('X-RateLimit-Remaining', result.remaining);
-      res.setHeader('X-RateLimit-Reset', result.resetAt);
-      res.setHeader('X-RateLimit-Tier', result.tier);
+      const resetTimestamp = result.resetAt;
+      setRateLimitHeaders(res, {
+        'X-RateLimit-Limit': String(result.limit),
+        'X-RateLimit-Remaining': String(result.remaining),
+        'X-RateLimit-Reset': String(resetTimestamp),
+        'X-RateLimit-Tier': result.tier,
+      });
       (req as Request & { rateLimitResult?: TokenBucketResult }).rateLimitResult = result;
 
       if (!result.allowed) {
-        const retryAfter = Math.max(1, result.resetAt - Math.floor(Date.now() / 1000));
-        res.setHeader('Retry-After', retryAfter);
+        const retryAfter = Math.max(1, resetTimestamp - Math.floor(Date.now() / 1000));
+        setRateLimitHeaders(res, {
+          'X-RateLimit-Remaining': '0',
+          'Retry-After': String(retryAfter),
+        });
         res.status(429).json({
           error: 'Rate limit exceeded',
           tier: result.tier,
           retryAfter,
-          resetAt: new Date(result.resetAt * 1000).toISOString(),
+          resetAt: new Date(resetTimestamp * 1000).toISOString(),
         });
         return;
       }

@@ -22,6 +22,7 @@ import { eventRouter } from './events';
 import { contractRouter } from './contracts';
 import { walletRouter } from './wallets';
 import { tokenRouter } from './tokens';
+import { batchRouter } from './batch';
 import { authorizationRouter } from './authorizations';
 import { renderRouter } from './render';
 import { simulateRouter } from './simulate';
@@ -84,6 +85,7 @@ router.use('/events', eventRouter);
 router.use('/contracts', contractRouter);
 router.use('/wallets', walletRouter);
 router.use('/tokens', tokenRouter);
+router.use('/batch', batchRouter);
 router.use('/authorizations', authorizationRouter);
 router.use('/render', renderRouter);
 // simulate and verify invoke Soroban RPC and perform heavy analysis — key required
