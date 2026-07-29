@@ -38,6 +38,12 @@ jobs:
       - name: Prisma field reference validator
         run: npm run validate:prisma
 
+      - name: Safe Prisma migration deploy (no data loss)
+        run: npm run prisma:deploy
+        env:
+          DATABASE_URL: postgresql://test:test@localhost:5432/test
+          TESTNET_DATABASE_URL: postgresql://test:test@localhost:5432/test
+
   lint:
     name: Lint
     runs-on: ubuntu-latest
