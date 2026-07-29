@@ -807,7 +807,7 @@ model EmergencyState {
   isPaused                 Boolean  @default(false)
   currentPauseId           String?
   totalPauseCount          Int      @default(0)
-  totalPausedSeconds       BigInt   @default(0)
+  totalPausedSeconds       Int      @default(0)
   lastPauseDurationSeconds BigInt?
   pauserType               String?  @db.VarChar(30)
   decentralizationScore    Decimal? @db.Decimal(5, 2)
