@@ -25,10 +25,10 @@ marketRouter.get(
       },
     });
 
-    const tokenMarketData = await prismaRead.tokenMarketData.findMany({
-      select: { tokenAddress: true, symbol: true, isStablecoin: true, pegDeviation24h: true },
+    const tokenMarketData = await prismaRead.token.findMany({
+      select: { address: true, symbol: true, isStablecoin: true, pegDeviation24h: true },
     });
-    const marketDataMap = new Map(tokenMarketData.map((d) => [d.tokenAddress, d]));
+    const marketDataMap = new Map(tokenMarketData.map((d) => [d.address, d]));
 
     let totalMarketCap = 0;
     let totalVolume24h = 0;
@@ -138,10 +138,10 @@ marketRouter.get(
     });
     const contractMap = new Map(contracts.map((c) => [c.address, c]));
 
-    const marketData = await prismaRead.tokenMarketData.findMany({
-      where: { tokenAddress: { in: addresses } },
+    const marketData = await prismaRead.token.findMany({
+      where: { address: { in: addresses } },
       select: {
-        tokenAddress: true,
+        address: true,
         symbol: true,
         name: true,
         holderCount: true,
@@ -150,7 +150,7 @@ marketRouter.get(
         tags: true,
       },
     });
-    const marketDataMap = new Map(marketData.map((m) => [m.tokenAddress, m]));
+    const marketDataMap = new Map(marketData.map((m) => [m.address, m]));
 
     res.json({
       tokens: tokenPrices.map((tp) => {
@@ -396,10 +396,10 @@ marketRouter.get(
 marketRouter.get(
   '/stablecoins',
   asyncHandler(async (_req: Request, res: Response) => {
-    const stablecoins = await prismaRead.tokenMarketData.findMany({
+    const stablecoins = await prismaRead.token.findMany({
       where: { isStablecoin: true },
       select: {
-        tokenAddress: true,
+        address: true,
         symbol: true,
         stablecoinPeg: true,
         pegDeviation24h: true,
@@ -408,7 +408,7 @@ marketRouter.get(
       },
     });
 
-    const addresses = stablecoins.map((s) => s.tokenAddress);
+    const addresses = stablecoins.map((s) => s.address);
     const tokenPrices = await prismaRead.tokenPrice.findMany({
       where: { tokenAddress: { in: addresses } },
       select: { tokenAddress: true, priceUsd: true },
@@ -439,8 +439,8 @@ marketRouter.get(
   asyncHandler(async (req: Request, res: Response) => {
     const { address } = req.params;
 
-    const marketData = await prismaRead.tokenMarketData.findUnique({
-      where: { tokenAddress: address },
+    const marketData = await prismaRead.token.findUnique({
+      where: { address: address },
     });
 
     if (!marketData || !marketData.isStablecoin) {
@@ -483,11 +483,11 @@ marketRouter.get(
 marketRouter.get(
   '/stablecoins/alerts',
   asyncHandler(async (_req: Request, res: Response) => {
-    const stablecoins = await prismaRead.tokenMarketData.findMany({
+    const stablecoins = await prismaRead.token.findMany({
       where: { isStablecoin: true, pegDeviation24h: { gt: 0.01 } },
       orderBy: { pegDeviation24h: 'desc' },
       select: {
-        tokenAddress: true,
+        address: true,
         symbol: true,
         pegDeviation24h: true,
         pegStabilityScore: true,
@@ -497,7 +497,7 @@ marketRouter.get(
 
     res.json({
       alerts: stablecoins.map((s) => ({
-        tokenAddress: s.tokenAddress,
+        tokenAddress: s.address,
         symbol: s.symbol,
         deviation: s.pegDeviation24h,
         stabilityScore: s.pegStabilityScore,

@@ -3286,15 +3286,30 @@ model TipWebhook {
 }
 
 model Token {
-  id              String   @id @default(cuid())
-  address         String
-  name            String?
-  symbol          String?
-  decimals        Int?
-  totalSupply     String?
-  contractAddress String?
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
+  id                      String   @id @default(cuid())
+  address                 String   @unique
+  name                    String?
+  symbol                  String?
+  decimals                Int?
+  totalSupply             Decimal? @db.Decimal(30, 7)
+  contractAddress         String?
+  circulatingSupply       Decimal? @db.Decimal(30, 7)
+  holderCount             Int      @default(0)
+  transferCount24h        Int      @default(0)
+  uniqueSenders24h        Int      @default(0)
+  uniqueReceivers24h      Int      @default(0)
+  averageTransferValueUsd Decimal? @db.Decimal(30, 7)
+  isStablecoin            Boolean  @default(false)
+  stablecoinPeg           String?
+  pegDeviation24h         Float?
+  pegStabilityScore       Float?
+  tags                    String[]
+  createdAt               DateTime @default(now())
+  updatedAt               DateTime @updatedAt
+
+  @@index([holderCount(sort: Desc)])
+  @@index([transferCount24h(sort: Desc)])
+  @@map("tokens")
 }
 
 model TokenPrice {
@@ -3337,30 +3352,6 @@ model TokenPriceHistory {
   @@index([timestamp])
 }
 
-model TokenMarketData {
-  id                      String   @id @default(cuid())
-  tokenAddress            String   @unique
-  symbol                  String?
-  name                    String?
-  decimals                Int?
-  totalSupply             Decimal?
-  circulatingSupply       Decimal?
-  holderCount             Int      @default(0)
-  transferCount24h        Int      @default(0)
-  uniqueSenders24h        Int      @default(0)
-  uniqueReceivers24h      Int      @default(0)
-  averageTransferValueUsd Decimal?
-  isStablecoin            Boolean  @default(false)
-  stablecoinPeg           String?
-  pegDeviation24h         Float?
-  pegStabilityScore       Float?
-  tags                    String[]
-  createdAt               DateTime @default(now())
-  updatedAt               DateTime @updatedAt
-
-  @@index([holderCount(sort: Desc)])
-  @@index([transferCount24h(sort: Desc)])
-}
 
 model PriceAlert {
   id              String    @id @default(cuid())
