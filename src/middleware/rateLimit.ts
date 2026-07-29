@@ -1,3 +1,4 @@
+import crypto from 'crypto';
 import rateLimit, { RateLimitRequestHandler, Store } from 'express-rate-limit';
 import { NextFunction, Request, Response } from 'express';
 import { config } from '../config';
@@ -11,8 +12,41 @@ import {
   TokenBucketResult,
 } from './tokenBucket';
 
-const developerKeys = new Set((process.env.API_KEYS_DEVELOPER ?? '').split(',').filter(Boolean));
-const premiumKeys = new Set((process.env.API_KEYS_PREMIUM ?? '').split(',').filter(Boolean));
+/**
+ * #715 — API keys must never be stored as plaintext in memory.
+ * We hash each raw key with SHA-256 on startup and keep only the digest.
+ * Lookups hash the incoming key and compare digests, so plaintext is never
+ * retained beyond the single comparison call.
+ *
+ * Key-prefix convention (mirrors Stripe):
+ *   dev_  — developer tier  (e.g. dev_xxxx)
+ *   pro_  — premium / pro tier  (e.g. pro_xxxx)
+ *
+ * Keys without a recognised prefix are also accepted for backward-compat;
+ * the tier is determined solely by which env-var set they appear in.
+ */
+
+function hashApiKey(raw: string): string {
+  return crypto.createHash('sha256').update(raw).digest('hex');
+}
+
+/**
+ * Parse a comma-separated list of raw API keys from an env var, hash each one,
+ * and return a Set of SHA-256 digests.  Plaintext values are never stored.
+ */
+function buildHashedKeySet(envValue: string | undefined): Set<string> {
+  return new Set(
+    (envValue ?? '')
+      .split(',')
+      .map((k) => k.trim())
+      .filter(Boolean)
+      .map(hashApiKey),
+  );
+}
+
+// Stored as SHA-256 hashes — plaintext is never kept in memory (#715)
+const developerKeys = buildHashedKeySet(process.env.API_KEYS_DEVELOPER);
+const premiumKeys = buildHashedKeySet(process.env.API_KEYS_PREMIUM);
 
 const DEFAULT_TIERS: Record<TierName, TierConfig> = {
   free: { windowMs: 60_000, max: TIER_CONFIG.free.rateLimit.perMinute },
@@ -81,14 +115,19 @@ export function getRateLimitTier(
   developerApiKeys = developerKeys,
   premiumApiKeys = premiumKeys,
 ): TierName {
-  if (apiKey && premiumApiKeys.has(apiKey)) return 'premium';
-  if (apiKey && developerApiKeys.has(apiKey)) return 'developer';
+  if (!apiKey) return 'free';
+  // Hash before comparing so plaintext is never matched against stored digests (#715)
+  const hashed = hashApiKey(apiKey);
+  if (premiumApiKeys.has(hashed)) return 'premium';
+  if (developerApiKeys.has(hashed)) return 'developer';
   return 'free';
 }
 
 function getTierFromEnvKey(apiKey: string | undefined): RateLimitTier {
-  if (apiKey && premiumKeys.has(apiKey)) return 'pro';
-  if (apiKey && developerKeys.has(apiKey)) return 'developer';
+  if (!apiKey) return 'free';
+  const hashed = hashApiKey(apiKey);
+  if (premiumKeys.has(hashed)) return 'pro';
+  if (developerKeys.has(hashed)) return 'developer';
   return 'free';
 }
 

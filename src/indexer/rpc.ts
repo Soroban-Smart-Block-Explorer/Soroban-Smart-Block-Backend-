@@ -1,5 +1,5 @@
 import type { AxiosError } from 'axios';
-import { SorobanRpc } from '@stellar/stellar-sdk';
+import { xdr, SorobanRpc } from '@stellar/stellar-sdk';
 import { config } from '../config';
 import { cacheGet, cacheSet } from '../cache';
 import { logger } from '../logger';
@@ -30,15 +30,30 @@ const LEDGER_CACHE_PREFIX = 'ledger:';
 
 const EVENT_PAGE_SIZE = 200;
 const MAX_RETRY_ATTEMPTS = 6;
+const MAX_PAGES = 100;
 
 function sleep(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+function getStatus(error: unknown): number | undefined {
+  if (error && typeof error === 'object' && 'status' in error) {
+    return (error as { status: number }).status;
+  }
+  return undefined;
+}
+
+function getMessage(error: unknown): string {
+  if (error && typeof error === 'object' && 'message' in error) {
+    return String((error as { message: string }).message);
+  }
+  return '';
+}
+
 function isRateLimitError(error: unknown): boolean {
   const axiosError = error as AxiosError | undefined;
-  const status = axiosError?.response?.status ?? (error as any)?.status;
-  return status === 429 || String((error as any)?.message ?? '').includes('429');
+  const status = axiosError?.response?.status ?? getStatus(error);
+  return status === 429 || getMessage(error).includes('429');
 }
 
 async function retry<T>(fn: () => Promise<T>): Promise<T> {
@@ -78,11 +93,29 @@ async function fetchEventsPage(startLedger: number, cursor?: string) {
 export async function fetchEvents(startLedger: number, endLedger: number): Promise<LedgerEvent[]> {
   const events: LedgerEvent[] = [];
   let cursor: string | undefined;
+  const seenCursors = new Set<string>();
+  let pageCount = 0;
 
   // eslint-disable-next-line no-constant-condition
   while (true) {
+    pageCount++;
+    if (pageCount > MAX_PAGES) {
+      logger.warn(
+        `[fetchEvents] Exceeded max page count (${MAX_PAGES}) for range ${startLedger}–${endLedger}`,
+      );
+      break;
+    }
+
+    if (cursor && seenCursors.has(cursor)) {
+      logger.warn(`[fetchEvents] Repeated cursor detected — breaking pagination loop`);
+      break;
+    }
+    if (cursor) {
+      seenCursors.add(cursor);
+    }
+
     const response = await fetchEventsPage(startLedger, cursor);
-    const page = (response.events ?? []) as any[];
+    const page = response.events ?? [];
 
     if (!page.length) {
       break;
@@ -91,7 +124,7 @@ export async function fetchEvents(startLedger: number, endLedger: number): Promi
     // Stop paginating if every event on this page is already beyond endLedger.
     // This is the server-side stop condition that prevents fetching unbounded
     // pages when the range is small but there are many later events.
-    const minLedger = Math.min(...page.map((e: any) => Number(e.ledger)));
+    const minLedger = Math.min(...page.map((e) => Number(e.ledger)));
     if (minLedger > endLedger) {
       break;
     }
@@ -100,15 +133,19 @@ export async function fetchEvents(startLedger: number, endLedger: number): Promi
       .filter(
         (e) => typeof e.ledger === 'number' && e.ledger >= startLedger && e.ledger <= endLedger,
       )
-      .map((e) => ({
-        contractId: String(e.contractId ?? ''),
-        transactionHash: String(e.txHash ?? ''),
-        ledgerSequence: Number(e.ledger),
-        ledgerCloseTime: new Date(e.ledgerClosedAt ?? Date.now()),
-        topics: Array.isArray(e.topic) ? e.topic.map((t: any) => t.toXDR('base64')) : [],
-        data: e.value?.toXDR ? e.value.toXDR('base64') : String(e.value ?? ''),
-        pagingToken: String(e.pagingToken ?? e.paging_token ?? ''),
-      }));
+      .map((e) => {
+        const topics = e.topic.map((t: xdr.ScVal) => t.toXDR('base64'));
+        const data = e.value?.toXDR ? e.value.toXDR('base64') : String(e.value ?? '');
+        return {
+          contractId: String(e.contractId ?? ''),
+          transactionHash: String(e.txHash ?? ''),
+          ledgerSequence: Number(e.ledger),
+          ledgerCloseTime: new Date(e.ledgerClosedAt ?? Date.now()),
+          topics,
+          data,
+          pagingToken: String(e.pagingToken ?? ''),
+        };
+      });
 
     events.push(...mapped);
 
@@ -116,7 +153,7 @@ export async function fetchEvents(startLedger: number, endLedger: number): Promi
       break;
     }
 
-    cursor = String((response as any).paging_token ?? (response as any).next_cursor ?? '');
+    cursor = page[page.length - 1].pagingToken;
     if (!cursor) {
       break;
     }

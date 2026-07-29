@@ -1,47 +1,44 @@
-# ── Dependencies ──────────────────────────────────────────────────────────────
+# Dependencies
 node_modules/
 
-# ── Build output ──────────────────────────────────────────────────────────────
+# Build output
 dist/
 dist-esm/
+build/
+out/
 
-# ── Environment / secrets ─────────────────────────────────────────────────────
+# Environment secrets
 .env
 .env.*
 !.env.example
 
-# ── Logs ──────────────────────────────────────────────────────────────────────
+# Logs
 *.log
 logs/
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 
-# ── Test artefacts ────────────────────────────────────────────────────────────
-# Vitest / Jest snapshot files (auto-generated; not source-of-truth)
-tests/**/__snapshots__/
-**/__snapshots__/
-*.snap
+# Runtime / temp
+node/
+*.bak
+*.tmp
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
 
-# Coverage reports
-coverage/
-.nyc_output/
-
-# Compiled test output
+# Test artifacts — compiled JS, maps, types and snapshots
 tests/**/*.js
 tests/**/*.js.map
 tests/**/*.d.ts
 
-# ── OS / editor noise ─────────────────────────────────────────────────────────
-.DS_Store
-Thumbs.db
-.vscode/
-.idea/
-*.swp
-*.swo
-*~
+# Test snapshots
+*.snap
+*.snap.new
+**/__snapshots__/
+**/snapshots/
 
-# ── Misc ──────────────────────────────────────────────────────────────────────
-node/
-*.bak
+# Temporary files
 *.tmp
+*.orig
