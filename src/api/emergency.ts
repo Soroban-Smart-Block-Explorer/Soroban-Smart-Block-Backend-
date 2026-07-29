@@ -25,6 +25,12 @@ emergencyRouter.get(
         await Promise.all([
           prismaRead.emergencyState.findMany({
             where: { isPaused: true },
+            select: {
+              contractAddress: true,
+              currentPauseId: true,
+              decentralizationScore: true,
+              pauserType: true,
+            },
           }),
           prismaRead.pauseEvent.count({
             where: {
@@ -50,6 +56,12 @@ emergencyRouter.get(
             contractAddress: { in: contractAddresses },
             eventType: 'pause',
             id: { in: pausedStates.filter((s) => s.currentPauseId).map((s) => s.currentPauseId!) },
+          },
+          select: {
+            contractAddress: true,
+            timestamp: true,
+            pauserAddress: true,
+            reason: true,
           },
         }),
       ]);
@@ -112,6 +124,16 @@ emergencyRouter.get(
         where: { contractAddress: address },
         orderBy: { timestamp: 'desc' },
         take: 20,
+        select: {
+          id: true,
+          timestamp: true,
+          pauserAddress: true,
+          reason: true,
+          txHash: true,
+          blockNumber: true,
+          eventType: true,
+          durationSeconds: true,
+        },
       });
 
       let currentPause = null;

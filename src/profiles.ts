@@ -105,7 +105,7 @@ function isDbUrl(s: string): boolean {
  * Throws with an actionable message on the first violation found.
  */
 export function validateProfile(profile: NetworkProfile): void {
-  const { name, databaseUrl, rpcUrl, rpcWsUrl, horizonUrl } = profile;
+  const { name, databaseUrl, rpcUrl, rpcWsUrl, horizonUrl, networkPassphrase } = profile;
 
   // ── Required fields ──────────────────────────────────────────────────────
   if (!databaseUrl) {
@@ -116,6 +116,14 @@ export function validateProfile(profile: NetworkProfile): void {
   }
   if (!rpcWsUrl) {
     throw new Error(`[${name}] rpcWsUrl is required. Set ${name.toUpperCase()}_RPC_WS_URL.`);
+  }
+  if (!horizonUrl) {
+    throw new Error(`[${name}] horizonUrl is required. Set ${name.toUpperCase()}_HORIZON_URL.`);
+  }
+  if (!networkPassphrase) {
+    throw new Error(
+      `[${name}] networkPassphrase is required. Set ${name.toUpperCase()}_PASSPHRASE.`,
+    );
   }
 
   // ── URL protocol validation ───────────────────────────────────────────────

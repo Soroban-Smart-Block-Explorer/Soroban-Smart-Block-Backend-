@@ -48,6 +48,24 @@ yieldRouter.get(
         orderBy: { totalApy: 'desc' },
         take: q.limit,
         skip: q.offset,
+        select: {
+          id: true,
+          contractAddress: true,
+          name: true,
+          type: true,
+          tokens: true,
+          baseApy: true,
+          incentiveApy: true,
+          totalApy: true,
+          tvl: true,
+          lockupDays: true,
+          minDeposit: true,
+          depositFee: true,
+          withdrawFee: true,
+          riskScore: true,
+          riskLabel: true,
+          lastObservedAt: true,
+        },
       });
 
       // Post-filter by token (Prisma Json columns can't easily filter on
@@ -126,6 +144,7 @@ yieldRouter.get(
           snapshotDate: { gte: since },
         },
         orderBy: { snapshotDate: 'asc' },
+        select: { snapshotDate: true, apy: true, baseApy: true, incentiveApy: true, tvl: true },
       });
 
       const apySeries = rows.map((r) => r.apy);
@@ -201,6 +220,24 @@ yieldRouter.get(
         // we pull a wide page and re-sort by TVL in memory.
         orderBy: q.sort === 'tvl' ? { totalApy: 'desc' } : orderBy,
         take: q.sort === 'tvl' ? 500 : q.limit,
+        select: {
+          id: true,
+          contractAddress: true,
+          name: true,
+          type: true,
+          tokens: true,
+          baseApy: true,
+          incentiveApy: true,
+          totalApy: true,
+          tvl: true,
+          lockupDays: true,
+          minDeposit: true,
+          depositFee: true,
+          withdrawFee: true,
+          riskScore: true,
+          riskLabel: true,
+          lastObservedAt: true,
+        },
       });
 
       let sorted = rows;
@@ -240,6 +277,24 @@ yieldRouter.get(
 
       const rows = await prisma.yieldOpportunity.findMany({
         where: { id: { in: ids } },
+        select: {
+          id: true,
+          contractAddress: true,
+          name: true,
+          type: true,
+          tokens: true,
+          baseApy: true,
+          incentiveApy: true,
+          totalApy: true,
+          tvl: true,
+          lockupDays: true,
+          minDeposit: true,
+          depositFee: true,
+          withdrawFee: true,
+          riskScore: true,
+          riskLabel: true,
+          lastObservedAt: true,
+        },
       });
 
       res.json({
@@ -271,6 +326,19 @@ yieldRouter.post(
       const rows = await prisma.yieldOpportunity.findMany({
         orderBy: { totalApy: 'desc' },
         take: 500,
+        select: {
+          contractAddress: true,
+          name: true,
+          type: true,
+          tokens: true,
+          baseApy: true,
+          incentiveApy: true,
+          tvl: true,
+          lockupDays: true,
+          minDeposit: true,
+          depositFee: true,
+          withdrawFee: true,
+        },
       });
 
       const opportunities: YieldOpportunityData[] = rows.map((r) => ({

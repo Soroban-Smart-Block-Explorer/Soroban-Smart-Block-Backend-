@@ -78,6 +78,7 @@ tokenPricesRouter.get(
         timestamp: { gte: fromDate, lte: toDate },
       },
       orderBy: { timestamp: 'asc' },
+      select: { timestamp: true, priceUsd: true, volume24hUsd: true },
     });
 
     const bucketSize = getIntervalMs(interval);

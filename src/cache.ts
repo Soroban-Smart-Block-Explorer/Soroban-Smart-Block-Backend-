@@ -296,6 +296,17 @@ export function cacheBackendType(): 'redis' | 'sentinel' | 'memory' {
   return 'redis';
 }
 
+export async function pingRedis(): Promise<boolean> {
+  if (!USE_REDIS) return true;
+  if (!redisClient || !redisAvailable) return false;
+  try {
+    const reply = await redisClient.ping();
+    return reply === 'PONG';
+  } catch {
+    return false;
+  }
+}
+
 export async function cacheClose(): Promise<void> {
   if (_pubSubClient) {
     try {

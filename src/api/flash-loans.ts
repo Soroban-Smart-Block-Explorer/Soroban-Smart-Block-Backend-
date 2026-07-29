@@ -212,6 +212,28 @@ flashLoanRouter.get(
       where: { riskScore: { gte: 60 } },
       orderBy: { detectedAt: 'desc' },
       take: 50,
+      select: {
+        txHash: true,
+        attacker: true,
+        ledgerSequence: true,
+        detectedAt: true,
+        attackArchetype: true,
+        borrowedTotal: true,
+        borrowedTokens: true,
+        repaidTotal: true,
+        profitAmount: true,
+        profitUsd: true,
+        protocolCount: true,
+        stepCount: true,
+        fundFlowGraph: true,
+        originalTvls: true,
+        riskScore: true,
+        attackerToxicity: true,
+        detectionLatencyMs: true,
+        cweMappings: true,
+        isArbitrage: true,
+        mevExtracted: true,
+      },
     });
 
     const advisories = attacks.map((a) =>
