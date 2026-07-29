@@ -8,3 +8,13 @@ node/
 tests/**/*.js
 tests/**/*.js.map
 tests/**/*.d.ts
+
+# Test snapshots
+*.snap
+*.snap.new
+**/__snapshots__/
+**/snapshots/
+
+# Temporary files
+*.tmp
+*.orig
