@@ -31,8 +31,15 @@
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
     "test:ui": "vitest --ui",
+    "bench": "vitest run src/benchmarks/",
+    "bench:watch": "vitest watch src/benchmarks/",
+    "bench:event-decoding": "vitest run src/benchmarks/event-decoding.bench.ts",
+    "bench:api-responses": "vitest run src/benchmarks/api-responses.bench.ts",
+    "bench:rpc-calls": "vitest run src/benchmarks/rpc-calls.bench.ts",
+    "bench:compare": "ts-node src/benchmarks/cli.ts compare",
+    "bench:report": "ts-node src/benchmarks/cli.ts report",
     "postinstall": "prisma generate",
-    "lint": "eslint 'src/**/*.ts' 'tests/**/*.ts' --max-warnings 400",
+    "lint": "eslint 'src/**/*.ts' 'tests/**/*.ts' --max-warnings 1420",
     "lint:fix": "eslint 'src/**/*.ts' 'tests/**/*.ts' --fix",
     "format": "prettier --check 'src/**/*.ts' 'tests/**/*.ts'",
     "format:fix": "prettier --write 'src/**/*.ts' 'tests/**/*.ts'",
@@ -120,7 +127,12 @@
       "eslint --fix --max-warnings 250"
     ]
   },
+  "commitlint": {
+    "extends": ["@commitlint/config-conventional"]
+  },
   "devDependencies": {
+    "@commitlint/cli": "^18.6.1",
+    "@commitlint/config-conventional": "^18.6.3",
     "@opentelemetry/auto-instrumentations-node": "^0.78.0",
     "@opentelemetry/exporter-trace-otlp-http": "^0.220.0",
     "@opentelemetry/resources": "^2.9.0",

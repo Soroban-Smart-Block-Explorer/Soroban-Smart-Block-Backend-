@@ -1,15 +1,44 @@
+# Dependencies
 node_modules/
+
+# Build output
 dist/
 dist-esm/
+build/
+out/
+
+# Environment secrets
 .env
+.env.*
+!.env.example
+
+# Logs
 *.log
+logs/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Runtime / temp
 node/
 *.bak
+*.tmp
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+
+# Test artifacts — compiled JS, maps, types and snapshots
 tests/**/*.js
 tests/**/*.js.map
 tests/**/*.d.ts
 
-# Test snapshots and coverage output — generated, not source
-tests/**/__snapshots__/
-coverage/
-.nyc_output/
+# Test snapshots
+*.snap
+*.snap.new
+**/__snapshots__/
+**/snapshots/
+
+# Temporary files
+*.tmp
+*.orig
