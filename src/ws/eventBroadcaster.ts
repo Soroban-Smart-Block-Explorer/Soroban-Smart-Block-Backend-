@@ -11,6 +11,7 @@ interface Client {
   contractFilter: string | null;
   eventTypeFilter: string | null;
   ip: string;
+  isAlive: boolean;
 }
 
 const clients = new Set<Client>();
@@ -40,9 +41,25 @@ async function validateApiKey(key: string): Promise<boolean> {
     return false;
   }
 }
+let pingInterval: NodeJS.Timeout | null = null;
 
 export function attachWebSocketServer(httpServer: Server): WebSocketServer {
   const wss = new WebSocketServer({ server: httpServer, path: '/ws/events' });
+
+  // Start the ping/pong heartbeat check interval (every 30s) if not already active
+  if (!pingInterval) {
+    pingInterval = setInterval(() => {
+      for (const client of clients) {
+        if (!client.isAlive) {
+          client.ws.terminate();
+          clients.delete(client);
+          continue;
+        }
+        client.isAlive = false;
+        client.ws.ping();
+      }
+    }, 30000);
+  }
 
   wss.on('connection', async (ws: WebSocket, req: IncomingMessage) => {
     const url = new URL(req.url ?? '', 'http://localhost');
@@ -77,8 +94,14 @@ export function attachWebSocketServer(httpServer: Server): WebSocketServer {
       contractFilter: contractFilter ?? null,
       eventTypeFilter: eventTypeFilter ?? null,
       ip,
+      isAlive: true,
     };
     clients.add(client);
+
+    // Track responses to keep-alive pings
+    ws.on('pong', () => {
+      client.isAlive = true;
+    });
 
     ws.on('close', () => clients.delete(client));
     ws.on('error', () => clients.delete(client));
@@ -107,6 +130,10 @@ export function broadcastEvent(event: {
 }
 
 export function shutdownWebSocketServer(): void {
+  if (pingInterval) {
+    clearInterval(pingInterval);
+    pingInterval = null;
+  }
   for (const client of clients) {
     if (client.ws.readyState === WebSocket.OPEN) {
       client.ws.close(1001, 'Server shutting down');
