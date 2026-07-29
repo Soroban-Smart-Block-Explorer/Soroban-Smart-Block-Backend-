@@ -1,6 +1,6 @@
 import { Router, Request, Response, NextFunction } from 'express';
 import { z } from 'zod';
-import { prismaRead as prisma } from '../db';
+import { prismaRead as prisma, prismaBackfill } from '../db';
 import { ChannelManager } from '../feed/channelManager';
 import { asyncHandler } from '../middleware/asyncHandler';
 import { logger } from '../logger';
@@ -274,25 +274,27 @@ async function getRecordCount(
   endTime: Date,
 ): Promise<number> {
   try {
+    // These counts scan potentially large (up to 90-day) ranges, so they run
+    // on the long-timeout backfill connection instead of the default one.
     switch (channelName) {
       case 'transactions':
-        return prisma.transaction.count({
+        return prismaBackfill.transaction.count({
           where: { ledgerCloseTime: { gte: startTime, lte: endTime } },
         });
       case 'events':
-        return prisma.event.count({
+        return prismaBackfill.event.count({
           where: { ledgerCloseTime: { gte: startTime, lte: endTime } },
         });
       case 'ledgers':
-        return prisma.ledger.count({
+        return prismaBackfill.ledger.count({
           where: { closeTime: { gte: startTime, lte: endTime } },
         });
       case 'trades':
-        return prisma.dexPool.count({
+        return prismaBackfill.dexPool.count({
           where: { lastSyncedAt: { gte: startTime, lte: endTime } },
         });
       case 'metrics':
-        return prisma.contractResourceMetric.count({
+        return prismaBackfill.contractResourceMetric.count({
           where: { ledgerCloseTime: { gte: startTime, lte: endTime } },
         });
       default:

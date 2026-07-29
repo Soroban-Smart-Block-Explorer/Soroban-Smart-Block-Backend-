@@ -2,6 +2,8 @@ import { Router, Request, Response } from 'express';
 import { container } from '../services/container';
 import { z } from 'zod';
 import { asyncHandler } from '../middleware/asyncHandler';
+import { validateQuery, validateParams } from '../middleware/validation';
+import { paginationSchema, stellarAddress, safeLabel } from '../schemas/common';
 
 /**
  * @swagger
@@ -12,10 +14,14 @@ import { asyncHandler } from '../middleware/asyncHandler';
 
 export const eventRouter = Router();
 
-const paginationSchema = z.object({
-  page: z.coerce.number().min(1).default(1),
-  limit: z.coerce.number().min(1).max(100).default(20),
-});
+// Enhanced schema with filters from common schemas
+const eventListQuerySchema = paginationSchema.merge(
+  z.object({
+    contract: stellarAddress.optional(),
+    type: safeLabel.optional(),
+    topic: safeLabel.optional(),
+  }),
+);
 
 /**
  * @swagger
@@ -103,16 +109,15 @@ const paginationSchema = z.object({
 // GET /events?contract=&type=&topic=&page=1
 eventRouter.get(
   '/',
+  validateQuery(eventListQuerySchema),
   asyncHandler(async (req: Request, res: Response) => {
-    const prismaRead = container.getPrismaRead();
-    const { page, limit } = paginationSchema.parse(req.query);
-    const { contract, type, topic } = req.query as Record<string, string>;
-    const skip = (page - 1) * limit;
+    const query = (req as any).validatedQuery as z.infer<typeof eventListQuerySchema>;
+    const skip = (query.page - 1) * query.limit;
 
     const where = {
-      ...(contract && { contractAddress: contract }),
-      ...(type && { eventType: type }),
-      ...(topic && { topicSymbol: topic }),
+      ...(query.contract && { contractAddress: query.contract }),
+      ...(query.type && { eventType: query.type }),
+      ...(query.topic && { topicSymbol: query.topic }),
     };
 
     const [events, total] = await Promise.all([
@@ -120,7 +125,7 @@ eventRouter.get(
         where,
         orderBy: { ledgerSequence: 'desc' },
         skip,
-        take: limit,
+        take: query.limit,
         select: {
           id: true,
           transactionHash: true,
@@ -135,7 +140,7 @@ eventRouter.get(
       prismaRead.event.count({ where }),
     ]);
 
-    res.json({ data: events, total, page, limit });
+    res.json({ data: events, total, page: query.page, limit: query.limit });
   }),
 );
 
@@ -171,9 +176,10 @@ eventRouter.get(
 // GET /events/:id
 eventRouter.get(
   '/:id',
+  validateParams(z.object({ id: z.string() })),
   asyncHandler(async (req: Request, res: Response) => {
-    const prismaRead = container.getPrismaRead();
-    const event = await prismaRead.event.findUnique({ where: { id: req.params.id } });
+    const params = (req as any).validatedParams as { id: string };
+    const event = await prisma.event.findUnique({ where: { id: params.id } });
     if (!event) return res.status(404).json({ error: 'Event not found' });
     res.json(event);
   }),

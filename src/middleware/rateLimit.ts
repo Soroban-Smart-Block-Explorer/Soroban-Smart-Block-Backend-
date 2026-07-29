@@ -1,3 +1,4 @@
+import crypto from 'crypto';
 import rateLimit, { RateLimitRequestHandler, Store } from 'express-rate-limit';
 import { NextFunction, Request, Response } from 'express';
 import { config } from '../config';
@@ -11,8 +12,41 @@ import {
   TokenBucketResult,
 } from './tokenBucket';
 
-const developerKeys = new Set((process.env.API_KEYS_DEVELOPER ?? '').split(',').filter(Boolean));
-const premiumKeys = new Set((process.env.API_KEYS_PREMIUM ?? '').split(',').filter(Boolean));
+/**
+ * #715 — API keys must never be stored as plaintext in memory.
+ * We hash each raw key with SHA-256 on startup and keep only the digest.
+ * Lookups hash the incoming key and compare digests, so plaintext is never
+ * retained beyond the single comparison call.
+ *
+ * Key-prefix convention (mirrors Stripe):
+ *   dev_  — developer tier  (e.g. dev_xxxx)
+ *   pro_  — premium / pro tier  (e.g. pro_xxxx)
+ *
+ * Keys without a recognised prefix are also accepted for backward-compat;
+ * the tier is determined solely by which env-var set they appear in.
+ */
+
+function hashApiKey(raw: string): string {
+  return crypto.createHash('sha256').update(raw).digest('hex');
+}
+
+/**
+ * Parse a comma-separated list of raw API keys from an env var, hash each one,
+ * and return a Set of SHA-256 digests.  Plaintext values are never stored.
+ */
+function buildHashedKeySet(envValue: string | undefined): Set<string> {
+  return new Set(
+    (envValue ?? '')
+      .split(',')
+      .map((k) => k.trim())
+      .filter(Boolean)
+      .map(hashApiKey),
+  );
+}
+
+// Stored as SHA-256 hashes — plaintext is never kept in memory (#715)
+const developerKeys = buildHashedKeySet(process.env.API_KEYS_DEVELOPER);
+const premiumKeys = buildHashedKeySet(process.env.API_KEYS_PREMIUM);
 
 const DEFAULT_TIERS: Record<TierName, TierConfig> = {
   free: { windowMs: 60_000, max: TIER_CONFIG.free.rateLimit.perMinute },
@@ -81,14 +115,19 @@ export function getRateLimitTier(
   developerApiKeys = developerKeys,
   premiumApiKeys = premiumKeys,
 ): TierName {
-  if (apiKey && premiumApiKeys.has(apiKey)) return 'premium';
-  if (apiKey && developerApiKeys.has(apiKey)) return 'developer';
+  if (!apiKey) return 'free';
+  // Hash before comparing so plaintext is never matched against stored digests (#715)
+  const hashed = hashApiKey(apiKey);
+  if (premiumApiKeys.has(hashed)) return 'premium';
+  if (developerApiKeys.has(hashed)) return 'developer';
   return 'free';
 }
 
 function getTierFromEnvKey(apiKey: string | undefined): RateLimitTier {
-  if (apiKey && premiumKeys.has(apiKey)) return 'pro';
-  if (apiKey && developerKeys.has(apiKey)) return 'developer';
+  if (!apiKey) return 'free';
+  const hashed = hashApiKey(apiKey);
+  if (premiumKeys.has(hashed)) return 'pro';
+  if (developerKeys.has(hashed)) return 'developer';
   return 'free';
 }
 
@@ -156,14 +195,62 @@ export function clearRateLimitOverrideCache(): void {
 
 function buildLimiters(store?: Store): Limiters {
   const tiers = normalizeTierConfig();
-  const make = (tierName: TierName) =>
-    rateLimit({
+  const make = (tierName: TierName) => {
+    const limiter = rateLimit({
       ...tiers[tierName],
-      standardHeaders: true,
+      standardHeaders: false, // We set headers manually for consistency
       legacyHeaders: false,
       keyGenerator: (req: Request) => `${tierName}:${req.ip ?? 'unknown'}`,
+      handler: (req: Request, res: Response) => {
+        // This handler is only called when the rate limit is exceeded.
+        // For requests within the limit, express-rate-limit calls next() automatically.
+        const resetTimestamp = Math.ceil((Date.now() + tiers[tierName].windowMs) / 1000);
+
+        setRateLimitHeaders(res, {
+          'X-RateLimit-Limit': String(tiers[tierName].max),
+          'X-RateLimit-Remaining': '0',
+          'X-RateLimit-Reset': String(resetTimestamp),
+          'X-RateLimit-Tier': tierName,
+          'Retry-After': String(Math.ceil(tiers[tierName].windowMs / 1000)),
+        });
+
+        res.status(429).json({
+          error: 'Rate limit exceeded',
+          tier: tierName,
+          retryAfter: Math.ceil(tiers[tierName].windowMs / 1000),
+          resetAt: new Date(resetTimestamp * 1000).toISOString(),
+        });
+      },
+      skip: (_req: Request) => false,
       ...(store ? { store } : {}),
     });
+
+    // Wrap the limiter to set headers on all responses (allowed and rate-limited)
+    return (req: Request, res: Response, next: NextFunction) => {
+      const originalJson = res.json.bind(res);
+
+      // Hook into response to add headers before sending
+      res.json = function (body: any) {
+        if (!res.headersSent) {
+          const rateLimit = (req as any).rateLimit;
+          if (rateLimit) {
+            const resetTimestamp = Math.ceil((Date.now() + tiers[tierName].windowMs) / 1000);
+            setRateLimitHeaders(res, {
+              'X-RateLimit-Limit': String(tiers[tierName].max),
+              'X-RateLimit-Remaining': String(
+                Math.max(0, tiers[tierName].max - (rateLimit.current ?? 0)),
+              ),
+              'X-RateLimit-Reset': String(resetTimestamp),
+              'X-RateLimit-Tier': tierName,
+            });
+          }
+        }
+        return originalJson(body);
+      } as any;
+
+      limiter(req, res, next);
+    };
+  };
 
   return {
     free: make('free'),
@@ -227,15 +314,28 @@ function runLocalRateLimit(req: Request, res: Response, next: NextFunction): voi
       resetAt: now + effectiveConfig.windowMs,
     };
     const remaining = Math.max(0, effectiveConfig.max - bucket.count);
-    res.setHeader('X-RateLimit-Limit', `${effectiveConfig.max}`);
-    res.setHeader('X-RateLimit-Remaining', `${remaining}`);
-    res.setHeader('X-RateLimit-Reset', `${Math.ceil(bucket.resetAt / 1000)}`);
+    const resetTimestamp = Math.ceil(bucket.resetAt / 1000);
 
-    if (configOverride) res.setHeader('X-RateLimit-Policy', 'user-override');
+    setRateLimitHeaders(res, {
+      'X-RateLimit-Limit': String(effectiveConfig.max),
+      'X-RateLimit-Remaining': String(remaining),
+      'X-RateLimit-Reset': String(resetTimestamp),
+      'X-RateLimit-Tier': tier,
+      'X-RateLimit-Policy': configOverride ? 'user-override' : undefined,
+    });
 
     if (bucket.count > effectiveConfig.max) {
-      res.setHeader('X-RateLimit-Remaining', '0');
-      res.status(429).json({ error: 'Too many requests' });
+      const retryAfter = Math.max(1, resetTimestamp - Math.floor(Date.now() / 1000));
+      setRateLimitHeaders(res, {
+        'X-RateLimit-Remaining': '0',
+        'Retry-After': String(retryAfter),
+      });
+      res.status(429).json({
+        error: 'Rate limit exceeded',
+        tier,
+        retryAfter,
+        resetAt: new Date(resetTimestamp * 1000).toISOString(),
+      });
       return;
     }
 
@@ -263,20 +363,26 @@ export async function tieredRateLimit(
         keyCtx?.rateLimitOverride,
       );
 
-      res.setHeader('X-RateLimit-Limit', result.limit);
-      res.setHeader('X-RateLimit-Remaining', result.remaining);
-      res.setHeader('X-RateLimit-Reset', result.resetAt);
-      res.setHeader('X-RateLimit-Tier', result.tier);
+      const resetTimestamp = result.resetAt;
+      setRateLimitHeaders(res, {
+        'X-RateLimit-Limit': String(result.limit),
+        'X-RateLimit-Remaining': String(result.remaining),
+        'X-RateLimit-Reset': String(resetTimestamp),
+        'X-RateLimit-Tier': result.tier,
+      });
       (req as Request & { rateLimitResult?: TokenBucketResult }).rateLimitResult = result;
 
       if (!result.allowed) {
-        const retryAfter = Math.max(1, result.resetAt - Math.floor(Date.now() / 1000));
-        res.setHeader('Retry-After', retryAfter);
+        const retryAfter = Math.max(1, resetTimestamp - Math.floor(Date.now() / 1000));
+        setRateLimitHeaders(res, {
+          'X-RateLimit-Remaining': '0',
+          'Retry-After': String(retryAfter),
+        });
         res.status(429).json({
           error: 'Rate limit exceeded',
           tier: result.tier,
           retryAfter,
-          resetAt: new Date(result.resetAt * 1000).toISOString(),
+          resetAt: new Date(resetTimestamp * 1000).toISOString(),
         });
         return;
       }

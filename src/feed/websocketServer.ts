@@ -4,9 +4,20 @@ import { ChannelManager } from '../feed/channelManager';
 import { streamingServer, WebSocketStreamConnection } from './streamingServer';
 import { logger } from '../logger';
 
+const MAX_CONNECTIONS_PER_IP = parseInt(process.env.FEED_WS_MAX_CONNECTIONS_PER_IP ?? '5', 10);
+const MAX_TOTAL_CONNECTIONS = parseInt(process.env.FEED_WS_MAX_TOTAL_CONNECTIONS ?? '100', 10);
+
+function getClientIp(req: IncomingMessage): string {
+  const forwarded = req.headers['x-forwarded-for'];
+  if (typeof forwarded === 'string') return forwarded.split(',')[0].trim();
+  return req.socket.remoteAddress ?? 'unknown';
+}
+
 export class FeedWebSocketServer {
   private wss: WebSocket.Server;
   private heartbeatInterval!: NodeJS.Timeout;
+  private ipConnectionCounts = new Map<string, number>();
+  private totalConnections = 0;
 
   constructor(server: any) {
     this.wss = new WebSocket.Server({
@@ -20,6 +31,30 @@ export class FeedWebSocketServer {
 
   private setupWebSocketHandlers() {
     this.wss.on('connection', (ws: WebSocket, request: IncomingMessage) => {
+      const ip = getClientIp(request);
+
+      if (this.totalConnections >= MAX_TOTAL_CONNECTIONS) {
+        ws.close(4003, 'Server at capacity: too many connections');
+        return;
+      }
+
+      if ((this.ipConnectionCounts.get(ip) ?? 0) >= MAX_CONNECTIONS_PER_IP) {
+        ws.close(4004, `Rate limit exceeded: max ${MAX_CONNECTIONS_PER_IP} connections per IP`);
+        return;
+      }
+
+      this.totalConnections++;
+      this.ipConnectionCounts.set(ip, (this.ipConnectionCounts.get(ip) ?? 0) + 1);
+      let releasedCount = false;
+      const releaseCount = () => {
+        if (releasedCount) return;
+        releasedCount = true;
+        this.totalConnections--;
+        const count = this.ipConnectionCounts.get(ip) ?? 1;
+        if (count <= 1) this.ipConnectionCounts.delete(ip);
+        else this.ipConnectionCounts.set(ip, count - 1);
+      };
+
       const connectionId = this.generateConnectionId();
       const url = new URL(request.url!, `http://${request.headers.host}`);
 
@@ -32,6 +67,7 @@ export class FeedWebSocketServer {
           filters = JSON.parse(filtersParam);
         } catch {
           ws.close(1003, 'Invalid filters JSON');
+          releaseCount();
           return;
         }
       }
@@ -39,6 +75,7 @@ export class FeedWebSocketServer {
       for (const channel of channels) {
         if (!ChannelManager.isValidChannel(channel)) {
           ws.close(1003, `Invalid channel: ${channel}`);
+          releaseCount();
           return;
         }
       }
@@ -63,12 +100,14 @@ export class FeedWebSocketServer {
 
       ws.on('close', () => {
         streamingServer.removeConnection(connectionId);
+        releaseCount();
         logger.info(`WebSocket disconnected: ${connectionId}`);
       });
 
       ws.on('error', (error) => {
         logger.error(`WebSocket error for ${connectionId}:`, error);
         streamingServer.removeConnection(connectionId);
+        releaseCount();
       });
 
       ws.on('pong', () => {

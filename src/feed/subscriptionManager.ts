@@ -20,6 +20,11 @@ export interface SubscriptionFilters {
   eventTypes?: string[];
 }
 
+// Default page size cap for list queries — prevents unbounded scans (#724)
+const LIST_PAGE_SIZE = 500;
+// Maximum page size a caller may request (#724)
+const MAX_PAGE_SIZE = 1000;
+
 export class SubscriptionManager {
   async createSubscription(config: SubscriptionConfig) {
     const subscription = await prisma.feedSubscription.create({
@@ -44,10 +49,17 @@ export class SubscriptionManager {
     });
   }
 
-  async listSubscriptions(userId?: string) {
+  /**
+   * List subscriptions with cursor-based pagination to avoid full-table scans (#724).
+   * Returns at most `limit` rows (capped at MAX_PAGE_SIZE).
+   */
+  async listSubscriptions(userId?: string, limit = LIST_PAGE_SIZE, cursor?: string) {
+    const take = Math.min(Math.max(1, limit), MAX_PAGE_SIZE);
     return await prisma.feedSubscription.findMany({
       where: userId ? { userId } : undefined,
       orderBy: { createdAt: 'desc' },
+      take,
+      ...(cursor ? { skip: 1, cursor: { id: cursor } } : {}),
     });
   }
 
@@ -78,13 +90,36 @@ export class SubscriptionManager {
     return await this.updateSubscription(id, { status: 'active' });
   }
 
+  /**
+   * Return all active subscriptions for a channel using cursor-based pagination
+   * so that channels with many subscribers don't cause unbounded queries (#724).
+   */
   async getActiveSubscriptions(channelName: string) {
-    return await prisma.feedSubscription.findMany({
-      where: {
-        channelName,
-        status: 'active',
-      },
-    });
+    const results: Awaited<ReturnType<typeof prisma.feedSubscription.findMany>> = [];
+    let cursor: string | undefined;
+    let hasMore = true;
+
+    while (hasMore) {
+      const page = await prisma.feedSubscription.findMany({
+        where: {
+          channelName,
+          status: 'active',
+        },
+        take: LIST_PAGE_SIZE,
+        ...(cursor ? { skip: 1, cursor: { id: cursor } } : {}),
+        orderBy: { id: 'asc' },
+      });
+
+      results.push(...page);
+
+      if (page.length < LIST_PAGE_SIZE) {
+        hasMore = false;
+      } else {
+        cursor = page[page.length - 1].id;
+      }
+    }
+
+    return results;
   }
 
   async updateDeliveryStats(subscriptionId: string, delivered: boolean, error?: string) {

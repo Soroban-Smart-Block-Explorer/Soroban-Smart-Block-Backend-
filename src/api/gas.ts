@@ -167,6 +167,19 @@ gasRouter.get(
     const rows = await prismaRead.gasAnalytics.findMany({
       where,
       orderBy: { ledgerCloseTime: 'asc' },
+      select: {
+        totalFee: true,
+        cpuInstructions: true,
+        memoryBytes: true,
+        ledgerReadBytes: true,
+        ledgerWriteBytes: true,
+        functionName: true,
+        failureFlag: true,
+        contractEventsBytes: true,
+        returnValueBytes: true,
+        contractCalls: true,
+        ledgerCloseTime: true,
+      },
     });
 
     if (rows.length === 0) {
@@ -310,6 +323,19 @@ gasRouter.get(
       where: { contractAddress: address, functionName },
       orderBy: { ledgerCloseTime: 'desc' },
       take: 1000,
+      select: {
+        totalFee: true,
+        cpuInstructions: true,
+        memoryBytes: true,
+        ledgerReadBytes: true,
+        ledgerWriteBytes: true,
+        contractEventsBytes: true,
+        returnValueBytes: true,
+        contractCalls: true,
+        failureFlag: true,
+        txHash: true,
+        ledgerCloseTime: true,
+      },
     });
 
     if (rows.length === 0) {
@@ -386,6 +412,11 @@ gasRouter.get(
     const rows = await prismaRead.gasAnalytics.findMany({
       where: { contractAddress: address, ledgerCloseTime: { gte: since } },
       orderBy: { ledgerCloseTime: 'asc' },
+      select: {
+        ledgerCloseTime: true,
+        totalFee: true,
+        cpuInstructions: true,
+      },
     });
 
     const granMs = granularity === 'hour' ? 3600e3 : granularity === 'day' ? 86400e3 : 604800e3;
@@ -426,6 +457,11 @@ gasRouter.get(
       where: { contractAddress: address },
       orderBy: { ledgerCloseTime: 'desc' },
       take: 500,
+      select: {
+        totalFee: true,
+        failureFlag: true,
+        functionName: true,
+      },
     });
 
     if (rows.length === 0) {
@@ -761,6 +797,16 @@ gasRouter.get(
       where: { contractAddress: address },
       orderBy: { ledgerCloseTime: 'asc' },
       take: 1000,
+      select: {
+        cpuInstructions: true,
+        memoryBytes: true,
+        ledgerReadBytes: true,
+        ledgerWriteBytes: true,
+        ledgerCloseTime: true,
+        totalFee: true,
+        functionName: true,
+        failureFlag: true,
+      },
     });
 
     if (rows.length === 0) {

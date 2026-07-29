@@ -3,7 +3,7 @@ import type { RedisClientType } from 'redis';
 import { logger } from './logger';
 
 const CACHE_URL = config.cacheUrl ?? 'memory://';
-const USE_REDIS = CACHE_URL !== '' && !CACHE_URL.startsWith('memory://');
+const CACHE_MODE = config.cacheMode ?? 'standalone'; // 'standalone' or 'sentinel'
 
 const MAX_CACHE_SIZE = Math.max(1, parseInt(process.env.CACHE_MAX_SIZE ?? '1000'));
 const DEFAULT_MEMORY_TTL_SECONDS = Math.max(1, parseInt(process.env.CACHE_MEMORY_TTL ?? '300'));
@@ -22,6 +22,47 @@ let redisClient: RedisClientType | null = null;
 let redisAvailable = false;
 let _evictionCount = 0;
 let _pubSubClient: RedisClientType | null = null;
+
+/**
+ * Parse Redis Sentinel URL format:
+ * sentinel://sentinelHost1:26379,sentinelHost2:26379,sentinelHost3:26379?sentinels=mymaster&password=xxxx&db=0
+ */
+function parseSentinelUrl(url: string): {
+  sentinels: Array<{ host: string; port: number }>;
+  name: string;
+  password?: string;
+  db?: number;
+  username?: string;
+  sentinelPassword?: string;
+} {
+  try {
+    const urlObj = new URL(url);
+    const hostPort = urlObj.hostname + (urlObj.port ? ':' + urlObj.port : '');
+    const hosts = urlObj.pathname.slice(1).split(',').concat(hostPort.split(','));
+
+    const sentinels = hosts
+      .filter((h) => h.trim())
+      .map((h) => {
+        const [host, port] = h.trim().split(':');
+        return {
+          host: host || 'localhost',
+          port: parseInt(port || '26379', 10),
+        };
+      });
+
+    const name = urlObj.searchParams.get('sentinels') || 'mymaster';
+    const password = urlObj.searchParams.get('password') || undefined;
+    const username = urlObj.searchParams.get('username') || undefined;
+    const db = urlObj.searchParams.get('db') ? parseInt(urlObj.searchParams.get('db')!, 10) : 0;
+    const sentinelPassword = urlObj.searchParams.get('sentinel-password') || undefined;
+
+    return { sentinels, name, password, username, db, sentinelPassword };
+  } catch (err) {
+    throw new Error(
+      `Invalid Sentinel URL format: ${url}. Expected: sentinel://host1:26379,host2:26379?sentinels=mymaster&password=xxx`,
+    );
+  }
+}
 
 export function cacheStats(): { size: number; evictions: number } {
   return { size: memoryStore.size, evictions: _evictionCount };
@@ -81,24 +122,74 @@ function lruGet(key: string): MemoryEntry | undefined {
 }
 
 async function getRedisClient(): Promise<RedisClientType | null> {
-  if (!USE_REDIS) return null;
+  if (CACHE_URL === '' || CACHE_URL.startsWith('memory://')) return null;
   if (redisClient) return redisClient;
 
   try {
     const { createClient } = await import('redis');
-    const client = createClient({ url: CACHE_URL });
-    client.on('error', (err: unknown) => {
-      logger.error('[cache] Redis client error', { backend: 'redis', error: String(err) });
-      redisAvailable = false;
-    });
-    await client.connect();
-    redisClient = client;
-    redisAvailable = true;
-    logger.info('[cache] Connected to Redis cache', { backend: 'redis' });
-    return redisClient;
+
+    if (CACHE_MODE === 'sentinel') {
+      const sentinelConfig = parseSentinelUrl(CACHE_URL);
+      logger.info('[cache] Connecting to Redis Sentinel', {
+        backend: 'sentinel',
+        sentinelCount: sentinelConfig.sentinels.length,
+        masterName: sentinelConfig.name,
+      });
+
+      const clientOptions: Record<string, unknown> = {
+        socket: {
+          sentinels: sentinelConfig.sentinels,
+          sentinelRetryStrategy: (retries: number) => Math.min(retries * 50, 500),
+        },
+        name: sentinelConfig.name,
+        password: sentinelConfig.password,
+        username: sentinelConfig.username,
+        db: sentinelConfig.db,
+      };
+
+      if (sentinelConfig.sentinelPassword) {
+        (clientOptions.socket as Record<string, unknown>).sentinelPassword =
+          sentinelConfig.sentinelPassword;
+      }
+
+      const client = createClient(clientOptions) as RedisClientType;
+
+      client.on('error', (err: unknown) => {
+        logger.error('[cache] Redis Sentinel client error', {
+          backend: 'sentinel',
+          error: String(err),
+        });
+        redisAvailable = false;
+      });
+
+      client.on('reconnecting', () => {
+        logger.info('[cache] Redis Sentinel reconnecting', { backend: 'sentinel' });
+      });
+
+      await client.connect();
+      redisClient = client;
+      redisAvailable = true;
+      logger.info('[cache] Connected to Redis Sentinel', {
+        backend: 'sentinel',
+        masterName: sentinelConfig.name,
+      });
+      return redisClient;
+    } else {
+      // Standalone mode
+      const client = createClient({ url: CACHE_URL }) as RedisClientType;
+      client.on('error', (err: unknown) => {
+        logger.error('[cache] Redis client error', { backend: 'redis', error: String(err) });
+        redisAvailable = false;
+      });
+      await client.connect();
+      redisClient = client;
+      redisAvailable = true;
+      logger.info('[cache] Connected to Redis cache', { backend: 'redis' });
+      return redisClient;
+    }
   } catch (err: unknown) {
     logger.warn('[cache] Could not connect to Redis, falling back to in-memory cache', {
-      backend: 'redis',
+      backend: CACHE_MODE,
       error: String(err),
     });
     redisAvailable = false;
@@ -111,26 +202,67 @@ function versionKey(key: string): string {
 }
 
 async function setupPubSub(): Promise<void> {
-  if (!USE_REDIS || _pubSubClient) return;
+  if (CACHE_URL === '' || CACHE_URL.startsWith('memory://') || _pubSubClient) return;
+
   try {
     const { createClient } = await import('redis');
-    const sub = createClient({ url: CACHE_URL });
-    sub.on('error', (err: unknown) => {
-      logger.error('[cache] Pub/sub client error', { backend: 'redis', error: String(err) });
-    });
-    await sub.connect();
-    await sub.subscribe(INVALIDATION_CHANNEL, (message: string) => {
-      memoryStore.delete(message);
-    });
-    _pubSubClient = sub;
-    logger.info('[cache] Pub/sub listener registered', { channel: INVALIDATION_CHANNEL });
+
+    if (CACHE_MODE === 'sentinel') {
+      const sentinelConfig = parseSentinelUrl(CACHE_URL);
+      const clientOptions: Record<string, unknown> = {
+        socket: {
+          sentinels: sentinelConfig.sentinels,
+          sentinelRetryStrategy: (retries: number) => Math.min(retries * 50, 500),
+        },
+        name: sentinelConfig.name,
+        password: sentinelConfig.password,
+        username: sentinelConfig.username,
+        db: sentinelConfig.db,
+      };
+
+      if (sentinelConfig.sentinelPassword) {
+        (clientOptions.socket as Record<string, unknown>).sentinelPassword =
+          sentinelConfig.sentinelPassword;
+      }
+
+      const sub = createClient(clientOptions) as RedisClientType;
+
+      sub.on('error', (err: unknown) => {
+        logger.error('[cache] Pub/sub Sentinel client error', {
+          backend: 'sentinel',
+          error: String(err),
+        });
+      });
+
+      await sub.connect();
+      await sub.subscribe(INVALIDATION_CHANNEL, (message: string) => {
+        memoryStore.delete(message);
+      });
+      _pubSubClient = sub;
+      logger.info('[cache] Pub/sub listener registered (Sentinel)', {
+        channel: INVALIDATION_CHANNEL,
+      });
+    } else {
+      // Standalone
+      const sub = createClient({ url: CACHE_URL }) as RedisClientType;
+      sub.on('error', (err: unknown) => {
+        logger.error('[cache] Pub/sub client error', { backend: 'redis', error: String(err) });
+      });
+
+      await sub.connect();
+      await sub.subscribe(INVALIDATION_CHANNEL, (message: string) => {
+        memoryStore.delete(message);
+      });
+      _pubSubClient = sub;
+      logger.info('[cache] Pub/sub listener registered', { channel: INVALIDATION_CHANNEL });
+    }
   } catch (err: unknown) {
     logger.warn('[cache] Could not set up pub/sub listener', { error: String(err) });
   }
 }
 
 async function publishInvalidation(key: string): Promise<void> {
-  if (!USE_REDIS || !redisClient) return;
+  if (CACHE_URL === '' || CACHE_URL.startsWith('memory://') || !redisClient) return;
   try {
     await redisClient.publish(INVALIDATION_CHANNEL, key);
   } catch (err) {
@@ -153,11 +285,26 @@ export async function cacheConnect(): Promise<void> {
 }
 
 export function isCacheReady(): boolean {
-  return !USE_REDIS || redisAvailable;
+  const isMemoryOnly = CACHE_URL === '' || CACHE_URL.startsWith('memory://');
+  return isMemoryOnly || redisAvailable;
 }
 
-export function cacheBackendType(): 'redis' | 'memory' {
-  return USE_REDIS && redisAvailable ? 'redis' : 'memory';
+export function cacheBackendType(): 'redis' | 'sentinel' | 'memory' {
+  if (CACHE_URL === '' || CACHE_URL.startsWith('memory://')) return 'memory';
+  if (!redisAvailable) return 'memory';
+  if (CACHE_MODE === 'sentinel') return 'sentinel';
+  return 'redis';
+}
+
+export async function pingRedis(): Promise<boolean> {
+  if (!USE_REDIS) return true;
+  if (!redisClient || !redisAvailable) return false;
+  try {
+    const reply = await redisClient.ping();
+    return reply === 'PONG';
+  } catch {
+    return false;
+  }
 }
 
 export async function cacheClose(): Promise<void> {
@@ -206,11 +353,12 @@ export async function cacheGet<T>(key: string): Promise<T | null> {
   if (!client) return null;
 
   try {
-    const [payload, vHash, pttl] = await Promise.all([
-      client.get(normalizedKey),
-      client.get(versionKey(normalizedKey)),
-      (client as RedisClientType & { pTTL: (key: string) => Promise<number> }).pTTL(normalizedKey),
-    ]);
+    const payload = await client.get(normalizedKey);
+    const vHash = await client.get(versionKey(normalizedKey));
+    const pttl = await (
+      client as RedisClientType & { pTTL: (key: string) => Promise<number> }
+    ).pTTL(normalizedKey);
+
     if (!payload) return null;
 
     const versionHash = vHash ?? null;
@@ -240,7 +388,7 @@ export async function cacheGet<T>(key: string): Promise<T | null> {
     return value;
   } catch (err) {
     logger.warn('[cache] Failed to read key from Redis', {
-      backend: 'redis',
+      backend: CACHE_MODE,
       operation: 'get',
       key: redactKey(normalizedKey),
       error: String(err),
@@ -279,7 +427,7 @@ export async function cacheSet<T>(
     await publishInvalidation(normalizedKey);
   } catch (err) {
     logger.warn('[cache] Failed to write key to Redis', {
-      backend: 'redis',
+      backend: CACHE_MODE,
       operation: 'set',
       key: redactKey(normalizedKey),
       error: String(err),
@@ -298,7 +446,7 @@ export async function cacheDelete(key: string): Promise<void> {
     await publishInvalidation(normalizedKey);
   } catch (err) {
     logger.warn('[cache] Failed to delete key from Redis', {
-      backend: 'redis',
+      backend: CACHE_MODE,
       operation: 'delete',
       key: redactKey(normalizedKey),
       error: String(err),

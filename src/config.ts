@@ -84,9 +84,7 @@ const envSchemas = {
   rateLimitMax: z.number().int().positive().min(1, 'Rate limit max must be at least 1'),
 };
 
-const profile: NetworkProfile = getProfile(network);
-
-// Parse and validate all numeric configuration values
+let profile: NetworkProfile = undefined as any;
 let port: number;
 let indexerStartLedger: number;
 let indexerPollIntervalMs: number;
@@ -97,6 +95,7 @@ let rateLimitWindowMs: number;
 let rateLimitMax: number;
 
 try {
+  profile = getProfile(network);
   port = parseNumericEnv('PORT', process.env.PORT, 3000, envSchemas.port);
   indexerStartLedger = parseNumericEnv(
     'INDEXER_START_LEDGER',
@@ -171,6 +170,7 @@ export const config = {
   networkPassphrase: profile.networkPassphrase,
   apiSubdomain: profile.apiSubdomain,
   cacheUrl: profile.cacheUrl,
+  cacheMode: profile.cacheMode,
 
   // ── Database (resolved from profile) ─────────────────────────────────────
   databaseUrl: profile.databaseUrl,
