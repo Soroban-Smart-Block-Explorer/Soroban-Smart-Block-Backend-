@@ -250,6 +250,7 @@ model Contract {
   @@index([address])
   @@index([verificationBadge])
   @@index([safetyScore])
+  @@index([createdAt])
 }
 
 model VerificationRun {
@@ -883,6 +884,7 @@ model AlertConfiguration {
 
   @@index([userId])
   @@index([contractAddress])
+  @@index([alertType, isActive])
 }
 
 model IncidentReport {
@@ -969,6 +971,8 @@ model StellarAccount {
 
   trustlines AccountTrustline[]
   signers    AccountSigner[]
+
+  @@index([lastActivity])
 }
 
 model AccountTrustline {
