@@ -88,6 +88,7 @@ model Transaction {
   @@index([sourceAccount, ledgerSequence, id])
   @@index([status, ledgerSequence, id])
   @@index([ledgerSequence, id])
+  @@index([ledgerCloseTime])
 }
 
 model Event {
@@ -116,6 +117,8 @@ model Event {
   @@index([contractAddress, topicSymbol])
   @@index([contractAddress, ledgerSequence, id])
   @@index([contractAddress, eventType, ledgerSequence])
+  @@index([ledgerSequence, id])
+  @@index([createdAt])
 }
 
 model EventDefinition {
@@ -248,6 +251,7 @@ model Contract {
   @@index([address])
   @@index([verificationBadge])
   @@index([safetyScore])
+  @@index([createdAt])
 }
 
 model VerificationRun {
@@ -815,6 +819,7 @@ model PauseEvent {
   @@index([eventType])
   @@index([timestamp])
   @@index([pauserAddress])
+  @@index([contractAddress, timestamp])
 }
 
 model PauserAnalysis {
@@ -863,6 +868,7 @@ model AlertConfiguration {
 
   @@index([userId])
   @@index([contractAddress])
+  @@index([alertType, isActive])
 }
 
 model IncidentReport {
@@ -949,6 +955,8 @@ model StellarAccount {
 
   trustlines AccountTrustline[]
   signers    AccountSigner[]
+
+  @@index([lastActivity])
 }
 
 model AccountTrustline {

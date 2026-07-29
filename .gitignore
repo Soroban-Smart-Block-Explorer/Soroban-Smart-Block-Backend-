@@ -2,9 +2,25 @@ node_modules/
 dist/
 dist-esm/
 .env
+.env.*.local
 *.log
 node/
 *.bak
 tests/**/*.js
 tests/**/*.js.map
 tests/**/*.d.ts
+
+# Generated test artifacts — should never be committed
+coverage/
+*.snap
+tests/**/__snapshots__/
+
+# Build/tooling artifacts
+*.tsbuildinfo
+npm-debug.log*
+
+# Editor/OS cruft
+.DS_Store
+.vscode/
+.idea/
+*.pid

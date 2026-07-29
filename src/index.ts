@@ -10,7 +10,7 @@ import swaggerUi from 'swagger-ui-express';
 import { correlationMiddleware } from './middleware/correlation';
 import { config } from './config';
 import { router } from './api/router';
-import { prismaWrite as prisma, prismaRead } from './db';
+import { prismaWrite as prisma, prismaRead, prismaBackfill } from './db';
 import { startIndexerService, stopIndexerService } from './indexer/indexer';
 import { tieredRateLimit, initRateLimitStore } from './middleware/rateLimit';
 import { metricsMiddleware } from './middleware/metricsMiddleware';
@@ -148,8 +148,27 @@ app.use(
 // Correlation IDs first — requestId is needed by morgan token and logger.
 app.use(correlationMiddleware);
 morgan.token('request-id', (req) => (req as express.Request).requestId ?? '-');
+
+// Query strings can carry sensitive values (API keys, tokens, session ids).
+// Redact any parameter whose name looks sensitive instead of logging it raw.
+const SENSITIVE_QUERY_PARAM_PATTERN =
+  /token|key|secret|password|auth|credential|session|signature/i;
+morgan.token('safe-url', (req) => {
+  const raw = (req as express.Request).originalUrl ?? req.url ?? '';
+  const [pathname, query] = raw.split('?');
+  if (!query) return pathname;
+  const params = new URLSearchParams(query);
+  for (const name of params.keys()) {
+    if (SENSITIVE_QUERY_PARAM_PATTERN.test(name)) {
+      params.set(name, '[REDACTED]');
+    }
+  }
+  return `${pathname}?${params.toString()}`;
+});
 app.use(
-  morgan(':method :url :status :res[content-length] - :response-time ms request-id=:request-id'),
+  morgan(
+    ':method :safe-url :status :res[content-length] - :response-time ms request-id=:request-id',
+  ),
 );
 
 // Request size guard before body parsing (Issue #274)
@@ -347,6 +366,7 @@ async function gracefulShutdown(signal: string): Promise<void> {
 
     await prismaRead.$disconnect();
     await prisma.$disconnect();
+    await prismaBackfill.$disconnect();
     dbConnectionStatus.set(0);
     logger.info('[shutdown] Database connections closed');
 
