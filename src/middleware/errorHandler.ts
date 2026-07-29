@@ -39,9 +39,19 @@ export class AppError extends Error {
 /* ─── Extended error classes for classification ──────────────────────────── */
 
 export class ValidationError extends AppError {
-  constructor(message: string) {
+  details?: Array<{ field: string; issue: string }>;
+
+  constructor(message: string, details?: Array<{ field: string; issue: string }>) {
     super(400, message, 'VALIDATION_ERROR');
     this.name = 'ValidationError';
+    this.details = details;
+  }
+}
+
+export class ForbiddenError extends AppError {
+  constructor(message: string) {
+    super(403, message, 'AUTH_ERROR');
+    this.name = 'ForbiddenError';
   }
 }
 
@@ -138,23 +148,40 @@ export function errorHandler(err: Error, req: Request, res: Response, _next: Nex
     res.setHeader('Retry-After', String(err.retryAfter));
   }
 
-  // Build structured response
-  const responseBody: StructuredErrorResponse = {
-    error: err.message || 'Internal Server Error',
+  // Extract details for ValidationError
+  let details: Array<{ field: string; issue: string }> | undefined = undefined;
+  if (err instanceof ValidationError && err.details) {
+    details = err.details;
+  } else if ((err as any).details && Array.isArray((err as any).details)) {
+    details = (err as any).details;
+  }
+
+  const errorObj: any = {
     code,
-    requestId,
-    statusCode,
+    message: err.message || 'Internal Server Error',
   };
 
-  // Include stack trace in development only
-  if (config.nodeEnv === 'development') {
-    responseBody.stack = err.stack;
+  if (details) {
+    errorObj.details = details;
   }
 
-  // Include recovery hints when available
-  if (recovery) {
-    responseBody.recovery = recovery;
+  if (config.nodeEnv === 'development') {
+    errorObj.stack = err.stack;
   }
+
+  if (recovery) {
+    errorObj.recovery = recovery;
+  }
+
+  // Build structured response
+  const responseBody: StructuredErrorResponse = {
+    success: false,
+    error: errorObj,
+    meta: {
+      requestId,
+      timestamp: new Date().toISOString(),
+    },
+  };
 
   // Structured logging
   const logMeta: Record<string, unknown> = {
