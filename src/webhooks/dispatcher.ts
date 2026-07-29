@@ -2,6 +2,7 @@ import crypto from 'crypto';
 import { prismaRead, prismaWrite } from '../db';
 import { processResponseBody } from './redaction';
 import { assertSafeUrl, safePost, SsrfBlockedError } from './ssrf-guard';
+import { logger } from '../logger';
 
 // Maximum delivery attempts before a delivery is marked permanently failed
 export const MAX_ATTEMPTS = 5;
@@ -32,8 +33,8 @@ export function getDispatchMetrics(): { queueDepth: number; lastDeliveryLatencyM
 
 /**
  * Run `fn` over every item in `items` with at most `concurrency` tasks
- * executing in parallel. Excess items wait in a queue. Errors are swallowed
- * per item so that one failure doesn't abort remaining deliveries.
+ * executing in parallel. Excess items wait in a queue. Errors are collected
+ * and aggregated so that one failure does not abort remaining deliveries.
  */
 async function runWithConcurrency<T>(
   items: T[],
@@ -44,6 +45,7 @@ async function runWithConcurrency<T>(
 
   const queue = [...items];
   _queueDepth += queue.length;
+  const errors: Array<{ item: T; error: unknown }> = [];
 
   await new Promise<void>((resolve) => {
     let active = 0;
@@ -56,14 +58,29 @@ async function runWithConcurrency<T>(
         _queueDepth--;
         active++;
         fn(item)
-          .catch(() => {
-            /* individual delivery errors are handled inside fn */
+          .catch((error) => {
+            errors.push({ item, error });
           })
           .finally(() => {
             active--;
             settled++;
-            if (settled === total) resolve();
-            else next();
+            if (settled === total) {
+              if (errors.length > 0) {
+                logger.error('[webhooks] Some deliveries failed during fan-out', {
+                  total,
+                  failed: errors.length,
+                  errors: errors.map((e) => ({
+                    item: typeof e.item === 'object' && e.item !== null && 'id' in e.item
+                      ? (e.item as Record<string, unknown>).id
+                      : String(e.item),
+                    error: e.error instanceof Error ? e.error.message : String(e.error),
+                  })),
+                });
+              }
+              resolve();
+            } else {
+              next();
+            }
           });
       }
     }

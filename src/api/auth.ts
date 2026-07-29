@@ -7,6 +7,9 @@ import {
   getChallenge,
   incrementAttempts,
   checkChallengeRateLimit,
+  checkAccountLockout,
+  recordFailedVerify,
+  clearAccountLockout,
 } from '../auth/challenge';
 import { issueTokens, hashToken, generateSessionId, REFRESH_TOKEN_TTL } from '../auth/tokens';
 import { getJwks, rotateKeys } from '../auth/keys';
@@ -58,6 +61,10 @@ authRouter.post(
     if (!ch) return res.status(400).json({ error: 'Challenge not found or expired' });
     if (ch.address !== address) return res.status(400).json({ error: 'Address mismatch' });
 
+    if (await checkAccountLockout(address)) {
+      return res.status(429).json({ error: 'Account temporarily locked due to too many failed attempts' });
+    }
+
     const attempts = await incrementAttempts(challengeId);
     if (attempts > 3) {
       await consumeChallenge(challengeId);
@@ -71,13 +78,16 @@ authRouter.post(
       const sigBytes = Buffer.from(signature, 'base64');
       const valid = kp.verify(messageBytes, sigBytes);
       if (!valid) {
+        await recordFailedVerify(address);
         return res.status(401).json({ error: 'Invalid signature' });
       }
     } catch {
+      await recordFailedVerify(address);
       return res.status(401).json({ error: 'Signature verification failed' });
     }
 
     await consumeChallenge(challengeId);
+    await clearAccountLockout(address);
 
     // Upsert user
     let user = await prisma.walletUser.findUnique({ where: { address } });

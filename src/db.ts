@@ -7,13 +7,12 @@ const logLevel: Prisma.LogLevel[] =
 // Default statement timeout (ms) applied to every connection — stops a single
 // slow/hung query from blocking a connection (and a request) indefinitely.
 const DEFAULT_QUERY_TIMEOUT_MS = parseInt(process.env.DB_QUERY_TIMEOUT_MS ?? '15000', 10);
-// Long-running operations (e.g. multi-day feed backfill exports) legitimately
-// need more than the default budget, so they get their own connection with a
-// much larger timeout rather than inheriting it.
 const BACKFILL_QUERY_TIMEOUT_MS = parseInt(
   process.env.DB_BACKFILL_QUERY_TIMEOUT_MS ?? '300000',
   10,
 );
+const DB_POOL_SIZE = parseInt(process.env.DB_POOL_SIZE ?? '10', 10);
+const DB_POOL_TIMEOUT = parseInt(process.env.DB_POOL_TIMEOUT ?? '30', 10);
 
 const transactionOptions = {
   timeout: DEFAULT_QUERY_TIMEOUT_MS,
@@ -30,11 +29,23 @@ function withStatementTimeout(url: string, timeoutMs: number): string {
   return `${url}${separator}options=${encodeURIComponent(`-c statement_timeout=${timeoutMs}`)}`;
 }
 
+/**
+ * Appends connection pool parameters to a Postgres connection URL.
+ */
+function withPoolConfig(url: string): string {
+  if (!url) return url;
+  const params = new URLSearchParams();
+  params.set('connection_limit', String(DB_POOL_SIZE));
+  params.set('pool_timeout', String(DB_POOL_TIMEOUT));
+  const separator = url.includes('?') ? '&' : '?';
+  return `${url}${separator}${params.toString()}`;
+}
+
 /** Primary write client — uses the active profile's database cluster. */
 export const prismaWrite = new PrismaClient({
   log: logLevel,
   datasources: {
-    db: { url: withStatementTimeout(config.databaseUrl, DEFAULT_QUERY_TIMEOUT_MS) },
+    db: { url: withPoolConfig(withStatementTimeout(config.databaseUrl, DEFAULT_QUERY_TIMEOUT_MS)) },
   },
   transactionOptions,
 });
@@ -43,7 +54,7 @@ export const prismaWrite = new PrismaClient({
 export const prismaRead = new PrismaClient({
   log: logLevel,
   datasources: {
-    db: { url: withStatementTimeout(config.readReplicaUrl, DEFAULT_QUERY_TIMEOUT_MS) },
+    db: { url: withPoolConfig(withStatementTimeout(config.readReplicaUrl, DEFAULT_QUERY_TIMEOUT_MS)) },
   },
   transactionOptions,
 });
@@ -56,6 +67,6 @@ export const prismaRead = new PrismaClient({
 export const prismaBackfill = new PrismaClient({
   log: logLevel,
   datasources: {
-    db: { url: withStatementTimeout(config.readReplicaUrl, BACKFILL_QUERY_TIMEOUT_MS) },
+    db: { url: withPoolConfig(withStatementTimeout(config.readReplicaUrl, BACKFILL_QUERY_TIMEOUT_MS)) },
   },
 });

@@ -17,11 +17,12 @@ interface MemoryEntry {
 }
 
 const memoryStore = new Map<string, MemoryEntry>();
-const MAX_MEMORY_ENTRIES = 10_000;
 let redisClient: RedisClientType | null = null;
 let redisAvailable = false;
 let _evictionCount = 0;
 let _pubSubClient: RedisClientType | null = null;
+let cleanupInterval: ReturnType<typeof setInterval> | null = null;
+const CLEANUP_INTERVAL_MS = 60_000; // 1 minute
 
 /**
  * Parse Redis Sentinel URL format:
@@ -280,6 +281,8 @@ export function redactKey(key: string): string {
 }
 
 export async function cacheConnect(): Promise<void> {
+  performStaleCleanup();
+  cleanupInterval = setInterval(performStaleCleanup, CLEANUP_INTERVAL_MS);
   await getRedisClient();
   await setupPubSub();
 }
@@ -308,6 +311,10 @@ export async function pingRedis(): Promise<boolean> {
 }
 
 export async function cacheClose(): Promise<void> {
+  if (cleanupInterval) {
+    clearInterval(cleanupInterval);
+    cleanupInterval = null;
+  }
   if (_pubSubClient) {
     try {
       await _pubSubClient.unsubscribe(INVALIDATION_CHANNEL);
@@ -331,6 +338,20 @@ export async function cacheClose(): Promise<void> {
 export function cacheClear(): void {
   memoryStore.clear();
   _evictionCount = 0;
+}
+
+/** Removes expired entries from the in-memory store. */
+function performStaleCleanup(): void {
+  let removed = 0;
+  for (const [key, entry] of memoryStore) {
+    if (isExpired(entry)) {
+      memoryStore.delete(key);
+      removed++;
+    }
+  }
+  if (removed > 0) {
+    _evictionCount += removed;
+  }
 }
 
 export async function cacheGet<T>(key: string): Promise<T | null> {
