@@ -44,6 +44,7 @@ import { startAuditScheduler } from './indexer/audit-scheduler';
 import { startContinuousAuditMonitor } from './indexer/audit-monitor';
 import { startAuditExpiryChecker } from './indexer/audit-expiry-checker';
 import { startAuditDigestScheduler } from './indexer/audit-digest-scheduler';
+import { startKeyRotationScheduler } from './auth/keyRotationScheduler';
 import { startPriceUpdater, stopPriceUpdater } from './services/pricing';
 import { startBridgeWorker, stopBridgeWorker } from './bridge-tracker';
 import { writeFile, mkdir } from 'fs/promises';
@@ -645,6 +646,14 @@ async function main() {
     logger.info('Price updater started');
   } catch (err) {
     logger.warn('Price updater failed to start', { error: String(err) });
+  }
+
+  // JWT signing key rotation — every 30 days (also triggerable via POST /auth/keys/rotate)
+  try {
+    startKeyRotationScheduler();
+    logger.info('JWT key rotation scheduler started');
+  } catch (err) {
+    logger.warn('JWT key rotation scheduler failed to start', { error: String(err) });
   }
 
   await feedOrchestrator.initialize(httpServer);

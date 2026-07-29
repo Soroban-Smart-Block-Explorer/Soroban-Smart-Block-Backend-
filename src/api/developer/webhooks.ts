@@ -5,6 +5,7 @@ import { Prisma } from '@prisma/client';
 import { prismaWrite, prismaRead } from '../../db';
 import { asyncHandler } from '../../middleware/asyncHandler';
 import { redactSensitiveData } from '../../webhooks/redaction';
+import { encryptSecret, decryptSecret, maskSecret } from '../../webhooks/secretCrypto';
 
 export const devWebhooksRouter = Router();
 
@@ -57,17 +58,19 @@ devWebhooksRouter.post(
       data: {
         developerId,
         url,
-        secret,
+        secret: encryptSecret(secret),
         events: events as Prisma.InputJsonValue,
         retryPolicy: retryPolicy
           ? (retryPolicy as unknown as Prisma.InputJsonValue)
           : Prisma.JsonNull,
         headers: headers ? (headers as unknown as Prisma.InputJsonValue) : Prisma.JsonNull,
       },
-      select: { id: true, url: true, events: true, active: true, createdAt: true, secret: true },
+      select: { id: true, url: true, events: true, active: true, createdAt: true },
     });
 
-    res.status(201).json(webhook);
+    // The raw secret is only ever shown once, at creation time — it is not
+    // recoverable from the API afterwards (only a masked last-4 form is).
+    res.status(201).json({ ...webhook, secret });
   }),
 );
 
@@ -88,10 +91,18 @@ devWebhooksRouter.get(
         lastDeliveryAt: true,
         lastDeliveryStatus: true,
         createdAt: true,
+        secret: true,
       },
     });
 
-    res.json({ data: webhooks });
+    // Never return the usable secret in a list response — only enough to
+    // identify which secret is configured on the developer's side.
+    const data = webhooks.map(({ secret, ...rest }) => ({
+      ...rest,
+      secretLast4: maskSecret(decryptSecret(secret)),
+    }));
+
+    res.json({ data });
   }),
 );
 
@@ -166,7 +177,7 @@ devWebhooksRouter.post(
     try {
       const { default: axios } = await import('axios');
       const signature = crypto
-        .createHmac('sha256', webhook.secret)
+        .createHmac('sha256', decryptSecret(webhook.secret))
         .update(JSON.stringify(payload))
         .digest('hex');
 

@@ -386,6 +386,13 @@ privacyRouter.get(
         where: { protocols: { has: protocolFilter } },
         orderBy: { timestamp: 'desc' },
         take: 50,
+        select: {
+          participants: true,
+          txHash: true,
+          privacyScore: true,
+          riskScore: true,
+          timestamp: true,
+        },
       });
 
       const totalTx = await prismaRead.privacyTransaction.count({
@@ -1552,6 +1559,12 @@ privacyRouter.get(
         const privacyTxs = await prismaRead.privacyTransaction.findMany({
           where: { participants: { has: address } },
           orderBy: { timestamp: 'desc' },
+          select: {
+            protocols: true,
+            riskScore: true,
+            participants: true,
+            timestamp: true,
+          },
         });
 
         const protocolSet = new Set<string>();
@@ -2592,6 +2605,10 @@ privacyRouter.post(
         where: { participants: { has: body.address } },
         orderBy: { timestamp: 'desc' },
         take: 20,
+        select: {
+          protocols: true,
+          riskScore: true,
+        },
       });
 
       const protocolsUsed = new Set<string>();
@@ -2783,6 +2800,13 @@ privacyRouter.get(
       const privacyTxs = await prismaRead.privacyTransaction.findMany({
         where: { participants: { has: address } },
         orderBy: { timestamp: 'desc' },
+        select: {
+          protocols: true,
+          timestamp: true,
+          totalValue: true,
+          privacyScore: true,
+          riskScore: true,
+        },
       });
 
       const protocolUsage: Record<
@@ -2887,6 +2911,11 @@ privacyRouter.get(
         },
         orderBy: { timestamp: 'desc' },
         take: 100,
+        select: {
+          contractAddresses: true,
+          protocols: true,
+          timestamp: true,
+        },
       });
 
       const verifierMap = new Map<
@@ -2987,6 +3016,12 @@ privacyRouter.get(
           protocols: { hasSome: ['ZK_SNARK', 'ZK_STARK'] },
         },
         orderBy: { timestamp: 'desc' },
+        select: {
+          privacyScore: true,
+          txHash: true,
+          protocols: true,
+          timestamp: true,
+        },
       });
 
       const avgScore =
@@ -3134,6 +3169,10 @@ privacyRouter.get(
           protocols: { hasSome: ['ZK_SNARK', 'ZK_STARK', 'BULLETPROOF'] as any },
         },
         take: 200,
+        select: {
+          protocols: true,
+          privacyScore: true,
+        },
       });
 
       const benchmarks = {
@@ -3321,6 +3360,13 @@ privacyRouter.get(
         },
         orderBy: { timestamp: 'desc' },
         take: 100,
+        select: {
+          totalValue: true,
+          participants: true,
+          txHash: true,
+          protocols: true,
+          timestamp: true,
+        },
       });
 
       res.json({

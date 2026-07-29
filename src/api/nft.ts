@@ -342,6 +342,13 @@ nftRouter.get(
     const traits = await prismaRead.nftTrait.findMany({
       where: { collectionId: collection.id },
       orderBy: [{ traitType: 'asc' }, { count: 'desc' }],
+      select: {
+        traitType: true,
+        traitValue: true,
+        count: true,
+        rarityScore: true,
+        rarityTier: true,
+      },
     });
 
     // Group by traitType
@@ -1161,6 +1168,20 @@ nftRouter.post(
 
     const collections = await prismaRead.nftCollection.findMany({
       where: { contractAddress: { in: body.collections }, isSpam: false },
+      select: {
+        id: true,
+        contractAddress: true,
+        name: true,
+        volume24h: true,
+        volume7d: true,
+        floorPrice: true,
+        floorPriceUsd: true,
+        uniqueHolders: true,
+        totalSupply: true,
+        marketCap: true,
+        logoUri: true,
+        isVerified: true,
+      },
     });
 
     // Fetch wash trading data for wash volume percentage
