@@ -9,11 +9,11 @@ export interface TravelRuleSubmission {
   beneficiaryVasp?: string;
   originatorInfo?: Record<string, unknown>;
   beneficiaryInfo?: Record<string, unknown>;
-  transferValue: string;
+  transferValue: number;
 }
 
 export async function submitTravelRule(data: TravelRuleSubmission): Promise<any> {
-  const thresholdExceeded = parseFloat(data.transferValue) >= TRAVEL_RULE_THRESHOLD_XLM;
+  const thresholdExceeded = data.transferValue >= TRAVEL_RULE_THRESHOLD_XLM;
 
   const existing = await prismaRead.travelRuleRecord.findUnique({
     where: { txHash: data.txHash },

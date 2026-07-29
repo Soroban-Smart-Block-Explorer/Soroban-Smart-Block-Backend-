@@ -675,7 +675,7 @@ model TravelRuleRecord {
   beneficiaryVasp   String?
   originatorInfo    Json?
   beneficiaryInfo   Json?
-  transferValue     String
+  transferValue     Decimal  @db.Decimal(30, 7)
   thresholdExceeded Boolean   @default(false)
   travelRuleStatus  String    @default("pending_verification")
   submittedAt       DateTime  @default(now())
