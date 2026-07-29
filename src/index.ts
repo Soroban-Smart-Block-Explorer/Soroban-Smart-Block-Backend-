@@ -8,6 +8,8 @@ import helmet from 'helmet';
 import morgan from 'morgan';
 import swaggerUi from 'swagger-ui-express';
 import { correlationMiddleware } from './middleware/correlation';
+import { responseEnvelopeMiddleware } from './middleware/responseEnvelope';
+import { compressionMiddleware } from './middleware/compression';
 import { config } from './config';
 import { router } from './api/router';
 import { prismaWrite as prisma, prismaRead } from './db';
@@ -149,6 +151,19 @@ app.use(
 
 // Correlation IDs first — requestId is needed by morgan token and logger.
 app.use(correlationMiddleware);
+app.use(responseEnvelopeMiddleware);
+
+// Response compression (gzip/brotli) for large JSON payloads
+app.use(
+  compressionMiddleware({
+    threshold: 1024, // Compress responses >= 1KB
+    gzipLevel: 6, // Balanced speed/compression
+    brotliLevel: 6, // Balanced speed/compression
+    enableBrotli: true, // Try brotli first, fall back to gzip
+    logStats: config.nodeEnv === 'development', // Log in dev mode
+  }),
+);
+
 morgan.token('request-id', (req) => (req as express.Request).requestId ?? '-');
 app.use(
   morgan(':method :url :status :res[content-length] - :response-time ms request-id=:request-id'),
