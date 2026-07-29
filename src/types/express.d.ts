@@ -1,5 +1,6 @@
 import { NetworkName, NetworkProfile } from '../profiles';
 import { ApiKeyContext } from '../middleware/apiKeyAuth';
+import { SessionContext } from '../middleware/cookieAuth';
 import { TokenBucketResult } from '../middleware/tokenBucket';
 import { Role, Tier } from '../auth/rbac';
 import { SupportedLanguage } from '../i18n/engine';
@@ -49,6 +50,8 @@ declare global {
       requestId?: string;
       startedAt?: number;
       apiKey?: ApiKeyContext;
+      /** Session data from validated session cookie (cookieAuth middleware). */
+      session?: SessionContext;
       rateLimitResult?: TokenBucketResult;
       user?: {
         id: string;

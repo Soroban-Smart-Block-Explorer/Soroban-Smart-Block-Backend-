@@ -1,5 +1,5 @@
 import { Router, Request, Response } from 'express';
-import { prismaRead as prisma } from '../db';
+import { container } from '../services/container';
 import { z } from 'zod';
 import { asyncHandler } from '../middleware/asyncHandler';
 import { validateQuery, validateParams } from '../middleware/validation';
@@ -121,7 +121,7 @@ eventRouter.get(
     };
 
     const [events, total] = await Promise.all([
-      prisma.event.findMany({
+      prismaRead.event.findMany({
         where,
         orderBy: { ledgerSequence: 'desc' },
         skip,
@@ -137,7 +137,7 @@ eventRouter.get(
           ledgerCloseTime: true,
         },
       }),
-      prisma.event.count({ where }),
+      prismaRead.event.count({ where }),
     ]);
 
     res.json({ data: events, total, page: query.page, limit: query.limit });
