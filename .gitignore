@@ -8,3 +8,15 @@ node/
 tests/**/*.js
 tests/**/*.js.map
 tests/**/*.d.ts
+
+# Test artifacts / snapshots
+coverage/
+.nyc_output/
+*.snap
+test-results/
+playwright-report/
+
+# Build/tooling artifacts
+*.tsbuildinfo
+.DS_Store
+*.orig

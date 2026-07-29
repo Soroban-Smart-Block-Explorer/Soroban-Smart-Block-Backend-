@@ -202,6 +202,21 @@ contractAuditRouter.get(
       const findings = await prismaRead.auditFinding.findMany({
         where: { certificateId: cert.id },
         orderBy: { createdAt: 'asc' },
+        select: {
+          id: true,
+          category: true,
+          severity: true,
+          title: true,
+          detail: true,
+          description: true,
+          recommendation: true,
+          status: true,
+          cweId: true,
+          cvssScore: true,
+          txHash: true,
+          resolvedAt: true,
+          createdAt: true,
+        },
       });
 
       const result = formatFull(
@@ -562,6 +577,21 @@ contractAuditRouter.get(
       const findings = await prismaRead.auditFinding.findMany({
         where: { certificateId: cert.id },
         orderBy: { createdAt: 'asc' },
+        select: {
+          id: true,
+          category: true,
+          severity: true,
+          title: true,
+          detail: true,
+          description: true,
+          recommendation: true,
+          status: true,
+          cweId: true,
+          cvssScore: true,
+          txHash: true,
+          resolvedAt: true,
+          createdAt: true,
+        },
       });
 
       res.json(
@@ -1393,6 +1423,23 @@ contractAuditRouter.get(
           where,
           orderBy: { createdAt: 'desc' },
           take: limit,
+          select: {
+            id: true,
+            tool: true,
+            status: true,
+            passed: true,
+            propertyCount: true,
+            provenCount: true,
+            violatedCount: true,
+            unknownCount: true,
+            coveragePercent: true,
+            reportUrl: true,
+            durationSeconds: true,
+            triggeredBy: true,
+            startedAt: true,
+            completedAt: true,
+            createdAt: true,
+          },
         }),
         prismaRead.formalVerificationJob.count({ where }),
       ]);
