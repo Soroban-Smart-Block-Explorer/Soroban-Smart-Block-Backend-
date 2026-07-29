@@ -1,5 +1,5 @@
 import { Router, Request, Response } from 'express';
-import { prismaRead as prisma } from '../db';
+import { container } from '../services/container';
 import { z } from 'zod';
 import { asyncHandler } from '../middleware/asyncHandler';
 
@@ -104,6 +104,7 @@ const paginationSchema = z.object({
 eventRouter.get(
   '/',
   asyncHandler(async (req: Request, res: Response) => {
+    const prismaRead = container.getPrismaRead();
     const { page, limit } = paginationSchema.parse(req.query);
     const { contract, type, topic } = req.query as Record<string, string>;
     const skip = (page - 1) * limit;
@@ -115,7 +116,7 @@ eventRouter.get(
     };
 
     const [events, total] = await Promise.all([
-      prisma.event.findMany({
+      prismaRead.event.findMany({
         where,
         orderBy: { ledgerSequence: 'desc' },
         skip,
@@ -131,7 +132,7 @@ eventRouter.get(
           ledgerCloseTime: true,
         },
       }),
-      prisma.event.count({ where }),
+      prismaRead.event.count({ where }),
     ]);
 
     res.json({ data: events, total, page, limit });
@@ -171,7 +172,8 @@ eventRouter.get(
 eventRouter.get(
   '/:id',
   asyncHandler(async (req: Request, res: Response) => {
-    const event = await prisma.event.findUnique({ where: { id: req.params.id } });
+    const prismaRead = container.getPrismaRead();
+    const event = await prismaRead.event.findUnique({ where: { id: req.params.id } });
     if (!event) return res.status(404).json({ error: 'Event not found' });
     res.json(event);
   }),

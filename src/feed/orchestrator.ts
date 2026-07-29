@@ -5,13 +5,25 @@ import { deliveryService } from './deliveryService';
 import { SubscriptionManager } from './subscriptionManager';
 import { FeedWebSocketServer } from './websocketServer';
 import { streamingServer } from './streamingServer';
-import { logger } from '../logger';
 import { getTokenMetadata } from '../indexer/token-metadata';
+import { scheduler } from '../scheduler/cron-scheduler';
+import type { Logger } from '../services/container';
+import { container } from '../services/container';
 
 export class FeedOrchestrator extends EventEmitter {
   private subscriptionManager = new SubscriptionManager();
   private wsServer?: FeedWebSocketServer;
-  private metricsInterval!: NodeJS.Timeout;
+  private metricsJobId = 'feed-orchestrator-metrics';
+  private logger: Logger;
+
+  /**
+   * Create a FeedOrchestrator with optional dependency injection.
+   * @param loggerDep Logger instance (defaults to container's logger)
+   */
+  constructor(loggerDep?: Logger) {
+    super();
+    this.logger = loggerDep || container.getLogger();
+  }
 
   async initialize(httpServer?: any) {
     // Initialize default channels
@@ -33,7 +45,7 @@ export class FeedOrchestrator extends EventEmitter {
     // Start metrics collection
     this.startMetricsCollection();
 
-    logger.info('Feed orchestrator initialized');
+    this.logger.info('Feed orchestrator initialized');
   }
 
   private async distributeMessage(message: any) {
@@ -46,14 +58,14 @@ export class FeedOrchestrator extends EventEmitter {
       // Deliver to each subscription
       for (const subscription of subscriptions) {
         deliveryService.deliverMessage(subscription.id, message).catch((error) => {
-          logger.error(`Delivery failed for subscription ${subscription.id}:`, error);
+          this.logger.error(`Delivery failed for subscription ${subscription.id}:`, error);
         });
       }
 
       // Broadcast to all real-time streaming connections (WebSocket + SSE)
       streamingServer.broadcast(message.channelName, message);
     } catch (error) {
-      logger.error('Failed to distribute message:', error);
+      this.logger.error('Failed to distribute message:', error);
     }
   }
 
@@ -171,34 +183,55 @@ export class FeedOrchestrator extends EventEmitter {
   }
 
   private startMetricsCollection() {
-    this.metricsInterval = setInterval(async () => {
-      try {
-        // Collect and publish system metrics
-        await this.collectSystemMetrics();
-      } catch (error) {
-        logger.error('Failed to collect metrics:', error);
+    // Register metrics collection with node-cron scheduler
+    // Runs every minute (0 * * * *) with backpressure handling
+    try {
+      scheduler.register({
+        id: this.metricsJobId,
+        taskName: 'Feed Orchestrator Metrics Collection',
+        cronExpression: '* * * * *', // Every minute
+        execute: async () => this.collectSystemMetrics(),
+        maxDuration: 10_000, // 10s timeout
+        retryOnFailure: true,
+        retryDelayMs: 5000,
+      });
+    } catch (error) {
+      if (error instanceof Error && error.message.includes('already registered')) {
+        // Job already registered, skip
+        this.logger.debug('[orchestrator] Metrics job already registered');
+      } else {
+        throw error;
       }
-    }, 60000); // Every minute
+    }
   }
 
   private async collectSystemMetrics() {
-    // Connection metrics
-    const connectionCount = streamingServer.getConnectionCount();
-    await this.publishMetric('streaming_connections', connectionCount, '1m');
+    try {
+      // Connection metrics
+      const connectionCount = streamingServer.getConnectionCount();
+      await this.publishMetric('streaming_connections', connectionCount, '1m');
 
-    // Active subscriptions
-    const activeSubscriptions = await this.subscriptionManager.listSubscriptions();
-    const activeCount = activeSubscriptions.filter((sub) => sub.status === 'active').length;
-    await this.publishMetric('active_subscriptions', activeCount, '1m');
+      // Active subscriptions
+      const activeSubscriptions = await this.subscriptionManager.listSubscriptions();
+      const activeCount = activeSubscriptions.filter((sub) => sub.status === 'active').length;
+      await this.publishMetric('active_subscriptions', activeCount, '1m');
 
-    // Channel activity
-    const channels = streamingServer.getActiveChannels();
-    await this.publishMetric('active_channels', channels.length, '1m');
+      // Channel activity
+      const channels = streamingServer.getActiveChannels();
+      await this.publishMetric('active_channels', channels.length, '1m');
 
-    // Mock additional metrics (in real implementation, these would come from actual data)
-    await this.publishMetric('gas_price_avg', Math.random() * 200 + 100, '1m');
-    await this.publishMetric('transactions_per_second', Math.random() * 50 + 10, '1m');
-    await this.publishMetric('active_accounts_24h', Math.floor(Math.random() * 10000) + 5000, '1m');
+      // Mock additional metrics (in real implementation, these would come from actual data)
+      await this.publishMetric('gas_price_avg', Math.random() * 200 + 100, '1m');
+      await this.publishMetric('transactions_per_second', Math.random() * 50 + 10, '1m');
+      await this.publishMetric(
+        'active_accounts_24h',
+        Math.floor(Math.random() * 10000) + 5000,
+        '1m',
+      );
+    } catch (error) {
+      this.logger.error('Failed to collect metrics:', error);
+      throw error; // Re-throw so scheduler can handle retry/logging
+    }
   }
 
   getStats() {
@@ -210,9 +243,14 @@ export class FeedOrchestrator extends EventEmitter {
   }
 
   async shutdown() {
-    logger.info('Shutting down feed orchestrator...');
+    this.logger.info('Shutting down feed orchestrator...');
 
-    clearInterval(this.metricsInterval);
+    // Stop the metrics job via scheduler
+    try {
+      scheduler.stop(this.metricsJobId);
+    } catch (error) {
+      this.logger.debug('[orchestrator] Metrics job was not running');
+    }
 
     streamingServer.shutdown();
 
@@ -224,7 +262,7 @@ export class FeedOrchestrator extends EventEmitter {
 
     this.removeAllListeners();
 
-    logger.info('Feed orchestrator shutdown complete');
+    this.logger.info('Feed orchestrator shutdown complete');
   }
 }
 

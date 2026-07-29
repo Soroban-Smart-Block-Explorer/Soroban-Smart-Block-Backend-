@@ -4,6 +4,7 @@ import './tracer';
 import express from 'express';
 import { createServer, Server } from 'http';
 import cors from 'cors';
+import cookieParser from 'cookie-parser';
 import helmet from 'helmet';
 import morgan from 'morgan';
 import swaggerUi from 'swagger-ui-express';
@@ -33,11 +34,14 @@ import { apiKeyAuth } from './middleware/apiKeyAuth';
 import { auditLogMiddleware } from './middleware/auditLog';
 import { asyncHandler } from './middleware/asyncHandler';
 import { rejectUntrustedForwardedHeaders } from './middleware/proxyTrust';
+import { requestTimeout } from './middleware/requestTimeout';
+import { sessionCookieAuth, COOKIE_CONFIG } from './middleware/cookieAuth';
 import { billingRouter } from './services/stripe-billing';
 import { logger } from './logger';
 import { feedOrchestrator } from './feed/orchestrator';
 import { startAuditPipeline } from './indexer/audit-pipeline';
 import { startAuditScheduler } from './indexer/audit-scheduler';
+import { scheduler } from './scheduler/cron-scheduler';
 import { startContinuousAuditMonitor } from './indexer/audit-monitor';
 import { startAuditExpiryChecker } from './indexer/audit-expiry-checker';
 import { startAuditDigestScheduler } from './indexer/audit-digest-scheduler';
@@ -158,8 +162,20 @@ app.use(requestSizeGuard(1_048_576)); // 1 MB
 app.use(express.json({ limit: '1mb' }));
 app.use(networkRouter);
 
+// Cookie parsing — enables session cookie authentication (cookieAuth middleware)
+// Uses COOKIE_SECRET env var for HMAC signing if provided
+app.use(cookieParser(COOKIE_CONFIG.secret || undefined));
+
 // Request context FIRST (generates requestId + start time for correlation)
 app.use(requestContext);
+
+// Session cookie authentication — complements X-Api-Key header auth
+// Validates signed cookies and attaches SessionContext to req.session
+app.use(sessionCookieAuth());
+
+// Request timeout — prevents long-running queries from hanging indefinitely
+// Applied early so timeout is enforced for all subsequent middleware/routes
+app.use(requestTimeout());
 
 // Auth must resolve before rate limiting so tier is known
 app.use(apiKeyAuth);
@@ -315,6 +331,11 @@ async function gracefulShutdown(signal: string): Promise<void> {
   }, SHUTDOWN_TIMEOUT_MS);
 
   try {
+    // Gracefully shutdown the cron scheduler first
+    // This waits for any in-flight jobs to complete before stopping
+    await scheduler.gracefulShutdown();
+    logger.info('[shutdown] Cron scheduler shutdown complete');
+
     stopIndexerService();
     logger.info('[shutdown] Indexer service stopped');
 
