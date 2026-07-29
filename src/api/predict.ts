@@ -1,10 +1,11 @@
 import { Router, Request, Response } from 'express';
 import { featureStore } from '../indexer/feature-store';
 import { prismaWrite as prisma } from '../db';
-import crypto from 'crypto';
+import * as crypto from 'crypto';
 import { asyncHandler } from '../middleware/asyncHandler';
 import { config } from '../config';
 import { getDeterministicDriftPsi, getForecaster } from '../predictive/factory';
+import { modelTrainingService } from '../predictive/training-service';
 
 export const predictRouter = Router();
 
@@ -14,7 +15,8 @@ predictRouter.post(
     const { metric, horizon, confidence_level } = req.body;
     try {
       const data = await featureStore.getHistoricalData(metric || 'tx_volume', 30);
-      const predictions = getForecaster().predict(horizon || 30, data, confidence_level || 0.95);
+      const forecaster = await getForecaster();
+      const predictions = forecaster.predict(horizon || 30, data, confidence_level || 0.95);
       res.json({
         success: true,
         metric,
@@ -35,10 +37,11 @@ predictRouter.get(
 
     try {
       const data = await featureStore.getHistoricalData(metric, 30);
-      const predictions = getForecaster().predict(horizon, data, 0.95);
+      const forecaster = await getForecaster();
+      const predictions = forecaster.predict(horizon, data, 0.95);
       res.json({
         success: true,
-        models: getForecaster().getModels(),
+        models: forecaster.getModels(),
         predictions,
       });
     } catch (error: any) {
@@ -55,7 +58,8 @@ predictRouter.get(
 
     try {
       const data = await featureStore.getHistoricalData(metric, 30);
-      const predictions = getForecaster().predict(horizon, data, 0.95);
+      const forecaster = await getForecaster();
+      const predictions = forecaster.predict(horizon, data, 0.95);
       res.json({
         success: true,
         metric,
@@ -70,9 +74,10 @@ predictRouter.get(
 predictRouter.get(
   '/models',
   asyncHandler(async (req: Request, res: Response) => {
+    const forecaster = await getForecaster();
     res.json({
       success: true,
-      models: getForecaster().getModels(),
+      models: forecaster.getModels(),
     });
   }),
 );
@@ -85,7 +90,8 @@ predictRouter.post(
     const data = await featureStore.getHistoricalData(metric || 'tx_volume', 30);
     data.push(anomaly_value);
 
-    const predictions = getForecaster().predict(14, data, 0.8);
+    const forecaster = await getForecaster();
+    const predictions = forecaster.predict(14, data, 0.8);
 
     // Calculate recovery
     const baseline = data.slice(0, 30).reduce((a, b) => a + b, 0) / 30;
@@ -145,7 +151,8 @@ predictRouter.post(
       }
     }
 
-    const predictions = getForecaster().predict(horizon || 30, data, 0.95);
+    const forecaster = await getForecaster();
+    const predictions = forecaster.predict(horizon || 30, data, 0.95);
 
     res.json({
       success: true,
@@ -173,15 +180,14 @@ predictRouter.get(
 predictRouter.get(
   '/drift',
   asyncHandler(async (req: Request, res: Response) => {
+    const forecaster = await getForecaster();
     res.json({
       success: true,
-      drift_status: getForecaster()
-        .getModels()
-        .map((m) => ({
-          model: m.name,
-          psi: getDeterministicDriftPsi(m.name, config.forecastSeed),
-          drift_detected: false,
-        })),
+      drift_status: forecaster.getModels().map((m) => ({
+        model: m.name,
+        psi: getDeterministicDriftPsi(m.name, config.forecastSeed),
+        drift_detected: false,
+      })),
     });
   }),
 );
@@ -190,7 +196,7 @@ predictRouter.get(
   '/dashboard/overview',
   asyncHandler(async (req: Request, res: Response) => {
     const data = await featureStore.getHistoricalData('tx_volume', 30);
-    const forecaster = getForecaster();
+    const forecaster = await getForecaster();
     const predictions = forecaster.predict(30, data, 0.95);
 
     res.json({
@@ -226,5 +232,43 @@ predictRouter.get(
   asyncHandler(async (req: Request, res: Response) => {
     const keys = await prisma.predictiveApiKey.findMany();
     res.json({ success: true, keys });
+  }),
+);
+
+// Training Management Endpoints
+predictRouter.get(
+  '/training/status',
+  asyncHandler(async (req: Request, res: Response) => {
+    const status = modelTrainingService.getTrainingStatus();
+    const metrics = modelTrainingService.getTrainingMetrics();
+
+    res.json({
+      success: true,
+      training_status: status,
+      metrics: metrics,
+      needs_retraining: modelTrainingService.needsRetraining(),
+    });
+  }),
+);
+
+predictRouter.post(
+  '/training/retrain',
+  asyncHandler(async (req: Request, res: Response) => {
+    try {
+      const forecaster = await modelTrainingService.forceRetrain();
+      const metrics = modelTrainingService.getTrainingMetrics();
+
+      res.json({
+        success: true,
+        message: 'Models retrained successfully',
+        models_count: forecaster.getModels().length,
+        training_metrics: metrics,
+      });
+    } catch (error: any) {
+      res.status(500).json({
+        success: false,
+        error: error.message,
+      });
+    }
   }),
 );
