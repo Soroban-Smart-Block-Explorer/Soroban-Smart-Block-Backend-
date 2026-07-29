@@ -160,6 +160,17 @@ export function cacheBackendType(): 'redis' | 'memory' {
   return USE_REDIS && redisAvailable ? 'redis' : 'memory';
 }
 
+export async function pingRedis(): Promise<boolean> {
+  if (!USE_REDIS) return true;
+  if (!redisClient || !redisAvailable) return false;
+  try {
+    const reply = await redisClient.ping();
+    return reply === 'PONG';
+  } catch {
+    return false;
+  }
+}
+
 export async function cacheClose(): Promise<void> {
   if (_pubSubClient) {
     try {

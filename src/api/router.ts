@@ -49,7 +49,6 @@ import { marketRouter } from './market';
 import { tokenPricesRouter } from './token-prices';
 import { portfolioRouter } from './portfolio';
 import { exportsRouter } from './exports';
-import { governanceRouter } from './governance';
 import { systemicRouter } from './systemic';
 import { benchmarkRouter } from './benchmarks';
 import { emergencyBaseRouter } from './emergency-router';
@@ -66,6 +65,9 @@ import { auditRouter } from './audit';
 import { rateLimitAdminRouter } from './rate-limits';
 import { alertsRouter } from './alerts';
 import { oracleIntelligenceRouter } from './oracle-intelligence';
+
+// ── SAC Trustlines (#637) ─────────────────────────────────────────────────────
+import { sacTrustlinesRouter } from './sac-trustlines';
 
 // ── Admin ─────────────────────────────────────────────────────────────────────
 import { adminErrorsRouter } from './admin/errors';
@@ -141,6 +143,9 @@ router.use('/data-market', requireApiKey, dataMarketRouter);
 // ── NFT Collection Discovery, Rarity Engine, Marketplace Analytics & Portfolio ──
 import { nftRouter } from './nft';
 router.use('/nft', nftRouter);
+
+// ── SAC Trustlines (#637) ─────────────────────────────────────────────────────
+router.use('/sac-trustlines', sacTrustlinesRouter);
 
 // ── Admin Dashboards ──────────────────────────────────────────────────────────
 router.use('/admin/errors', adminErrorsRouter);

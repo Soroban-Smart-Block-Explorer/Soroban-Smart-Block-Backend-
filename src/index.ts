@@ -64,6 +64,8 @@ import { indexSingleLedger } from './indexer/indexer';
 let isShuttingDown = false;
 const SERVICE_START_TIME = Date.now();
 let wssRef: ReturnType<typeof attachWebSocketServer> | null = null;
+let serverRef: Server | null = null;
+const activeConnections = new Set<any>();
 
 const SHUTDOWN_TIMEOUT_MS = parseInt(process.env.SHUTDOWN_TIMEOUT_MS ?? '30000');
 // Default to /tmp/state so the path is writable in read-only container filesystems.
@@ -355,6 +357,30 @@ async function gracefulShutdown(signal: string): Promise<void> {
   }, SHUTDOWN_TIMEOUT_MS);
 
   try {
+    if (serverRef) {
+      logger.info('[shutdown] Closing HTTP server, draining connections...');
+      const closePromise = new Promise<void>((resolve) => {
+        serverRef!.close(() => {
+          logger.info('[shutdown] HTTP server closed');
+          resolve();
+        });
+      });
+
+      const connForceTimeout = setTimeout(() => {
+        if (activeConnections.size > 0) {
+          logger.warn(
+            `[shutdown] Forcing close of ${activeConnections.size} remaining active connections`,
+          );
+          for (const socket of activeConnections) {
+            socket.destroy();
+          }
+        }
+      }, 5000);
+
+      await closePromise;
+      clearTimeout(connForceTimeout);
+    }
+
     stopIndexerService();
     logger.info('[shutdown] Indexer service stopped');
 
@@ -464,6 +490,13 @@ async function main() {
   }
 
   const httpServer: Server = createServer(app);
+  serverRef = httpServer;
+  httpServer.on('connection', (socket) => {
+    activeConnections.add(socket);
+    socket.on('close', () => {
+      activeConnections.delete(socket);
+    });
+  });
   wssRef = attachWebSocketServer(httpServer);
 
   if (ENABLE_PRIVACY_WS) {
