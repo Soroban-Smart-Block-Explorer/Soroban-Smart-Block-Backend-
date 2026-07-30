@@ -1,6 +1,20 @@
 import type { RandomSource } from './random';
 import { createSeededRandom, mathRandomSource } from './random';
 
+/**
+ * SIMULATED / EDUCATIONAL FORECASTING MODELS
+ *
+ * The classes in this file (ArimaSimulation, XgboostSimulation, LstmSimulation)
+ * are NOT real ARIMA, XGBoost, or LSTM implementations. They use simplified
+ * math + seeded PRNG to produce plausible-looking forecasts for demo/educational
+ * purposes only. They are NOT suitable for production financial decisions.
+ *
+ * For production use, set FORECAST_MODE=production in your environment, which
+ * activates the real mathematical models in production-models.ts (linear trend &
+ * seasonal mean). Those models are still simple statistics — not ML — but they
+ * are deterministic, auditable, and appropriate for a block-explorer context.
+ */
+
 export interface ForecastResult {
   timestamp: Date;
   predictedValue: number;
@@ -36,9 +50,13 @@ function rngForPrediction(seed: number | undefined, recentData: number[]): Rando
   return createSeededRandom(hash);
 }
 
-export class ArimaMock implements IForecastingModel {
-  name = 'ARIMA-auto';
-  type = 'arima';
+/**
+ * ARIMA simulation — not a real ARIMA model.
+ * Uses a simple trend + noise heuristic instead of actual differencing / ACF / PACF.
+ */
+export class ArimaSimulation implements IForecastingModel {
+  name = 'ARIMA-Simulation';
+  type = 'arima-simulation';
   version = '1.0.0';
 
   private lastValue = 0;
@@ -82,9 +100,14 @@ export class ArimaMock implements IForecastingModel {
   }
 }
 
-export class XgboostMock implements IForecastingModel {
-  name = 'XGBoost-Regressor';
-  type = 'xgboost';
+/**
+ * XGBoost simulation — not a real gradient-boosted tree model.
+ * Returns a sinusoidal baseline + noise shaped to resemble an ensemble forecast.
+ * SHAP values are synthetic percentages, not computed from actual feature attributions.
+ */
+export class XgboostSimulation implements IForecastingModel {
+  name = 'XGBoost-Simulation';
+  type = 'xgboost-simulation';
   version = '1.2.0';
 
   private baseValue = 0;
@@ -128,9 +151,14 @@ export class XgboostMock implements IForecastingModel {
   }
 }
 
-export class LstmMock implements IForecastingModel {
-  name = 'LSTM-Attention';
-  type = 'lstm';
+/**
+ * LSTM simulation — not a real recurrent neural network.
+ * Uses mean-reverting random walk instead of actual gated memory cells.
+ * The "attention" and "momentum" terms are narrative only.
+ */
+export class LstmSimulation implements IForecastingModel {
+  name = 'LSTM-Simulation';
+  type = 'lstm-simulation';
   version = '2.0.0';
 
   private baseValue = 0;

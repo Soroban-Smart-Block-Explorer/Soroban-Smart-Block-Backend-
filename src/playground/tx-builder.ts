@@ -72,25 +72,35 @@ async function buildTransaction(
     .build();
 }
 
-export async function readContract(
-  contractAddress: string,
-  req: ReadRequest,
-): Promise<ReadResult> {
+export async function readContract(contractAddress: string, req: ReadRequest): Promise<ReadResult> {
   let encodedArgs: xdr.ScVal[];
   try {
     encodedArgs = req.args.map(encodeScVal);
   } catch (e) {
-    return { functionName: req.functionName, result: null, resultXdr: '', success: false, error: String(e) };
+    return {
+      functionName: req.functionName,
+      result: null,
+      resultXdr: '',
+      success: false,
+      error: String(e),
+    };
   }
 
   try {
-    const sourceKey = req.sourceAccount ?? 'GAAZI4TCR3TY5OJHCTJC2A4QSY6CJWJH5IAJTGKIN2ER7LBNVKOCCWN';
+    const sourceKey =
+      req.sourceAccount ?? 'GAAZI4TCR3TY5OJHCTJC2A4QSY6CJWJH5IAJTGKIN2ER7LBNVKOCCWN';
     const account = await rpc.getAccount(sourceKey);
     const tx = await buildTransaction(contractAddress, req.functionName, encodedArgs, account);
     const simResult = await rpc.simulateTransaction(tx);
 
     if (SorobanRpc.Api.isSimulationError(simResult)) {
-      return { functionName: req.functionName, result: null, resultXdr: '', success: false, error: simResult.error };
+      return {
+        functionName: req.functionName,
+        result: null,
+        resultXdr: '',
+        success: false,
+        error: simResult.error,
+      };
     }
 
     const retval: xdr.ScVal | undefined = (simResult as any).result?.retval;
@@ -98,7 +108,13 @@ export async function readContract(
     const decoded = retval ? decodeScVal(retval) : null;
     return { functionName: req.functionName, result: decoded, resultXdr, success: true };
   } catch (e) {
-    return { functionName: req.functionName, result: null, resultXdr: '', success: false, error: String(e) };
+    return {
+      functionName: req.functionName,
+      result: null,
+      resultXdr: '',
+      success: false,
+      error: String(e),
+    };
   }
 }
 
@@ -110,7 +126,12 @@ export async function buildSignableTransaction(
   try {
     encodedArgs = req.args.map(encodeScVal);
   } catch (e) {
-    return { functionName: req.functionName, unsignedXdr: '', simulationSuccess: false, error: String(e) };
+    return {
+      functionName: req.functionName,
+      unsignedXdr: '',
+      simulationSuccess: false,
+      error: String(e),
+    };
   }
 
   try {
@@ -119,7 +140,12 @@ export async function buildSignableTransaction(
     const simResult = await rpc.simulateTransaction(tx);
 
     if (SorobanRpc.Api.isSimulationError(simResult)) {
-      return { functionName: req.functionName, unsignedXdr: '', simulationSuccess: false, error: simResult.error };
+      return {
+        functionName: req.functionName,
+        unsignedXdr: '',
+        simulationSuccess: false,
+        error: simResult.error,
+      };
     }
 
     const assembled = SorobanRpc.assembleTransaction(tx, simResult).build();
@@ -148,7 +174,12 @@ export async function buildSignableTransaction(
       estimatedResources,
     };
   } catch (e) {
-    return { functionName: req.functionName, unsignedXdr: '', simulationSuccess: false, error: String(e) };
+    return {
+      functionName: req.functionName,
+      unsignedXdr: '',
+      simulationSuccess: false,
+      error: String(e),
+    };
   }
 }
 

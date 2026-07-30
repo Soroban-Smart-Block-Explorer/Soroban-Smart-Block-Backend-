@@ -1,4 +1,5 @@
 import { prismaWrite as prisma } from '../db';
+import { logger } from '../logger';
 
 export interface ChannelConfig {
   name: string;
@@ -194,7 +195,7 @@ export class ChannelManager {
         },
       });
     } catch (error) {
-      console.error(`Failed to register channel ${config.name}:`, error);
+      logger.error(`Failed to register channel ${config.name}:`, error);
     }
   }
 

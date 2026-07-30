@@ -14,7 +14,16 @@ import { prismaWrite, prismaRead } from '../../db';
 import { logger } from '../../logger';
 
 const HIGH_RISK_JURISDICTIONS = new Set([
-  'PK', 'TR', 'GH', 'UG', 'TZ', 'PA', 'JM', 'NI', 'NG', 'HT',
+  'PK',
+  'TR',
+  'GH',
+  'UG',
+  'TZ',
+  'PA',
+  'JM',
+  'NI',
+  'NG',
+  'HT',
 ]);
 
 // ── Flag creation ─────────────────────────────────────────────────────────────

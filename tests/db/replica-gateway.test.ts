@@ -13,6 +13,7 @@ vi.mock('../../src/metrics', () => ({
 
 function makeClient(lastLedger: number | null) {
   return {
+    $queryRawUnsafe: vi.fn().mockResolvedValue([{ exists: true }]),
     indexerState: {
       findUnique: vi.fn().mockResolvedValue(lastLedger !== null ? { lastLedger } : null),
     },
@@ -39,9 +40,21 @@ describe('measureReplicaLag', () => {
 
   it('forces primary by returning excess-lag when the DB throws', async () => {
     const broken = {
+      $queryRawUnsafe: vi.fn().mockResolvedValue([{ exists: true }]),
       indexerState: { findUnique: vi.fn().mockRejectedValue(new Error('db down')) },
     } as unknown as PrismaClient;
     const lag = await measureReplicaLag(broken, broken);
+    expect(lag).toBeGreaterThan(LAG_THRESHOLD_LEDGERS);
+  });
+
+  it('forces primary when the indexer state table does not exist', async () => {
+    const missingTable = {
+      $queryRawUnsafe: vi.fn().mockResolvedValue([{ exists: false }]),
+      indexerState: { findUnique: vi.fn() },
+    } as unknown as PrismaClient;
+
+    const lag = await measureReplicaLag(missingTable, missingTable);
+
     expect(lag).toBeGreaterThan(LAG_THRESHOLD_LEDGERS);
   });
 

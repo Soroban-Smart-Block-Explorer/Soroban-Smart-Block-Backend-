@@ -16,8 +16,13 @@ export interface ChallengeData {
   attempts: number;
 }
 
-export function buildChallengeMessage(address: string, nonce: string, appId: string, domain: string): string {
-  const ts = new Date().toISOString();
+export function buildChallengeMessage(
+  address: string,
+  nonce: string,
+  appId: string,
+  domain: string,
+): string {
+  const ts = `${new Date().toISOString()}-${nonce.slice(0, 8)}`;
   return `Sign this message to authenticate with Soroban Explorer: ${domain} ${ts} [nonce: ${nonce}] [appId: ${appId}]`;
 }
 
@@ -25,14 +30,23 @@ export async function createChallenge(
   address: string,
   network: string,
   appId: string,
-  domain = 'explorer.stellar.org'
+  domain = 'explorer.stellar.org',
 ): Promise<ChallengeData> {
   const nonce = randomBytes(16).toString('hex');
   const challengeId = `ch_${randomBytes(12).toString('hex')}`;
   const expiresAt = new Date(Date.now() + CHALLENGE_TTL * 1000).toISOString();
   const message = buildChallengeMessage(address, nonce, appId, domain);
 
-  const data: ChallengeData = { challengeId, address, network, appId, nonce, message, expiresAt, attempts: 0 };
+  const data: ChallengeData = {
+    challengeId,
+    address,
+    network,
+    appId,
+    nonce,
+    message,
+    expiresAt,
+    attempts: 0,
+  };
   await cacheSet(`${CHALLENGE_PREFIX}${challengeId}`, data, CHALLENGE_TTL);
   return data;
 }

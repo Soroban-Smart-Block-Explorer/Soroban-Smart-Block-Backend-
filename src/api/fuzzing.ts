@@ -1,6 +1,7 @@
 import { Router, Request, Response } from 'express';
 import { z } from 'zod';
 import { startFuzzJob, getFuzzJob, fuzzContract } from '../fuzzing/fuzzer';
+import { asyncHandler } from '../middleware/asyncHandler';
 
 export const fuzzingRouter = Router({ mergeParams: true });
 

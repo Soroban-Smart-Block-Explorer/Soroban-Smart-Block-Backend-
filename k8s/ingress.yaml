@@ -1,0 +1,57 @@
+---
+# Ingress — API Gateway entry point for external traffic.
+# Assumes an nginx-ingress controller; adjust ingressClassName/annotations for other controllers.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: soroban-api
+  namespace: soroban
+  labels:
+    app.kubernetes.io/name: soroban-explorer
+    app.kubernetes.io/component: api
+  annotations:
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/proxy-body-size: "1m"
+    # WebSocket support (streaming feeds)
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "3600"
+    cert-manager.io/cluster-issuer: "letsencrypt-prod"
+spec:
+  ingressClassName: nginx
+  tls:
+    - hosts:
+        - api.example.com
+        - testnet-api.example.com
+        - mainnet-api.example.com
+      secretName: soroban-api-tls
+  rules:
+    - host: api.example.com
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: soroban-api
+                port:
+                  name: http
+    - host: testnet-api.example.com
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: soroban-api
+                port:
+                  name: http
+    - host: mainnet-api.example.com
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: soroban-api-mainnet
+                port:
+                  name: http

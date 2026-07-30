@@ -1,0 +1,165 @@
+name: Performance Benchmarks
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main, develop]
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  benchmarks:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    strategy:
+      matrix:
+        node-version: [18.x, 20.x]
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node-version }}
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run benchmarks
+        run: |
+          npm run bench 2>&1 | tee benchmark.log
+        env:
+          # Disable external services for benchmarks
+          STELLAR_NETWORK: devnet
+          STELLAR_RPC_URL: http://localhost:8000
+          # Use in-memory database for API benchmarks
+          DATABASE_URL: postgresql://postgres:postgres@localhost:5432/benchmark
+
+      - name: Compare performance against baseline
+        id: compare
+        run: |
+          npm run bench:compare 2>&1 | tee comparison.log || true
+          
+          # Export results for analysis
+          npm run bench:report 2>&1 >> comparison.log || true
+          
+          # Check if regressions were detected
+          if grep -q "⚠️ Performance regressions detected\|⚠️ API performance regressions\|⚠️ RPC performance regressions" comparison.log; then
+            echo "regressions_found=true" >> $GITHUB_OUTPUT
+          else
+            echo "regressions_found=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Parse benchmark results
+        if: always()
+        run: |
+          # Extract regression count from result JSON
+          if [ -f .benchmarks/comparison-result.json ]; then
+            echo "## Performance Benchmark Results" >> $GITHUB_STEP_SUMMARY
+            echo '```json' >> $GITHUB_STEP_SUMMARY
+            cat .benchmarks/comparison-result.json >> $GITHUB_STEP_SUMMARY
+            echo '```' >> $GITHUB_STEP_SUMMARY
+          fi
+
+      - name: Upload benchmark artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: benchmark-results-${{ matrix.node-version }}
+          path: |
+            .benchmarks/
+            benchmark.log
+            comparison.log
+          retention-days: 30
+
+      - name: Comment on PR with results
+        if: github.event_name == 'pull_request' && always()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            
+            let comment = '## 📊 Performance Benchmark Results\n\n';
+            
+            if (fs.existsSync('.benchmarks/comparison-result.json')) {
+              const results = JSON.parse(fs.readFileSync('.benchmarks/comparison-result.json', 'utf-8'));
+              
+              comment += `| Metric | Value |\n`;
+              comment += `|--------|-------|\n`;
+              comment += `| Total Benchmarks | ${results.summary.total} |\n`;
+              comment += `| Regressions | ${results.summary.regressionCount} |\n`;
+              comment += `| Improvements | ${results.summary.improveementCount} |\n\n`;
+              
+              if (results.regressions.length > 0) {
+                comment += `### ⚠️ Regressions Detected\n\n`;
+                results.regressions.forEach(r => {
+                  comment += `- **${r.benchmark}**: +${r.changePercent.toFixed(2)}% (threshold: ${r.threshold}%)\n`;
+                  comment += `  - Previous: ${r.previousMean?.toFixed(3)}ms → Current: ${r.currentMean?.toFixed(3)}ms\n`;
+                });
+              } else {
+                comment += `✅ All benchmarks within acceptable thresholds\n`;
+              }
+            } else {
+              comment += '⚠️ Could not generate results (first run)\n';
+            }
+            
+            comment += '\n**Node.js**: ${{ matrix.node-version }}';
+            
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: comment
+            });
+
+      - name: Fail on regressions
+        if: steps.compare.outputs.regressions_found == 'true'
+        run: |
+          echo "❌ Performance regressions detected!"
+          echo "Please review the benchmark results and optimize the code."
+          exit 1
+
+  benchmark-report:
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: benchmarks
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: benchmark-results-20.x
+          path: benchmark-artifacts
+
+      - name: Generate report
+        run: |
+          echo "# Performance Benchmark Report" > BENCHMARK_REPORT.md
+          echo "" >> BENCHMARK_REPORT.md
+          echo "Generated: $(date -u +'%Y-%m-%dT%H:%M:%SZ')" >> BENCHMARK_REPORT.md
+          echo "" >> BENCHMARK_REPORT.md
+          
+          if [ -f benchmark-artifacts/comparison.log ]; then
+            echo "## Comparison Results" >> BENCHMARK_REPORT.md
+            echo '```' >> BENCHMARK_REPORT.md
+            tail -100 benchmark-artifacts/comparison.log >> BENCHMARK_REPORT.md
+            echo '```' >> BENCHMARK_REPORT.md
+          fi
+
+      - name: Upload report
+        uses: actions/upload-artifact@v4
+        with:
+          name: benchmark-report
+          path: BENCHMARK_REPORT.md
+          retention-days: 90

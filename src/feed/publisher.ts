@@ -1,5 +1,6 @@
 import { EventEmitter } from 'events';
 import { prismaWrite as prisma } from '../db';
+import { logger } from '../logger';
 
 export interface FeedMessage {
   channelName: string;
@@ -37,7 +38,7 @@ class FeedPublisher extends EventEmitter {
 
       return storedMessage;
     } catch (error) {
-      console.error('Failed to publish feed message:', error);
+      logger.error('Failed to publish feed message:', error);
       throw error;
     }
   }

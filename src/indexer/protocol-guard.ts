@@ -6,6 +6,7 @@
  * don't crash the mainnet ingestion service.
  */
 import { rpc } from './rpc';
+import { logger } from '../logger';
 
 // ── Protocol version registry ────────────────────────────────────────────────
 
@@ -46,11 +47,11 @@ export async function getProtocolVersion(): Promise<number> {
     if (version > 0) {
       cachedProtocolVersion = version;
       lastVersionCheck = now;
-      console.log(`[protocol-guard] Protocol version: ${version}`);
+      logger.info(`[protocol-guard] Protocol version: ${version}`);
     }
     return version;
   } catch (err) {
-    console.warn('[protocol-guard] Could not fetch protocol version:', err);
+    logger.warn('[protocol-guard] Could not fetch protocol version:', err);
     return cachedProtocolVersion ?? 0;
   }
 }
@@ -91,12 +92,12 @@ export function safeXdrParse<T>(fn: () => T, fallback: T, context = 'XDR'): T {
       msg.includes('switch');
 
     if (isStructuralError) {
-      console.warn(
+      logger.warn(
         `[protocol-guard] ${context} parse failed — possible protocol upgrade. ` +
           `Skipping gracefully. Error: ${msg}`,
       );
     } else {
-      console.error(`[protocol-guard] ${context} parse error: ${msg}`);
+      logger.error(`[protocol-guard] ${context} parse error: ${msg}`);
     }
     return fallback;
   }
@@ -131,7 +132,7 @@ export async function getProtocolStatus(): Promise<ProtocolStatus> {
     warning =
       `Protocol version ${currentVersion} is newer than the highest known version ` +
       `(${maxKnown}). XDR structures may have changed — some parsing may fail gracefully.`;
-    console.warn(`[protocol-guard] ⚠️  ${warning}`);
+    logger.warn(`[protocol-guard] ⚠️  ${warning}`);
   } else if (!isSupported) {
     warning = `Protocol version ${currentVersion} is below minimum supported (${MIN_SOROBAN_PROTOCOL})`;
   }
@@ -156,10 +157,10 @@ export function startProtocolMonitor(): NodeJS.Timeout {
     try {
       const status = await getProtocolStatus();
       if (status.warning) {
-        console.warn(`[protocol-guard] Protocol warning: ${status.warning}`);
+        logger.warn(`[protocol-guard] Protocol warning: ${status.warning}`);
       }
     } catch (err) {
-      console.error('[protocol-guard] Monitor check failed:', err);
+      logger.error('[protocol-guard] Monitor check failed:', err);
     }
   };
 
@@ -184,7 +185,7 @@ export async function horizonGuard<T>(
   } catch (err: any) {
     const status = err?.response?.status ?? err?.status;
     if (status === 410 || status === 404 || status === 501) {
-      console.warn(
+      logger.warn(
         `[protocol-guard] Horizon endpoint "${endpointName}" returned ${status} — ` +
           `it may be deprecated. Using fallback.`,
       );

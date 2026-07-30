@@ -12,6 +12,7 @@ import { issueTokens, hashToken, generateSessionId, REFRESH_TOKEN_TTL } from '..
 import { getJwks, rotateKeys } from '../auth/keys';
 import { getFeatures, featureList } from '../auth/rbac';
 import { requireAuth, requireRole } from '../auth/middleware';
+import { asyncHandler } from '../middleware/asyncHandler';
 
 export const authRouter = Router();
 
@@ -229,7 +230,12 @@ authRouter.post(
   requireRole('admin'),
   asyncHandler(async (_req, res) => {
     const kp = await rotateKeys();
-    res.json({ kid: kp.kid, createdAt: new Date(kp.createdAt).toISOString() });
+    res.json({
+      kid: kp.kid,
+      createdAt: new Date(kp.createdAt).toISOString(),
+      warning:
+        'All previously-issued access tokens are now invalid and require re-authentication or a token refresh. Refresh tokens are unaffected.',
+    });
   }),
 );
 

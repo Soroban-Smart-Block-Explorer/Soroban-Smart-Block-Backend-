@@ -1,5 +1,5 @@
 import crypto from 'crypto';
-import { prismaWrite as prisma } from '../db';
+import { prismaRead, prismaWrite } from '../db';
 import { processResponseBody } from './redaction';
 import { assertSafeUrl, safePost, SsrfBlockedError } from './ssrf-guard';
 
@@ -80,34 +80,58 @@ export interface WebhookPayload {
   eventType: string;
   topicSymbol?: string | null;
   decoded: unknown;
-  ledger: number;
+  ledgerSequence: number;
   ledgerCloseTime: Date;
   transactionHash: string;
 }
 
+// Maximum number of webhook subscriptions fetched per page when fanning out (#724)
+export const DISPATCH_PAGE_SIZE = parseInt(process.env.WEBHOOK_DISPATCH_PAGE_SIZE ?? '500', 10);
+
 /**
  * Fan-out a single event to all matching active webhook subscriptions.
+ * Uses cursor-based pagination to handle tables with >1 000 rows safely (#724).
  * Each delivery is persisted and dispatched immediately (attempt 1).
  * Concurrency is bounded by DISPATCH_CONCURRENCY (#483).
  */
 export async function dispatchWebhooks(event: WebhookPayload): Promise<void> {
-  const subs = await prisma.webhookSubscription.findMany({
-    where: {
-      active: true,
-      ...(event.contractAddress && {
-        OR: [{ contractAddress: null }, { contractAddress: event.contractAddress }],
-      }),
-    },
-    select: {
-      id: true,
-      url: true,
-      secret: true,
-      eventType: true,
-      topicSymbol: true,
-      storeResponseBody: true,
-      responseRetentionDays: true,
-    },
-  });
+  // Collect all matching subscriptions via cursor-based pagination (#724)
+  const allSubs: Awaited<ReturnType<typeof prismaRead.webhookSubscription.findMany>> = [];
+  let cursor: string | undefined;
+  let hasMore = true;
+
+  while (hasMore) {
+    const page = await prismaRead.webhookSubscription.findMany({
+      where: {
+        active: true,
+        ...(event.contractAddress && {
+          OR: [{ contractAddress: null }, { contractAddress: event.contractAddress }],
+        }),
+      },
+      select: {
+        id: true,
+        url: true,
+        secret: true,
+        eventType: true,
+        topicSymbol: true,
+        storeResponseBody: true,
+        responseRetentionDays: true,
+      },
+      take: DISPATCH_PAGE_SIZE,
+      ...(cursor ? { skip: 1, cursor: { id: cursor } } : {}),
+      orderBy: { id: 'asc' },
+    });
+
+    allSubs.push(...page);
+
+    if (page.length < DISPATCH_PAGE_SIZE) {
+      hasMore = false;
+    } else {
+      cursor = page[page.length - 1].id;
+    }
+  }
+
+  const subs = allSubs;
 
   const matching = subs.filter((s) => {
     if (s.eventType && s.eventType !== event.eventType) return false;
@@ -142,7 +166,7 @@ export async function retryPendingDeliveries(): Promise<void> {
   const leaseExpiry = new Date(now.getTime() + LEASE_DURATION_MS);
 
   // Atomically claim a batch of due deliveries that are currently idle.
-  const claimed = await prisma.$transaction(async (tx) => {
+  const claimed = await prismaWrite.$transaction(async (tx) => {
     const rows = await tx.webhookDelivery.findMany({
       where: {
         status: 'pending',
@@ -190,7 +214,7 @@ export async function retryPendingDeliveries(): Promise<void> {
   await runWithConcurrency(claimed, DISPATCH_CONCURRENCY, async (d) => {
     // Skip deliveries for inactive subscriptions (#482).
     if (!d.subscription.active) {
-      await prisma.webhookDelivery.update({
+      await prismaWrite.webhookDelivery.update({
         where: { id: d.id },
         data: { status: 'cancelled', processingStatus: 'done', leaseExpiresAt: null },
       });
@@ -231,10 +255,10 @@ async function deliverOnce(
   let eventId = event?.id ?? '';
 
   if (!payload && deliveryId) {
-    const row = await prisma.webhookDelivery.findUnique({ where: { id: deliveryId } });
+    const row = await prismaRead.webhookDelivery.findUnique({ where: { id: deliveryId } });
     if (!row) return;
     eventId = row.eventId ?? '';
-    const ev = await prisma.event.findUnique({ where: { id: eventId } });
+    const ev = await prismaRead.event.findUnique({ where: { id: eventId } });
     if (!ev) return;
     payload = {
       id: ev.id,
@@ -242,7 +266,7 @@ async function deliverOnce(
       eventType: ev.eventType,
       topicSymbol: ev.topicSymbol,
       decoded: ev.decoded,
-      ledger: ev.ledgerSequence,
+      ledgerSequence: ev.ledgerSequence,
       ledgerCloseTime: ev.ledgerCloseTime,
       transactionHash: ev.transactionHash,
     };
@@ -256,7 +280,7 @@ async function deliverOnce(
   } catch (err) {
     const msg = err instanceof SsrfBlockedError ? err.message : String(err);
     if (deliveryId) {
-      await prisma.webhookDelivery.update({
+      await prismaWrite.webhookDelivery.update({
         where: { id: deliveryId },
         data: {
           status: 'failed',
@@ -280,11 +304,11 @@ async function deliverOnce(
   const expiresAt = new Date(Date.now() + responseRetentionDays * 24 * 60 * 60 * 1000);
 
   const delivery = deliveryId
-    ? await prisma.webhookDelivery.update({
+    ? await prismaWrite.webhookDelivery.update({
         where: { id: deliveryId },
         data: { attempt, status: 'pending', nextRetryAt: null },
       })
-    : await prisma.webhookDelivery.create({
+    : await prismaWrite.webhookDelivery.create({
         data: {
           subscriptionId,
           eventId,
@@ -310,7 +334,7 @@ async function deliverOnce(
         ? processResponseBody(rawResponseBody, 500, true)
         : null;
 
-      await prisma.webhookDelivery.update({
+      await prismaWrite.webhookDelivery.update({
         where: { id: delivery.id },
         data: {
           status: 'success',
@@ -341,7 +365,7 @@ async function deliverOnce(
 
     // SSRF blocks on redirect are permanent failures — don't retry
     if (err instanceof SsrfBlockedError) {
-      await prisma.webhookDelivery.update({
+      await prismaWrite.webhookDelivery.update({
         where: { id: delivery.id },
         data: {
           status: 'failed',
@@ -369,7 +393,7 @@ async function scheduleRetryOrFail(
   const nextAttempt = attempt + 1;
 
   if (nextAttempt > MAX_ATTEMPTS) {
-    await prisma.webhookDelivery.update({
+    await prismaWrite.webhookDelivery.update({
       where: { id: deliveryId },
       data: {
         status: 'failed',
@@ -385,7 +409,7 @@ async function scheduleRetryOrFail(
   }
 
   const nextRetryAt = new Date(Date.now() + backoffMs(nextAttempt));
-  await prisma.webhookDelivery.update({
+  await prismaWrite.webhookDelivery.update({
     where: { id: deliveryId },
     data: {
       status: 'pending',

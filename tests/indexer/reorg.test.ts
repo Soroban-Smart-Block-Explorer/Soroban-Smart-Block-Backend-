@@ -67,10 +67,7 @@ vi.mock('../../src/indexer/rpc', () => ({
 
 import { prismaWrite as prisma } from '../../src/db';
 import * as rpc from '../../src/indexer/rpc';
-import {
-  processLedgerRange,
-  SorobanEventWorker,
-} from '../../src/indexer/indexer';
+import { processLedgerRange, SorobanEventWorker } from '../../src/indexer/indexer';
 import { adminRouter } from '../../src/api/admin';
 import request from 'supertest';
 import express from 'express';

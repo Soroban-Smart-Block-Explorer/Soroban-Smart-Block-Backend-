@@ -17,8 +17,7 @@ const GLUE_DATABASE = process.env.GLUE_DATABASE ?? 'soroban_analytics';
 const ATHENA_OUTPUT_BUCKET = process.env.ATHENA_OUTPUT_BUCKET ?? 'soroban-analytics-lake';
 const ATHENA_OUTPUT_PREFIX = process.env.ATHENA_OUTPUT_PREFIX ?? 'athena-results';
 const ATHENA_WORKGROUP = process.env.ATHENA_WORKGROUP ?? 'primary';
-const ATHENA_ENDPOINT =
-  process.env.ATHENA_ENDPOINT ?? 'https://athena.us-east-1.amazonaws.com';
+const ATHENA_ENDPOINT = process.env.ATHENA_ENDPOINT ?? 'https://athena.us-east-1.amazonaws.com';
 
 const TRINO_BASE_URL = process.env.TRINO_URL ?? 'http://trino:8080';
 const TRINO_USER = process.env.TRINO_USER ?? 'soroban';
@@ -189,7 +188,15 @@ async function runAthenaQuery(sql: string, timeoutMs: number): Promise<QueryResu
 
   const rs = resultsResp.ResultSet;
   if (!rs?.Rows?.length) {
-    return { columns: [], rows: [], rowCount: 0, scanBytes, executionMs: Date.now() - start, engine: 'athena', queryId };
+    return {
+      columns: [],
+      rows: [],
+      rowCount: 0,
+      scanBytes,
+      executionMs: Date.now() - start,
+      engine: 'athena',
+      queryId,
+    };
   }
 
   const header = (rs.Rows[0].Data ?? []).map((c) => c.VarCharValue ?? '');
@@ -201,7 +208,15 @@ async function runAthenaQuery(sql: string, timeoutMs: number): Promise<QueryResu
     return record;
   });
 
-  return { columns: header, rows, rowCount: rows.length, scanBytes, executionMs: Date.now() - start, engine: 'athena', queryId };
+  return {
+    columns: header,
+    rows,
+    rowCount: rows.length,
+    scanBytes,
+    executionMs: Date.now() - start,
+    engine: 'athena',
+    queryId,
+  };
 }
 
 // ── Trino execution ───────────────────────────────────────────────────────────

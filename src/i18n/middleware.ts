@@ -22,19 +22,6 @@ import {
   tAsync as translateAsync,
 } from './engine';
 
-// Extend Express Request type.
-// eslint-disable-next-line @typescript-eslint/no-namespace -- required by TS for
-// augmenting third-party global namespaces (Express); no alternative syntax exists.
-declare global {
-  namespace Express {
-    interface Request {
-      locale: SupportedLanguage;
-      t: (key: string, values?: Record<string, unknown>) => string;
-      tAsync: (key: string, values?: Record<string, unknown>) => Promise<string>;
-    }
-  }
-}
-
 /**
  * Express middleware — resolves locale and attaches translation helpers.
  */

@@ -350,11 +350,7 @@ export const resolvers = {
         __contract: contract,
       };
     },
-    async tokens(
-      _parent: unknown,
-      args: { cursor?: string; limit?: number },
-      ctx: GraphQLContext,
-    ) {
+    async tokens(_parent: unknown, args: { cursor?: string; limit?: number }, ctx: GraphQLContext) {
       const limit = clampLimit(args.limit, DEFAULT_PAGE_LIMIT);
 
       const contracts = await ctx.prisma.contract.findMany({

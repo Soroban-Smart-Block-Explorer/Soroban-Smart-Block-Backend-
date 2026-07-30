@@ -17,6 +17,7 @@
 import { prismaWrite as prisma } from '../db';
 import { processLedgerRange } from './ledgerProcessor';
 import { config } from '../config';
+import { logger } from '../logger';
 
 // ─── Config ───────────────────────────────────────────────────────────────────
 
@@ -107,10 +108,10 @@ async function backfill(sequences: number[]): Promise<void> {
 
   for (const [start, end] of ranges) {
     try {
-      console.log(`[repair] backfilling ledgers ${start}–${end}`);
+      logger.info(`[repair] backfilling ledgers ${start}–${end}`);
       await processLedgerRange(start, end);
     } catch (err) {
-      console.error(`[repair] backfill failed for ${start}–${end}:`, err);
+      logger.error(`[repair] backfill failed for ${start}–${end}:`, err);
     }
   }
 }
@@ -149,7 +150,7 @@ export async function runRepairSweep(
   }
 
   if (minSeq === null || maxSeq === null) {
-    console.log('[repair] No ledgers indexed yet — nothing to sweep.');
+    logger.info('[repair] No ledgers indexed yet — nothing to sweep.');
     return { hardGaps: 0, softGaps: 0 };
   }
 
@@ -157,23 +158,23 @@ export async function runRepairSweep(
   const sweepMax =
     opts?.toSeq !== undefined ? maxSeq : Math.min(maxSeq, minSeq + MAX_EMPTY_BATCH * 10);
 
-  console.log(`[repair] Sweeping ledgers ${minSeq}–${sweepMax}${dryRun ? ' (dry-run)' : ''}`);
+  logger.info(`[repair] Sweeping ledgers ${minSeq}–${sweepMax}${dryRun ? ' (dry-run)' : ''}`);
 
   // 1. Hard gaps
   const missing = await findMissingSequences(minSeq, sweepMax, REPAIR_CHUNK);
   if (missing.length > 0) {
-    console.log(`[repair] Found ${missing.length} missing sequence(s)`);
+    logger.info(`[repair] Found ${missing.length} missing sequence(s)`);
     if (!dryRun) await backfill(missing);
   }
 
   // 2. Soft gaps
   const empty = await findEmptyLedgers(REPAIR_CHUNK);
   if (empty.length > 0) {
-    console.log(`[repair] Found ${empty.length} empty ledger(s)`);
+    logger.info(`[repair] Found ${empty.length} empty ledger(s)`);
     if (!dryRun) await backfill(empty);
   }
 
-  console.log(
+  logger.info(
     `[repair] Sweep complete — hard: ${missing.length}, soft: ${empty.length}` +
       (dryRun ? ' (no changes written — dry-run)' : ''),
   );
@@ -187,7 +188,7 @@ export async function runRepairSweep(
  * Designed to run as a separate process alongside the live indexer.
  */
 export async function startRepairLoop(): Promise<void> {
-  console.log(
+  logger.info(
     `[repair] Starting background repair loop ` +
       `(interval=${SWEEP_INTERVAL_MS}ms, chunk=${REPAIR_CHUNK}, network=${config.stellarNetwork})`,
   );
@@ -197,8 +198,16 @@ export async function startRepairLoop(): Promise<void> {
     try {
       await runRepairSweep();
     } catch (err) {
-      console.error('[repair] Sweep error:', err);
+      logger.error('[repair] Sweep error:', err);
     }
     await sleep(SWEEP_INTERVAL_MS);
   }
+}
+
+// ─── Entry point ──────────────────────────────────────────────────────────────
+if (require.main === module) {
+  startRepairLoop().catch((err) => {
+    logger.error('[repair] Fatal error:', err);
+    process.exit(1);
+  });
 }

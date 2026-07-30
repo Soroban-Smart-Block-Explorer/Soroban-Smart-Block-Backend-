@@ -1,5 +1,6 @@
 import { prismaWrite as prisma } from '../db';
 import { Prisma } from '@prisma/client';
+import { logger } from '../logger';
 
 const MAX_RETRIES = 3;
 
@@ -47,7 +48,7 @@ export async function enqueueFailure(item: FailedItemInput): Promise<void> {
     });
   }
 
-  console.error(
+  logger.error(
     `[errorQueue] ${item.itemType} ${item.itemId} (ledger ${item.ledger}) failed: ${err.message}`,
   );
 }
@@ -74,7 +75,7 @@ export async function retryFailures(
     try {
       await handler(item);
       await prisma.failedItem.delete({ where: { id: item.id } });
-      console.log(`[errorQueue] Retry succeeded for ${item.itemType} ${item.itemId}`);
+      logger.info(`[errorQueue] Retry succeeded for ${item.itemType} ${item.itemId}`);
     } catch (err) {
       await enqueueFailure({
         itemType: item.itemType as 'transaction' | 'event',
