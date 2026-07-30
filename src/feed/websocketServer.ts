@@ -1,23 +1,23 @@
 import WebSocket from 'ws';
 import { IncomingMessage } from 'http';
 import { ChannelManager } from '../feed/channelManager';
-import { SubscriptionManager } from '../feed/subscriptionManager';
-import { deliveryService } from '../feed/deliveryService';
+import { streamingServer, WebSocketStreamConnection } from './streamingServer';
 import { logger } from '../logger';
 
-interface WebSocketConnection {
-  id: string;
-  ws: WebSocket;
-  channels: string[];
-  filters: any;
-  lastSequence?: number;
+const MAX_CONNECTIONS_PER_IP = parseInt(process.env.FEED_WS_MAX_CONNECTIONS_PER_IP ?? '5', 10);
+const MAX_TOTAL_CONNECTIONS = parseInt(process.env.FEED_WS_MAX_TOTAL_CONNECTIONS ?? '100', 10);
+
+function getClientIp(req: IncomingMessage): string {
+  const forwarded = req.headers['x-forwarded-for'];
+  if (typeof forwarded === 'string') return forwarded.split(',')[0].trim();
+  return req.socket.remoteAddress ?? 'unknown';
 }
 
 export class FeedWebSocketServer {
   private wss: WebSocket.Server;
-  private connections = new Map<string, WebSocketConnection>();
-  private subscriptionManager = new SubscriptionManager();
   private heartbeatInterval!: NodeJS.Timeout;
+  private ipConnectionCounts = new Map<string, number>();
+  private totalConnections = 0;
 
   constructor(server: any) {
     this.wss = new WebSocket.Server({
@@ -27,15 +27,37 @@ export class FeedWebSocketServer {
 
     this.setupWebSocketHandlers();
     this.startHeartbeat();
-    this.setupDeliveryHandler();
   }
 
   private setupWebSocketHandlers() {
     this.wss.on('connection', (ws: WebSocket, request: IncomingMessage) => {
+      const ip = getClientIp(request);
+
+      if (this.totalConnections >= MAX_TOTAL_CONNECTIONS) {
+        ws.close(4003, 'Server at capacity: too many connections');
+        return;
+      }
+
+      if ((this.ipConnectionCounts.get(ip) ?? 0) >= MAX_CONNECTIONS_PER_IP) {
+        ws.close(4004, `Rate limit exceeded: max ${MAX_CONNECTIONS_PER_IP} connections per IP`);
+        return;
+      }
+
+      this.totalConnections++;
+      this.ipConnectionCounts.set(ip, (this.ipConnectionCounts.get(ip) ?? 0) + 1);
+      let releasedCount = false;
+      const releaseCount = () => {
+        if (releasedCount) return;
+        releasedCount = true;
+        this.totalConnections--;
+        const count = this.ipConnectionCounts.get(ip) ?? 1;
+        if (count <= 1) this.ipConnectionCounts.delete(ip);
+        else this.ipConnectionCounts.set(ip, count - 1);
+      };
+
       const connectionId = this.generateConnectionId();
       const url = new URL(request.url!, `http://${request.headers.host}`);
 
-      // Parse query parameters
       const channels = url.searchParams.get('channels')?.split(',') || [];
       const filtersParam = url.searchParams.get('filters');
       let filters = {};
@@ -43,32 +65,26 @@ export class FeedWebSocketServer {
       if (filtersParam) {
         try {
           filters = JSON.parse(filtersParam);
-        } catch (error) {
+        } catch {
           ws.close(1003, 'Invalid filters JSON');
+          releaseCount();
           return;
         }
       }
 
-      // Validate channels
       for (const channel of channels) {
         if (!ChannelManager.isValidChannel(channel)) {
           ws.close(1003, `Invalid channel: ${channel}`);
+          releaseCount();
           return;
         }
       }
 
-      const connection: WebSocketConnection = {
-        id: connectionId,
-        ws,
-        channels,
-        filters,
-      };
-
-      this.connections.set(connectionId, connection);
+      const connection = new WebSocketStreamConnection(connectionId, ws, channels, filters);
+      streamingServer.addConnection(connection);
 
       logger.info(`WebSocket connected: ${connectionId}, channels: ${channels.join(', ')}`);
 
-      // Send welcome message
       ws.send(
         JSON.stringify({
           type: 'welcome',
@@ -79,33 +95,30 @@ export class FeedWebSocketServer {
       );
 
       ws.on('message', (data: WebSocket.RawData) => {
-        this.handleMessage(connectionId, data);
+        this.handleMessage(connection, data);
       });
 
       ws.on('close', () => {
-        this.connections.delete(connectionId);
+        streamingServer.removeConnection(connectionId);
+        releaseCount();
         logger.info(`WebSocket disconnected: ${connectionId}`);
       });
 
       ws.on('error', (error) => {
         logger.error(`WebSocket error for ${connectionId}:`, error);
-        this.connections.delete(connectionId);
+        streamingServer.removeConnection(connectionId);
+        releaseCount();
       });
 
-      // Handle ping/pong for keepalive
       ws.on('pong', () => {
-        (connection.ws as any).isAlive = true;
+        (ws as any).isAlive = true;
       });
     });
   }
 
-  private handleMessage(connectionId: string, data: WebSocket.RawData) {
+  private handleMessage(connection: WebSocketStreamConnection, data: WebSocket.RawData) {
     try {
       const message = JSON.parse(data.toString());
-      const connection = this.connections.get(connectionId);
-
-      if (!connection) return;
-
       switch (message.type) {
         case 'subscribe':
           this.handleSubscribe(connection, message);
@@ -117,15 +130,15 @@ export class FeedWebSocketServer {
           this.handleReplay(connection, message);
           break;
         case 'ping':
-          connection.ws.send(JSON.stringify({ type: 'pong', timestamp: new Date().toISOString() }));
+          connection.send('pong', { timestamp: new Date().toISOString() });
           break;
       }
     } catch (error) {
-      logger.error(`Failed to handle WebSocket message from ${connectionId}:`, error);
+      logger.error(`Failed to handle WebSocket message from ${connection.id}:`, error);
     }
   }
 
-  private handleSubscribe(connection: WebSocketConnection, message: any) {
+  private handleSubscribe(connection: WebSocketStreamConnection, message: any) {
     const { channels, filters } = message;
 
     if (channels) {
@@ -140,129 +153,49 @@ export class FeedWebSocketServer {
       connection.filters = { ...connection.filters, ...filters };
     }
 
-    connection.ws.send(
-      JSON.stringify({
-        type: 'subscribed',
-        channels: connection.channels,
-        filters: connection.filters,
-        timestamp: new Date().toISOString(),
-      }),
-    );
+    connection.send('subscribed', {
+      channels: connection.channels,
+      filters: connection.filters,
+      timestamp: new Date().toISOString(),
+    });
   }
 
-  private handleUnsubscribe(connection: WebSocketConnection, message: any) {
+  private handleUnsubscribe(connection: WebSocketStreamConnection, message: any) {
     const { channels } = message;
 
     if (channels) {
       connection.channels = connection.channels.filter((ch) => !channels.includes(ch));
     }
 
-    connection.ws.send(
-      JSON.stringify({
-        type: 'unsubscribed',
-        channels: connection.channels,
-        timestamp: new Date().toISOString(),
-      }),
-    );
+    connection.send('unsubscribed', {
+      channels: connection.channels,
+      timestamp: new Date().toISOString(),
+    });
   }
 
-  private async handleReplay(connection: WebSocketConnection, message: any) {
+  private async handleReplay(connection: WebSocketStreamConnection, message: any) {
     const { lastSequence } = message;
 
-    if (lastSequence) {
-      try {
-        // Fetch missed messages since lastSequence
-        const missedMessages = await this.getMissedMessages(connection.channels, lastSequence);
+    if (lastSequence === undefined) return;
 
-        for (const msg of missedMessages) {
-          if (this.subscriptionManager.matchesFilters(msg.data, connection.filters)) {
-            connection.ws.send(
-              JSON.stringify({
-                type: 'message',
-                channel: msg.channelName,
-                sequence: msg.sequence.toString(),
-                data: msg.data,
-                timestamp: msg.timestamp,
-              }),
-            );
-          }
-        }
-
-        connection.ws.send(
-          JSON.stringify({
-            type: 'replay_complete',
-            replayedCount: missedMessages.length,
-            timestamp: new Date().toISOString(),
-          }),
-        );
-      } catch (error) {
-        connection.ws.send(
-          JSON.stringify({
-            type: 'error',
-            message: 'Failed to replay messages',
-            timestamp: new Date().toISOString(),
-          }),
-        );
-      }
-    }
-  }
-
-  private async getMissedMessages(channels: string[], lastSequence: number) {
-    const { prismaRead } = await import('../db');
-    return await prismaRead.feedMessage.findMany({
-      where: {
-        channelName: { in: channels },
-        sequence: { gt: lastSequence },
-      },
-      orderBy: { sequence: 'asc' },
-      take: 100, // Limit to prevent overwhelming
-    });
-  }
-
-  private setupDeliveryHandler() {
-    deliveryService.on('websocket-delivery', ({ connectionId, messages }) => {
-      const connection = this.connections.get(connectionId);
-      if (!connection || connection.ws.readyState !== WebSocket.OPEN) {
-        return;
-      }
-
-      for (const message of messages) {
-        connection.ws.send(
-          JSON.stringify({
-            type: 'message',
-            channel: message.channelName,
-            sequence: message.sequence.toString(),
-            data: message.data,
-            timestamp: message.timestamp,
-          }),
-        );
-      }
-    });
-  }
-
-  broadcast(channelName: string, message: any) {
-    for (const connection of this.connections.values()) {
-      if (
-        connection.channels.includes(channelName) &&
-        connection.ws.readyState === WebSocket.OPEN &&
-        this.subscriptionManager.matchesFilters(message.data, connection.filters)
-      ) {
-        connection.ws.send(
-          JSON.stringify({
-            type: 'message',
-            channel: channelName,
-            sequence: message.sequence?.toString(),
-            data: message.data,
-            timestamp: message.timestamp,
-          }),
-        );
-      }
+    try {
+      const count = await streamingServer.replay(connection, lastSequence);
+      connection.send('replay_complete', {
+        replayedCount: count,
+        timestamp: new Date().toISOString(),
+      });
+    } catch (error) {
+      logger.error(`Failed to replay messages for ${connection.id}:`, error);
+      connection.send('error', {
+        message: 'Failed to replay messages',
+        timestamp: new Date().toISOString(),
+      });
     }
   }
 
   private startHeartbeat() {
     this.heartbeatInterval = setInterval(() => {
-      this.wss.clients.forEach((ws: any) => {
+      (this.wss.clients as any).forEach((ws: any) => {
         if (ws.isAlive === false) {
           return ws.terminate();
         }
@@ -270,40 +203,19 @@ export class FeedWebSocketServer {
         ws.isAlive = false;
         ws.ping();
       });
-    }, 30000); // 30 seconds
+    }, 30000);
   }
 
   private generateConnectionId(): string {
     return `ws_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
   }
 
-  getConnectionCount(): number {
-    return this.connections.size;
-  }
-
-  getActiveChannels(): string[] {
-    const channels = new Set<string>();
-    for (const connection of this.connections.values()) {
-      for (const channel of connection.channels) {
-        channels.add(channel);
-      }
-    }
-    return Array.from(channels);
-  }
-
   shutdown() {
     clearInterval(this.heartbeatInterval);
     this.wss.close();
-
-    for (const connection of this.connections.values()) {
-      connection.ws.close();
-    }
-
-    this.connections.clear();
   }
 }
 
-// Extend WebSocket type to include isAlive property
 declare module 'ws' {
   interface WebSocket {
     isAlive?: boolean;

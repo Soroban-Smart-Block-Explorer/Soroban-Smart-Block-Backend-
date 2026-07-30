@@ -1416,6 +1416,7 @@ composabilityRouter.post(
       where: { contractCalls: { path: ['$[*].to'], array_contains: addr } },
       take: 10,
       orderBy: { createdAt: 'desc' },
+      select: { contractCalls: true },
     });
     const allCalls = recentTxs.flatMap((t) => (t.contractCalls as unknown as ContractCall[]) ?? []);
     const patterns = detectPatterns(allCalls);

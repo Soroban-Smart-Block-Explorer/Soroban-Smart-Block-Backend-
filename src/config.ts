@@ -84,9 +84,7 @@ const envSchemas = {
   rateLimitMax: z.number().int().positive().min(1, 'Rate limit max must be at least 1'),
 };
 
-const profile: NetworkProfile = getProfile(network);
-
-// Parse and validate all numeric configuration values
+let profile: NetworkProfile = undefined as any;
 let port: number;
 let indexerStartLedger: number;
 let indexerPollIntervalMs: number;
@@ -97,6 +95,7 @@ let rateLimitWindowMs: number;
 let rateLimitMax: number;
 
 try {
+  profile = getProfile(network);
   port = parseNumericEnv('PORT', process.env.PORT, 3000, envSchemas.port);
   indexerStartLedger = parseNumericEnv(
     'INDEXER_START_LEDGER',
@@ -171,6 +170,7 @@ export const config = {
   networkPassphrase: profile.networkPassphrase,
   apiSubdomain: profile.apiSubdomain,
   cacheUrl: profile.cacheUrl,
+  cacheMode: profile.cacheMode,
 
   // ── Database (resolved from profile) ─────────────────────────────────────
   databaseUrl: profile.databaseUrl,
@@ -207,4 +207,18 @@ export const config = {
   // ── Predictive analytics ──────────────────────────────────────────────────
   forecastMode: process.env.FORECAST_MODE === 'production' ? 'production' : 'demo',
   forecastSeed: parseInt(process.env.FORECAST_SEED ?? '42', 10),
+
+  // ── Request timeouts (prevents long-running queries from hanging indefinitely)
+  timeoutFastMs: parseInt(process.env.TIMEOUT_FAST_MS ?? '5000'), // Health checks (5s)
+  timeoutNormalMs: parseInt(process.env.TIMEOUT_NORMAL_MS ?? '30000'), // Standard API (30s)
+  timeoutLongMs: parseInt(process.env.TIMEOUT_LONG_MS ?? '300000'), // Analytics/exports (5min)
+  timeoutExtendedMs: parseInt(process.env.TIMEOUT_EXTENDED_MS ?? '900000'), // Bulk ops (15min)
+
+  // ── Session Cookie Authentication ─────────────────────────────────────
+  cookieSecret: process.env.COOKIE_SECRET ?? '', // HMAC signing key (optional, empty = unsigned)
+  cookieExpiresMs: parseInt(process.env.COOKIE_EXPIRES_MS ?? String(24 * 60 * 60 * 1000), 10),
+  cookieSecure: process.env.COOKIE_SECURE !== 'false', // HTTPS only (default true)
+  cookieHttpOnly: process.env.COOKIE_HTTP_ONLY !== 'false', // JS-inaccessible (default true)
+  cookieSameSite: (process.env.COOKIE_SAME_SITE ?? 'strict') as 'strict' | 'lax' | 'none',
+  cookieName: process.env.COOKIE_NAME ?? 'soroban_session',
 } as const;

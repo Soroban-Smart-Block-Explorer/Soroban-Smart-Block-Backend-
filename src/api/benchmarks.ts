@@ -160,6 +160,14 @@ benchmarkRouter.get(
     try {
       const ops = await prismaRead.operationBenchmark.findMany({
         orderBy: { name: 'asc' },
+        select: {
+          name: true,
+          avgCpu: true,
+          avgMemory: true,
+          avgFeeStroops: true,
+          samples: true,
+          lastUpdated: true,
+        },
       });
 
       const operations = ops.map((op) => ({
@@ -287,6 +295,15 @@ benchmarkRouter.get(
           createdAt: { gte: since },
         },
         orderBy: { createdAt: 'asc' },
+        select: {
+          functionName: true,
+          ledgerSequence: true,
+          avgCpu: true,
+          avgMemory: true,
+          avgFeeStroops: true,
+          samples: true,
+          createdAt: true,
+        },
       });
 
       const trends: Array<{
@@ -643,6 +660,7 @@ benchmarkRouter.get(
 
       const thresholds = await prismaRead.standardCompliance.findMany({
         where: { contractType },
+        select: { functionName: true, maxFeeStroops: true },
       });
 
       const metrics = await getContractMetrics(req.params.address);

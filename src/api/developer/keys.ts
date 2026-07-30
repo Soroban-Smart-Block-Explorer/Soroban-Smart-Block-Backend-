@@ -5,8 +5,43 @@ import { Prisma } from '@prisma/client';
 import { prismaWrite, prismaRead } from '../../db';
 import { asyncHandler } from '../../middleware/asyncHandler';
 import { invalidateKeyCache } from '../../middleware/apiKeyAuth';
+import { logger } from '../../logger';
 
 export const keysRouter = Router();
+
+/**
+ * Rate limiting for key rotation: max 5 rotations per developer per hour
+ * Stored by developerId to enforce account-wide limits
+ */
+const keyRotationAttempts = new Map<string, { attempts: number; resetAt: number }>();
+
+const MAX_ROTATIONS_PER_HOUR = 5;
+const ROTATION_WINDOW_MS = 60 * 60 * 1000; // 1 hour
+
+function checkKeyRotationRateLimit(developerId: string): {
+  allowed: boolean;
+  retryAfterSeconds?: number;
+} {
+  const now = Date.now();
+  const record = keyRotationAttempts.get(developerId);
+
+  if (!record || record.resetAt < now) {
+    // First attempt in this window
+    keyRotationAttempts.set(developerId, {
+      attempts: 1,
+      resetAt: now + ROTATION_WINDOW_MS,
+    });
+    return { allowed: true };
+  }
+
+  if (record.attempts >= MAX_ROTATIONS_PER_HOUR) {
+    const retryAfterSeconds = Math.ceil((record.resetAt - now) / 1000);
+    return { allowed: false, retryAfterSeconds };
+  }
+
+  record.attempts++;
+  return { allowed: true };
+}
 
 const createKeySchema = z.object({
   developerId: z.string(),
@@ -22,6 +57,14 @@ const updateKeySchema = z.object({
   permissions: z.record(z.unknown()).optional(),
   allowedIps: z.array(z.string()).optional(),
   allowedDomains: z.array(z.string()).optional(),
+});
+
+const rotateKeySchema = z.object({
+  currentKey: z.string().min(1).describe('The current API key to revoke'),
+  reason: z
+    .enum(['manual', 'compromised', 'rotation_policy', 'security_review'])
+    .optional()
+    .describe('Reason for rotation'),
 });
 
 function generateApiKey(): { raw: string; prefix: string; hash: string } {
@@ -256,5 +299,183 @@ keysRouter.post(
     res
       .status(201)
       .json({ ...newKey, key: raw, message: 'Old key expired. Store this new key securely.' });
+  }),
+);
+
+/**
+ * POST /developer/keys/rotate/self
+ *
+ * Self-service key rotation endpoint for developers.
+ * Validates the current key, revokes it, and issues a new key with all settings preserved.
+ * Logs the rotation event for audit purposes.
+ *
+ * Request body:
+ *   - currentKey (required): The API key to rotate out
+ *   - reason (optional): "manual" | "compromised" | "rotation_policy" | "security_review"
+ *
+ * Returns: { id, name, keyPrefix, key (raw), message }
+ */
+keysRouter.post(
+  '/rotate/self',
+  asyncHandler(async (req: Request, res: Response) => {
+    const parsed = rotateKeySchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({ error: 'Invalid request', details: parsed.error.flatten() });
+    }
+
+    const { currentKey, reason = 'manual' } = parsed.data;
+    const clientIp = req.ip ?? '';
+    const userAgent = req.headers['user-agent'] ?? undefined;
+
+    // Hash the provided key to look it up
+    const currentKeyHash = crypto.createHash('sha256').update(currentKey).digest('hex');
+
+    // Find the key in the database
+    const existingKey = await prismaRead.devApiKey.findFirst({
+      where: { keyHash: currentKeyHash, status: 'active' },
+      select: {
+        id: true,
+        name: true,
+        developerId: true,
+        keyHash: true,
+        permissions: true,
+        allowedIps: true,
+        allowedDomains: true,
+        allowedEndpoints: true,
+      },
+    });
+
+    if (!existingKey) {
+      logger.warn('[keys] Rotation attempt with invalid or revoked key', { ip: clientIp, reason });
+      return res.status(401).json({ error: 'Invalid or revoked API key' });
+    }
+
+    // Check rate limit for this developer
+    const rateLimitCheck = checkKeyRotationRateLimit(existingKey.developerId);
+    if (!rateLimitCheck.allowed) {
+      logger.warn('[keys] Key rotation rate limit exceeded', {
+        developerId: existingKey.developerId,
+        ip: clientIp,
+      });
+      res.setHeader('Retry-After', rateLimitCheck.retryAfterSeconds!);
+      return res.status(429).json({
+        error: 'Rate limit exceeded',
+        message: `Too many rotation attempts. Try again in ${rateLimitCheck.retryAfterSeconds} seconds.`,
+        retryAfterSeconds: rateLimitCheck.retryAfterSeconds,
+      });
+    }
+
+    let rotationSuccess = false;
+    let rotationError: string | undefined;
+
+    try {
+      // Start a transaction to atomically revoke old key and create new one
+      const transaction = await prismaWrite.$transaction(async (tx) => {
+        // Revoke the old key
+        await tx.devApiKey.update({
+          where: { id: existingKey.id },
+          data: { status: 'revoked', revokedAt: new Date() },
+        });
+
+        // Create the new key with same settings
+        const { raw, prefix, hash } = generateApiKey();
+
+        const newKey = await tx.devApiKey.create({
+          data: {
+            developerId: existingKey.developerId,
+            name: existingKey.name,
+            keyPrefix: prefix,
+            keyHash: hash,
+            permissions: (existingKey.permissions ?? {}) as Prisma.InputJsonValue,
+            allowedIps:
+              existingKey.allowedIps !== null
+                ? (existingKey.allowedIps as unknown as Prisma.InputJsonValue)
+                : Prisma.JsonNull,
+            allowedDomains:
+              existingKey.allowedDomains !== null
+                ? (existingKey.allowedDomains as unknown as Prisma.InputJsonValue)
+                : Prisma.JsonNull,
+            allowedEndpoints:
+              existingKey.allowedEndpoints !== null
+                ? (existingKey.allowedEndpoints as unknown as Prisma.InputJsonValue)
+                : Prisma.JsonNull,
+          },
+          select: { id: true, name: true, keyPrefix: true, status: true, createdAt: true },
+        });
+
+        // Create audit log entry
+        await tx.keyRotationAudit.create({
+          data: {
+            developerId: existingKey.developerId,
+            oldKeyId: existingKey.id,
+            newKeyId: newKey.id,
+            reason,
+            ipAddress: clientIp,
+            userAgent: userAgent,
+            wasSuccessful: true,
+            metadata: {
+              oldKeyPrefix: existingKey.name,
+              rotationType: 'self_service',
+              timestamp: new Date().toISOString(),
+            } as Prisma.InputJsonValue,
+          },
+        });
+
+        return { newKey, rawKey: raw };
+      });
+
+      rotationSuccess = true;
+
+      // Invalidate cache so the revoked key is rejected immediately
+      invalidateKeyCache(currentKeyHash);
+
+      logger.info('[keys] Self-service key rotation successful', {
+        developerId: existingKey.developerId,
+        oldKeyId: existingKey.id,
+        newKeyId: transaction.newKey.id,
+        reason,
+        ip: clientIp,
+      });
+
+      return res.status(201).json({
+        ...transaction.newKey,
+        key: transaction.rawKey,
+        message: 'Key rotated successfully. Old key has been revoked. Store this new key securely.',
+      });
+    } catch (err) {
+      rotationError = String(err);
+      logger.error('[keys] Key rotation failed', {
+        developerId: existingKey.developerId,
+        keyId: existingKey.id,
+        error: rotationError,
+      });
+
+      // Log failed rotation attempt
+      try {
+        await prismaWrite.keyRotationAudit.create({
+          data: {
+            developerId: existingKey.developerId,
+            oldKeyId: existingKey.id,
+            newKeyId: '', // No new key was created
+            reason,
+            ipAddress: clientIp,
+            userAgent: userAgent,
+            wasSuccessful: false,
+            errorMessage: rotationError,
+            metadata: {
+              rotationType: 'self_service',
+              timestamp: new Date().toISOString(),
+            } as Prisma.InputJsonValue,
+          },
+        });
+      } catch (auditErr) {
+        logger.warn('[keys] Failed to log rotation failure', { error: String(auditErr) });
+      }
+
+      return res.status(500).json({
+        error: 'Key rotation failed',
+        message: 'An unexpected error occurred during key rotation. Please try again later.',
+      });
+    }
   }),
 );
