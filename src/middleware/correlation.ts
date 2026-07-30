@@ -13,6 +13,7 @@ import { randomUUID } from 'crypto';
 import { AsyncLocalStorage } from 'async_hooks';
 import type { Request, Response, NextFunction } from 'express';
 import { trace } from '@opentelemetry/api';
+import axios from 'axios';
 
 export interface TraceContext {
   requestId: string;
@@ -21,6 +22,22 @@ export interface TraceContext {
 }
 
 export const traceStorage = new AsyncLocalStorage<TraceContext>();
+
+// Propagate X-Request-Id to outgoing HTTP requests via Axios interceptor
+axios.interceptors.request.use(
+  (config) => {
+    const ctx = traceStorage.getStore();
+    if (ctx?.requestId) {
+      config.headers = config.headers || {};
+      // Axios v1 headers can be accessed as config.headers[name]
+      config.headers['X-Request-Id'] = ctx.requestId;
+    }
+    return config;
+  },
+  (error) => {
+    return Promise.reject(error);
+  },
+);
 
 export function correlationMiddleware(req: Request, res: Response, next: NextFunction): void {
   const requestId = (req.headers['x-request-id'] as string | undefined) ?? randomUUID();

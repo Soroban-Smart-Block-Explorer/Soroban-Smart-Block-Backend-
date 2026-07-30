@@ -33,6 +33,7 @@ import { cacheConnect, cacheClose, isCacheReady, cacheBackendType } from './cach
 import { markReady, markNotReady } from './readiness';
 import { errorHandler } from './middleware/errorHandler';
 import { requestContext } from './middleware/requestContext';
+import { versioningMiddleware } from './middleware/versioning';
 import { apiKeyAuth } from './middleware/apiKeyAuth';
 import { auditLogMiddleware } from './middleware/auditLog';
 import { asyncHandler } from './middleware/asyncHandler';
@@ -278,6 +279,12 @@ app.get('/api/v1/openapi.json', (_req, res) => res.json(swaggerSpec));
 
 app.use('/api/graphql', yogaHandler as unknown as express.RequestHandler);
 
+app.use('/api', versioningMiddleware, (req, res, next) => {
+  if (!req.url.startsWith('/v1/') && req.url !== '/v1') {
+    req.url = '/v1' + (req.url.startsWith('/') ? req.url : '/' + req.url);
+  }
+  next();
+});
 app.use('/api/v1', router);
 app.use('/api/billing', billingRouter);
 

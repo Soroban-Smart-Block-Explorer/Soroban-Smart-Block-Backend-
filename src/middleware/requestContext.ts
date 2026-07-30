@@ -11,8 +11,8 @@ import { randomUUID } from 'crypto';
 import { Request, Response, NextFunction } from 'express';
 
 export function requestContext(req: Request, res: Response, next: NextFunction): void {
-  const requestId = randomUUID();
-  const startedAt = Date.now();
+  const requestId = req.requestId || (req.headers['x-request-id'] as string) || randomUUID();
+  const startedAt = req.startedAt || Date.now();
 
   req.requestId = requestId;
   req.startedAt = startedAt;
