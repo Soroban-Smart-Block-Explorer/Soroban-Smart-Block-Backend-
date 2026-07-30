@@ -359,7 +359,7 @@ complianceRouter.post(
       beneficiaryVasp: z.string().optional(),
       originatorInfo: z.record(z.unknown()).optional(),
       beneficiaryInfo: z.record(z.unknown()).optional(),
-      transferValue: z.string().min(1),
+      transferValue: z.number().positive(),
     });
 
     const parsed = schema.safeParse(req.body);

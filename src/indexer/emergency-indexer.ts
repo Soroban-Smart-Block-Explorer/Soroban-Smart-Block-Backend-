@@ -190,7 +190,7 @@ export async function processEventForPause(event: {
     update: {},
   });
 
-  let durationSeconds: bigint | null = null;
+  let durationSeconds: number | null = null;
 
   if (isUnpause && state.currentPauseId) {
     // Find the matching pause event to compute duration
@@ -198,9 +198,7 @@ export async function processEventForPause(event: {
       where: { id: state.currentPauseId },
     });
     if (pauseEv) {
-      durationSeconds = BigInt(
-        Math.round((event.ledgerCloseTime.getTime() - pauseEv.timestamp.getTime()) / 1000),
-      );
+      durationSeconds = Math.round((event.ledgerCloseTime.getTime() - pauseEv.timestamp.getTime()) / 1000);
     }
   }
 

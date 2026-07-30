@@ -141,7 +141,7 @@ export async function checkAndFireAlerts(
         break;
       }
       case 'peg_deviation': {
-        const marketData = await prismaRead.tokenMarketData.findUnique({ where: { tokenAddress } });
+        const marketData = await prismaRead.token.findUnique({ where: { address: tokenAddress } });
         if (marketData?.pegDeviation24h != null) {
           shouldFire = marketData.pegDeviation24h * 100 > threshold;
         }

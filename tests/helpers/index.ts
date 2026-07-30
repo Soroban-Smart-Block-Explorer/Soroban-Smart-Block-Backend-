@@ -67,7 +67,7 @@ export function makePrisma(overrides: Record<string, unknown> = {}) {
       findFirst: vi.fn().mockResolvedValue(null),
       findMany: vi.fn().mockResolvedValue([]),
     },
-    tokenMarketData: {
+    token: {
       findUnique: vi.fn().mockResolvedValue(null),
     },
     tokenPrice: {

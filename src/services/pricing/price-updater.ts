@@ -141,15 +141,15 @@ export async function runStablecoinUpdate(): Promise<void> {
 
     for (const token of tokens) {
       if (token.tokenSymbol) {
-        const existing = await prismaRead.tokenMarketData.findUnique({
-          where: { tokenAddress: token.address },
+        const existing = await prismaRead.token.findUnique({
+          where: { address: token.address },
         });
 
         if (!existing) {
           const isStable = await autoDetectStablecoin(token.address);
-          await prismaWrite.tokenMarketData.create({
+          await prismaWrite.token.create({
             data: {
-              tokenAddress: token.address,
+              address: token.address,
               symbol: token.tokenSymbol,
               isStablecoin: isStable,
               tags: isStable ? ['stablecoin'] : [],
