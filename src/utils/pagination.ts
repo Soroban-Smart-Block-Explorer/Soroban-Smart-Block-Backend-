@@ -68,11 +68,7 @@ export function createPaginatedResponse<T>(
 /**
  * Calculate pagination metadata for offset-based pagination
  */
-export function offsetPagination(
-  limit: number,
-  offset: number,
-  total: number,
-): PaginationMetadata {
+export function offsetPagination(limit: number, offset: number, total: number): PaginationMetadata {
   const page = Math.floor(offset / limit) + 1;
   const totalPages = Math.ceil(total / limit);
   const hasMore = offset + limit < total;

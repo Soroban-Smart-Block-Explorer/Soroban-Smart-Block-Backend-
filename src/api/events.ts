@@ -1,5 +1,4 @@
 import { Router, Request, Response } from 'express';
-import { container } from '../services/container';
 import { z } from 'zod';
 import { asyncHandler } from '../middleware/asyncHandler';
 import { validateQuery, validateParams } from '../middleware/validation';

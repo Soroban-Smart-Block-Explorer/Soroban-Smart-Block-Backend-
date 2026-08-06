@@ -31,8 +31,7 @@ export interface CheckedArithmeticOperation {
 }
 
 export type CheckedArithmeticResult =
-  | { status: 'success'; value: bigint }
-  | { status: 'overflow'; value: null };
+  { status: 'success'; value: bigint } | { status: 'overflow'; value: null };
 
 export interface CheckedArithmeticAnalysis {
   isCheckedOperation: boolean;

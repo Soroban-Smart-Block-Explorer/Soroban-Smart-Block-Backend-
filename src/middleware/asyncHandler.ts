@@ -1,10 +1,6 @@
 import { Request, Response, NextFunction } from 'express';
 
-type AsyncRouteHandler<T = void> = (
-  req: Request,
-  res: Response,
-  next: NextFunction,
-) => Promise<T>;
+type AsyncRouteHandler<T = void> = (req: Request, res: Response, next: NextFunction) => Promise<T>;
 
 /**
  * Wraps an async Express route handler so that any rejected promise (or thrown

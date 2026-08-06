@@ -129,9 +129,7 @@ describe('Protocol 26 State Extension Router', () => {
 
   describe('GET /protocol26/contracts/:contractId/ttl', () => {
     it('returns 200 with TTL info', async () => {
-      const res = await request(app).get(
-        `/protocol26/contracts/${VALID_CONTRACT_ID}/ttl`,
-      );
+      const res = await request(app).get(`/protocol26/contracts/${VALID_CONTRACT_ID}/ttl`);
       expect(res.status).toBe(200);
       expect(res.body).toHaveProperty('contractId', VALID_CONTRACT_ID);
       expect(res.body).toHaveProperty('currentLedger');
@@ -181,9 +179,7 @@ describe('Protocol 26 State Extension Router', () => {
     it('returns 200 with success status when simulation succeeds', async () => {
       vi.mocked(SorobanRpc.Api.isSimulationSuccess).mockReturnValue(true);
       vi.mocked(SorobanRpc.Api.isSimulationRestore).mockReturnValue(false);
-      vi.mocked(rpc.simulateTransaction).mockResolvedValue(
-        SUCCESS_SIMULATION_RESULT as any,
-      );
+      vi.mocked(rpc.simulateTransaction).mockResolvedValue(SUCCESS_SIMULATION_RESULT as any);
 
       const res = await request(app)
         .post(`/protocol26/contracts/${VALID_CONTRACT_ID}/extend-ttl`)
@@ -214,9 +210,7 @@ describe('Protocol 26 State Extension Router', () => {
     it('returns 200 with success status for restore simulation', async () => {
       vi.mocked(SorobanRpc.Api.isSimulationSuccess).mockReturnValue(false);
       vi.mocked(SorobanRpc.Api.isSimulationRestore).mockReturnValue(true);
-      vi.mocked(rpc.simulateTransaction).mockResolvedValue(
-        RESTORE_SIMULATION_RESULT as any,
-      );
+      vi.mocked(rpc.simulateTransaction).mockResolvedValue(RESTORE_SIMULATION_RESULT as any);
 
       const res = await request(app)
         .post(`/protocol26/contracts/${VALID_CONTRACT_ID}/extend-ttl`)
@@ -232,9 +226,7 @@ describe('Protocol 26 State Extension Router', () => {
     it('returns 200 with success status for temporary entry type', async () => {
       vi.mocked(SorobanRpc.Api.isSimulationSuccess).mockReturnValue(true);
       vi.mocked(SorobanRpc.Api.isSimulationRestore).mockReturnValue(false);
-      vi.mocked(rpc.simulateTransaction).mockResolvedValue(
-        SUCCESS_SIMULATION_RESULT as any,
-      );
+      vi.mocked(rpc.simulateTransaction).mockResolvedValue(SUCCESS_SIMULATION_RESULT as any);
 
       const res = await request(app)
         .post(`/protocol26/contracts/${VALID_CONTRACT_ID}/extend-ttl`)
@@ -249,9 +241,7 @@ describe('Protocol 26 State Extension Router', () => {
     it('returns 422 when simulation returns an error', async () => {
       vi.mocked(SorobanRpc.Api.isSimulationSuccess).mockReturnValue(false);
       vi.mocked(SorobanRpc.Api.isSimulationRestore).mockReturnValue(false);
-      vi.mocked(rpc.simulateTransaction).mockResolvedValue(
-        ERROR_SIMULATION_RESULT as any,
-      );
+      vi.mocked(rpc.simulateTransaction).mockResolvedValue(ERROR_SIMULATION_RESULT as any);
 
       const res = await request(app)
         .post(`/protocol26/contracts/${VALID_CONTRACT_ID}/extend-ttl`)
@@ -299,9 +289,7 @@ describe('Protocol 26 State Extension Router', () => {
     it('uses default entryType "instance" when not provided', async () => {
       vi.mocked(SorobanRpc.Api.isSimulationSuccess).mockReturnValue(true);
       vi.mocked(SorobanRpc.Api.isSimulationRestore).mockReturnValue(false);
-      vi.mocked(rpc.simulateTransaction).mockResolvedValue(
-        SUCCESS_SIMULATION_RESULT as any,
-      );
+      vi.mocked(rpc.simulateTransaction).mockResolvedValue(SUCCESS_SIMULATION_RESULT as any);
 
       const res = await request(app)
         .post(`/protocol26/contracts/${VALID_CONTRACT_ID}/extend-ttl`)
@@ -317,9 +305,7 @@ describe('Protocol 26 State Extension Router', () => {
 
   describe('GET /protocol26/contracts/:contractId/entries', () => {
     it('returns 200 with entries info', async () => {
-      const res = await request(app).get(
-        `/protocol26/contracts/${VALID_CONTRACT_ID}/entries`,
-      );
+      const res = await request(app).get(`/protocol26/contracts/${VALID_CONTRACT_ID}/entries`);
       expect(res.status).toBe(200);
       expect(res.body).toHaveProperty('contractId', VALID_CONTRACT_ID);
       expect(res.body).toHaveProperty('filter');
@@ -328,10 +314,9 @@ describe('Protocol 26 State Extension Router', () => {
     });
 
     it('respects query parameters', async () => {
-      const res = await request(app)
-        .get(
-          `/protocol26/contracts/${VALID_CONTRACT_ID}/entries?type=persistent&nearExpiry=true`,
-        );
+      const res = await request(app).get(
+        `/protocol26/contracts/${VALID_CONTRACT_ID}/entries?type=persistent&nearExpiry=true`,
+      );
       expect(res.status).toBe(200);
       expect(res.body.filter).toHaveProperty('type', 'persistent');
       expect(res.body.filter).toHaveProperty('nearExpiry', true);
@@ -377,13 +362,11 @@ describe('Protocol 26 State Extension Router', () => {
     });
 
     it('handles empty arrays', async () => {
-      const res = await request(app)
-        .post('/protocol26/footprint/optimize')
-        .send({
-          contractId: VALID_CONTRACT_ID,
-          readOnly: [],
-          readWrite: [],
-        });
+      const res = await request(app).post('/protocol26/footprint/optimize').send({
+        contractId: VALID_CONTRACT_ID,
+        readOnly: [],
+        readWrite: [],
+      });
       expect(res.status).toBe(200);
       expect(res.body).toHaveProperty('removedDuplicates', 0);
       expect(res.body).toHaveProperty('recommendation');
@@ -403,17 +386,13 @@ describe('Protocol 26 State Extension Router', () => {
     });
 
     it('respects ledgersThreshold query parameter', async () => {
-      const res = await request(app).get(
-        '/protocol26/expiring?ledgersThreshold=10000',
-      );
+      const res = await request(app).get('/protocol26/expiring?ledgersThreshold=10000');
       expect(res.status).toBe(200);
       expect(res.body).toHaveProperty('threshold', 10000);
     });
 
     it('caps threshold at 518400', async () => {
-      const res = await request(app).get(
-        '/protocol26/expiring?ledgersThreshold=999999',
-      );
+      const res = await request(app).get('/protocol26/expiring?ledgersThreshold=999999');
       expect(res.status).toBe(200);
       expect(res.body).toHaveProperty('threshold', 518400);
     });

@@ -24,11 +24,7 @@ import { logger } from '../logger';
 // ── Types ─────────────────────────────────────────────────────────────────────
 
 export type AlertType =
-  | 'score_drop'
-  | 'new_finding'
-  | 'upgrade'
-  | 'certificate_update'
-  | 'certificate_expiry';
+  'score_drop' | 'new_finding' | 'upgrade' | 'certificate_update' | 'certificate_expiry';
 
 export interface NotificationPayload {
   alertType: AlertType;

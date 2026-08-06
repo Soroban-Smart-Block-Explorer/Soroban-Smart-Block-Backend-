@@ -23,8 +23,9 @@ export interface TraceContext {
 
 export const traceStorage = new AsyncLocalStorage<TraceContext>();
 
-// Propagate X-Request-Id to outgoing HTTP requests via Axios interceptor
-axios.interceptors.request.use(
+// Propagate X-Request-Id to outgoing HTTP requests via Axios interceptor.
+// Optional chaining keeps module load safe when axios is mocked in tests.
+axios.interceptors?.request?.use?.(
   (config) => {
     const ctx = traceStorage.getStore();
     if (ctx?.requestId) {

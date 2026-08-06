@@ -54,7 +54,9 @@ export const prismaWrite = new PrismaClient({
 export const prismaRead = new PrismaClient({
   log: logLevel,
   datasources: {
-    db: { url: withPoolConfig(withStatementTimeout(config.readReplicaUrl, DEFAULT_QUERY_TIMEOUT_MS)) },
+    db: {
+      url: withPoolConfig(withStatementTimeout(config.readReplicaUrl, DEFAULT_QUERY_TIMEOUT_MS)),
+    },
   },
   transactionOptions,
 });
@@ -67,6 +69,8 @@ export const prismaRead = new PrismaClient({
 export const prismaBackfill = new PrismaClient({
   log: logLevel,
   datasources: {
-    db: { url: withPoolConfig(withStatementTimeout(config.readReplicaUrl, BACKFILL_QUERY_TIMEOUT_MS)) },
+    db: {
+      url: withPoolConfig(withStatementTimeout(config.readReplicaUrl, BACKFILL_QUERY_TIMEOUT_MS)),
+    },
   },
 });

@@ -16,13 +16,7 @@ export type ProtocolCategory =
 export type Confidence = 'high' | 'medium' | 'low';
 
 export type DetectedProtocol =
-  | 'SEP-41'
-  | 'DEX'
-  | 'Lending'
-  | 'NFT'
-  | 'Staking'
-  | 'Governance'
-  | 'Oracle';
+  'SEP-41' | 'DEX' | 'Lending' | 'NFT' | 'Staking' | 'Governance' | 'Oracle';
 
 export interface ClassificationResult {
   category: ProtocolCategory;

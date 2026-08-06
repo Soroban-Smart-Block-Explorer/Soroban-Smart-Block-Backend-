@@ -196,7 +196,7 @@ protocol26Router.post(
       let ledgerKey: xdr.LedgerKey;
       try {
         const contractIdBytes = xdr.ScAddress.fromXDR(
-          xdr.ScAddress.envelopeTypeScp().toXDR('base64')
+          xdr.ScAddress.envelopeTypeScp().toXDR('base64'),
         );
         // Use the contract ID hash directly
         const contractIdHash = Buffer.from(contractId, 'hex');
@@ -205,9 +205,7 @@ protocol26Router.post(
           case 'instance':
             ledgerKey = xdr.LedgerKey.contractData(
               new xdr.LedgerKeyContractData({
-                contract: xdr.ScAddress.contract(
-                  xdr.Hash.fromXDR(contractIdHash)
-                ),
+                contract: xdr.ScAddress.contract(xdr.Hash.fromXDR(contractIdHash)),
                 key: xdr.ScVal.scvLedgerKeyContractInstance(),
                 durability: xdr.ContractDataDurability.persistent(),
               }),
@@ -216,9 +214,7 @@ protocol26Router.post(
           case 'persistent':
             ledgerKey = xdr.LedgerKey.contractData(
               new xdr.LedgerKeyContractData({
-                contract: xdr.ScAddress.contract(
-                  xdr.Hash.fromXDR(contractIdHash)
-                ),
+                contract: xdr.ScAddress.contract(xdr.Hash.fromXDR(contractIdHash)),
                 key: xdr.ScVal.scvSymbol('__storage_persistent'),
                 durability: xdr.ContractDataDurability.persistent(),
               }),
@@ -227,9 +223,7 @@ protocol26Router.post(
           case 'temporary':
             ledgerKey = xdr.LedgerKey.contractData(
               new xdr.LedgerKeyContractData({
-                contract: xdr.ScAddress.contract(
-                  xdr.Hash.fromXDR(contractIdHash)
-                ),
+                contract: xdr.ScAddress.contract(xdr.Hash.fromXDR(contractIdHash)),
                 key: xdr.ScVal.scvSymbol('__storage_temporary'),
                 durability: xdr.ContractDataDurability.temporary(),
               }),
@@ -238,9 +232,7 @@ protocol26Router.post(
           default:
             ledgerKey = xdr.LedgerKey.contractData(
               new xdr.LedgerKeyContractData({
-                contract: xdr.ScAddress.contract(
-                  xdr.Hash.fromXDR(contractIdHash)
-                ),
+                contract: xdr.ScAddress.contract(xdr.Hash.fromXDR(contractIdHash)),
                 key: xdr.ScVal.scvLedgerKeyContractInstance(),
                 durability: xdr.ContractDataDurability.persistent(),
               }),
@@ -266,9 +258,7 @@ protocol26Router.post(
         sorobanData: new xdr.SorobanTransactionData({
           extensionPoint: xdr.ExtensionPoint.extensionPointLeV0(),
           resources: new xdr.SorobanResources({
-            ledgerReadWrite: [
-              ledgerKey,
-            ],
+            ledgerReadWrite: [ledgerKey],
             instructions: 0,
             readBytes: 0,
           }),
@@ -288,12 +278,8 @@ protocol26Router.post(
         SorobanRpc.Api.isSimulationRestore(simulationResult)
       ) {
         // Extract resource info
-        const cpuInsns = Number(
-          (simulationResult.cost as SorobanRpc.Api.Cost)?.cpuInsns ?? 0,
-        );
-        const memBytes = Number(
-          (simulationResult.cost as SorobanRpc.Api.Cost)?.memBytes ?? 0,
-        );
+        const cpuInsns = Number((simulationResult.cost as SorobanRpc.Api.Cost)?.cpuInsns ?? 0);
+        const memBytes = Number((simulationResult.cost as SorobanRpc.Api.Cost)?.memBytes ?? 0);
         const minResourceFee = simulationResult.minResourceFee ?? '0';
 
         return res.json({
@@ -314,9 +300,7 @@ protocol26Router.post(
               ? simulationResult.result.retval.toXDR('base64')
               : null,
           },
-          estimatedFeeLumens: Math.ceil(
-            Number(minResourceFee) / 10_000_000,
-          ),
+          estimatedFeeLumens: Math.ceil(Number(minResourceFee) / 10_000_000),
           note: 'Submit this transaction or a newly built one with the returned footprint to the Stellar network to apply.',
           expiresAt: new Date(newLiveUntilLedger * 5000).toISOString(),
           submittedAt: new Date().toISOString(),

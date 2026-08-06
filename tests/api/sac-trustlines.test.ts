@@ -446,14 +446,12 @@ describe('POST /sac-trustlines/revoke', () => {
     vi.mocked(prismaRead.sacMapping.findFirst).mockResolvedValue(null);
     vi.mocked(getTrustlinesBySac).mockResolvedValue([]);
 
-    const res = await request(makeApp())
-      .post('/sac-trustlines/revoke')
-      .send({
-        assetCode: 'USDC',
-        accountAddress: 'GABC123',
-        adminKey: 'SADMIN',
-        reason: 'KYC expired',
-      });
+    const res = await request(makeApp()).post('/sac-trustlines/revoke').send({
+      assetCode: 'USDC',
+      accountAddress: 'GABC123',
+      adminKey: 'SADMIN',
+      reason: 'KYC expired',
+    });
 
     expect(res.status).toBe(200);
     expect(res.body.reason).toBe('KYC expired');

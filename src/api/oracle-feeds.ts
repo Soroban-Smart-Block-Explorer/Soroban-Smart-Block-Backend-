@@ -14,6 +14,7 @@ import { Router, Request, Response } from 'express';
 import { z } from 'zod';
 import axios from 'axios';
 import { logger } from '../logger';
+import { asyncHandler } from '../middleware/asyncHandler';
 
 // ── Configuration ─────────────────────────────────────────────────────────────
 
@@ -104,9 +105,7 @@ async function fetchXlmUsdFromHorizon(): Promise<number | null> {
 
 // ── Unified price resolver ────────────────────────────────────────────────────
 
-async function resolvePrice(
-  pair: string,
-): Promise<{ price: number; source: string } | null> {
+async function resolvePrice(pair: string): Promise<{ price: number; source: string } | null> {
   // 1. Return cached value if still fresh
   const cached = priceCache.get(pair);
   if (cached && Date.now() - cached.fetchedAt < PRICE_TTL_MS) {
@@ -220,38 +219,46 @@ oracleFeedsRouter.get('/assets', (_req: Request, res: Response) => {
  *       404:
  *         description: Asset pair not supported
  */
-oracleFeedsRouter.get('/assets/:assetPair/price', async (req: Request, res: Response) => {
-  const assetPair = req.params.assetPair.toUpperCase().replace('-', '/');
-  const supported = ['XLM/USD', 'BTC/USD', 'ETH/USD', 'USDC/USD'];
+oracleFeedsRouter.get(
+  '/assets/:assetPair/price',
+  asyncHandler(async (req: Request, res: Response) => {
+    const assetPair = req.params.assetPair.toUpperCase().replace('-', '/');
+    const supported = ['XLM/USD', 'BTC/USD', 'ETH/USD', 'USDC/USD'];
 
-  if (!supported.includes(assetPair)) {
-    return res
-      .status(404)
-      .json({ error: `Asset pair ${assetPair} not supported. Supported: ${supported.join(', ')}` });
-  }
+    if (!supported.includes(assetPair)) {
+      return res.status(404).json({
+        error: `Asset pair ${assetPair} not supported. Supported: ${supported.join(', ')}`,
+      });
+    }
 
-  const result = await resolvePrice(assetPair);
+    const result = await resolvePrice(assetPair);
 
-  if (!result) {
-    logger.error('All price sources exhausted and no cached value available', { pair: assetPair });
-    return res.status(503).json({
-      error: 'Price data temporarily unavailable. All providers failed and no cached value exists.',
+    if (!result) {
+      logger.error('All price sources exhausted and no cached value available', {
+        pair: assetPair,
+      });
+      return res.status(503).json({
+        error:
+          'Price data temporarily unavailable. All providers failed and no cached value exists.',
+        pair: assetPair,
+      });
+    }
+
+    const isStale = result.source.includes('stale');
+
+    res.json({
       pair: assetPair,
+      price: result.price,
+      currency: 'USD',
+      source: result.source,
+      confidence: isStale ? 0.5 : 0.99,
+      timestamp: new Date().toISOString(),
+      ...(isStale
+        ? { warning: 'Price data is stale – live providers are currently unreachable.' }
+        : {}),
     });
-  }
-
-  const isStale = result.source.includes('stale');
-
-  res.json({
-    pair: assetPair,
-    price: result.price,
-    currency: 'USD',
-    source: result.source,
-    confidence: isStale ? 0.5 : 0.99,
-    timestamp: new Date().toISOString(),
-    ...(isStale ? { warning: 'Price data is stale – live providers are currently unreachable.' } : {}),
-  });
-});
+  }),
+);
 
 // ── GET /assets/:assetPair/history ─────────────────────────────────────────────
 

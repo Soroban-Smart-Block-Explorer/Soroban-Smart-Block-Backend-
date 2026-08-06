@@ -26,12 +26,7 @@ function clamp(v: number): number {
 
 type FindingSeverity = 'critical' | 'high' | 'medium' | 'low' | 'info';
 type FindingCategory =
-  | 'vulnerability'
-  | 'code_quality'
-  | 'governance'
-  | 'economics'
-  | 'compliance'
-  | 'liquidity';
+  'vulnerability' | 'code_quality' | 'governance' | 'economics' | 'compliance' | 'liquidity';
 
 interface PendingFinding {
   category: FindingCategory;

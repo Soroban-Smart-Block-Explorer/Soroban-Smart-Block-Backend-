@@ -41,12 +41,7 @@ export interface CallGraph {
 // ── Reentrancy Detection Types ───────────────────────────────────────────────
 
 export type ReentrancyType =
-  | 'SIMPLE'
-  | 'CROSS_CONTRACT'
-  | 'MULTI_STEP'
-  | 'READ_ONLY'
-  | 'CROSS_FUNCTION'
-  | 'DESTRUCTIVE';
+  'SIMPLE' | 'CROSS_CONTRACT' | 'MULTI_STEP' | 'READ_ONLY' | 'CROSS_FUNCTION' | 'DESTRUCTIVE';
 
 export const ReentrancyTypes = {
   SIMPLE: 'SIMPLE' as const,

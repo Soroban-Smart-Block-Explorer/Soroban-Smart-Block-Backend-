@@ -70,9 +70,10 @@ async function runWithConcurrency<T>(
                   total,
                   failed: errors.length,
                   errors: errors.map((e) => ({
-                    item: typeof e.item === 'object' && e.item !== null && 'id' in e.item
-                      ? (e.item as Record<string, unknown>).id
-                      : String(e.item),
+                    item:
+                      typeof e.item === 'object' && e.item !== null && 'id' in e.item
+                        ? (e.item as Record<string, unknown>).id
+                        : String(e.item),
                     error: e.error instanceof Error ? e.error.message : String(e.error),
                   })),
                 });

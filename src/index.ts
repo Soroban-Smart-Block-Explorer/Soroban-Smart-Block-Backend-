@@ -45,7 +45,6 @@ import { logger } from './logger';
 import { feedOrchestrator } from './feed/orchestrator';
 import { startAuditPipeline } from './indexer/audit-pipeline';
 import { startAuditScheduler } from './indexer/audit-scheduler';
-import { scheduler } from './scheduler/cron-scheduler';
 import { startContinuousAuditMonitor } from './indexer/audit-monitor';
 import { startAuditExpiryChecker } from './indexer/audit-expiry-checker';
 import { startAuditDigestScheduler } from './indexer/audit-digest-scheduler';
@@ -198,7 +197,11 @@ app.use(
 // CSRF Protection (Issue #658) ───────────────────────────────────────────────────
 // Add CSRF token middleware for cookie-based endpoints
 // Bearer token endpoints are CSRF-protected by design
-const csrfProtection = (req: express.Request, res: express.Response, next: express.NextFunction) => {
+const csrfProtection = (
+  req: express.Request,
+  res: express.Response,
+  next: express.NextFunction,
+) => {
   // Skip CSRF check for API key and Bearer token auth (stateless)
   const authHeader = req.headers['authorization'];
   const apiKey = req.headers['x-api-key'];
@@ -221,12 +224,15 @@ app.use(csrfProtection);
 app.use((req: express.Request, res: express.Response, next: express.NextFunction) => {
   const originalSend = res.send;
   res.send = function (data: any) {
-    res.setHeader('Set-Cookie', (res.getHeader('Set-Cookie') || []).map((cookie: string) => {
-      if (!cookie.includes('SameSite')) {
-        return `${cookie}; SameSite=Strict; Secure; HttpOnly`;
-      }
-      return cookie;
-    }));
+    res.setHeader(
+      'Set-Cookie',
+      (res.getHeader('Set-Cookie') || []).map((cookie: string) => {
+        if (!cookie.includes('SameSite')) {
+          return `${cookie}; SameSite=Strict; Secure; HttpOnly`;
+        }
+        return cookie;
+      }),
+    );
     return originalSend.call(this, data);
   };
   next();
@@ -239,6 +245,9 @@ app.use(requestSizeGuard(1_048_576)); // 1 MB
 app.use(express.json({ limit: '1mb' }));
 app.use(express.urlencoded({ limit: '1mb', extended: true }));
 app.use(express.raw({ limit: '1mb', type: 'application/octet-stream' }));
+
+// HTTP Parameter Pollution protection — last duplicate query parameter wins
+app.use(hpp());
 app.use(networkRouter);
 
 // Cookie parsing — enables session cookie authentication (cookieAuth middleware)

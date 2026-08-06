@@ -757,15 +757,13 @@ function extractStatusUpdate(provider: ProviderName, body: unknown): StatusUpdat
 
     case 'stripe': {
       const obj = (b.data as Record<string, unknown>)?.object as
-        | Record<string, unknown>
-        | undefined;
+        Record<string, unknown> | undefined;
       if (!obj) return null;
       return {
         providerOrderId: obj.id as string | undefined,
         status: stripeStatus((obj.status as string) ?? ''),
         txHash: (obj.transaction_details as Record<string, unknown>)?.transaction_hash as
-          | string
-          | undefined,
+          string | undefined,
       };
     }
 

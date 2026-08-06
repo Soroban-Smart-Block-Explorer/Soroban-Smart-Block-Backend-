@@ -62,7 +62,9 @@ authRouter.post(
     if (ch.address !== address) return res.status(400).json({ error: 'Address mismatch' });
 
     if (await checkAccountLockout(address)) {
-      return res.status(429).json({ error: 'Account temporarily locked due to too many failed attempts' });
+      return res
+        .status(429)
+        .json({ error: 'Account temporarily locked due to too many failed attempts' });
     }
 
     const attempts = await incrementAttempts(challengeId);

@@ -1640,10 +1640,7 @@ auditRouter.post(
 
       // Use the first alertType in the subscription as the test type
       const alertType = (sub.alertTypes[0] ?? 'certificate_update') as
-        | 'score_drop'
-        | 'new_finding'
-        | 'upgrade'
-        | 'certificate_update';
+        'score_drop' | 'new_finding' | 'upgrade' | 'certificate_update';
 
       await dispatchNotification({
         alertType,
