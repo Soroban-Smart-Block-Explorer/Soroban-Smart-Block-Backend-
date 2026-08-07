@@ -6,6 +6,13 @@ on:
   pull_request:
     branches: [main]
 
+# Explicit token scopes. `security-events: write` is required for CodeQL to
+# access the CodeQL API and upload SARIF results; without it the Security job
+# fails with "Resource not accessible by integration".
+permissions:
+  contents: read
+  security-events: write
+
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
@@ -31,15 +38,15 @@ jobs:
           --health-timeout 5s
           --health-retries 5
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
-          node-version: 20
+          node-version: 24
           cache: npm
 
       - name: Cache Prisma generate
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: node_modules/.prisma
           key: prisma-${{ hashFiles('prisma/schema.prisma') }}
@@ -69,15 +76,15 @@ jobs:
     name: Lint
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
-          node-version: 20
+          node-version: 24
           cache: npm
 
       - name: Cache Prisma generate
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: node_modules/.prisma
           key: prisma-${{ hashFiles('prisma/schema.prisma') }}
@@ -128,15 +135,15 @@ jobs:
           --health-timeout 5s
           --health-retries 5
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
-          node-version: 20
+          node-version: 24
           cache: npm
 
       - name: Cache Prisma generate
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: node_modules/.prisma
           key: prisma-${{ hashFiles('prisma/schema.prisma') }}
@@ -156,11 +163,11 @@ jobs:
     name: Security
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
-          node-version: 20
+          node-version: 24
           cache: npm
 
       - name: Install dependencies
@@ -170,9 +177,9 @@ jobs:
         run: npm audit --audit-level=high || true
 
       - name: Initialize CodeQL
-        uses: github/codeql-action/init@v3
+        uses: github/codeql-action/init@v4
         with:
           languages: javascript, typescript
 
       - name: Perform CodeQL Analysis
-        uses: github/codeql-action/analyze@v3
+        uses: github/codeql-action/analyze@v4
