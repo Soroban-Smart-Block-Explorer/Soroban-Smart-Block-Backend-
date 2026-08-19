@@ -2944,7 +2944,7 @@ model PoolSnapshot {
 }
 
 model PoolSwap {
-  id String @map("id") @id @default(cuid())
+  id String @map("id") @id
   poolAddress String @map("pool_address")
   tokenIn String @map("token_in")
   amountIn String? @map("amount_in")
@@ -3514,7 +3514,7 @@ model TokenPrice {
 }
 
 model TokenPriceHistory {
-  id String @map("id") @id @default(cuid())
+  id String @map("id") @id
   tokenAddress String @map("token_address")
   priceUsd Decimal @map("price_usd")
   priceXlm Decimal @map("price_xlm")
