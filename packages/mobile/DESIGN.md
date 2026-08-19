@@ -185,13 +185,14 @@ User Action → SDK Client → [Offline Queue] → [Network Request]
 ## 8. Directory Structure
 
 ```
-src/sdk/mobile/
+packages/mobile/
 ├── DESIGN.md
-├── index.ts                    # Barrel exports
-├── SorobanExplorerClient.ts    # REST/GraphQL client
-├── SorobanExplorerFeed.ts      # WebSocket/SSE client
-├── SorobanExplorerAuth.ts      # Biometric auth + key storage
-├── SorobanExplorerPush.ts      # Push notification client
-├── SorobanExplorerOffline.ts   # Offline-first data layer
-├── types.ts                    # Shared types
+├── src/
+│   ├── index.ts                # Barrel exports
+│   ├── SorobanExplorerClient.ts# REST/GraphQL client
+│   ├── SorobanExplorerFeed.ts  # WebSocket/SSE client
+│   ├── SorobanExplorerAuth.ts  # Biometric auth + key storage
+│   ├── SorobanExplorerPush.ts  # Push notification client
+│   ├── SorobanExplorerOffline.ts # Offline-first data layer
+│   └── types.ts                # Shared types
 └── __tests__/                  # Unit tests

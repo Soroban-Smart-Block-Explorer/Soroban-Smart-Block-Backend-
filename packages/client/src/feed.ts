@@ -268,7 +268,7 @@ export class SorobanSSE {
 
 // Example usage:
 /*
-import { SorobanFeed } from '@soroban/feed-sdk';
+import { SorobanFeed } from '@soroban-explorer/client';
 
 const feed = new SorobanFeed({ apiKey: 'my-key' });
 
