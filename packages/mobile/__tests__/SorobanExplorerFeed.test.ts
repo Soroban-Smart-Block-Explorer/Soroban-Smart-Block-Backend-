@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { SorobanExplorerFeed } from '../SorobanExplorerFeed';
+import { SorobanExplorerFeed } from '../src/SorobanExplorerFeed';
 
 describe('SorobanExplorerFeed', () => {
   let feed: SorobanExplorerFeed;

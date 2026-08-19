@@ -3,9 +3,8 @@
  *
  * Wires up the runtime dependencies and background services in dependency
  * order: cache, database, cold storage, P2P, the indexer, optional services
- * (gated by feature flags), the price updater, JWT key rotation, and the feed
- * orchestrator. HTTP/WebSocket wiring lives in server.ts; this module only
- * starts services.
+ * (gated by feature flags), the price updater, and the feed orchestrator.
+ * HTTP/WebSocket wiring lives in server.ts; this module only starts services.
  */
 
 import type { Server } from 'http';
@@ -30,7 +29,6 @@ import { startContinuousAuditMonitor } from './indexer/audit-monitor';
 import { startAuditExpiryChecker } from './indexer/audit-expiry-checker';
 import { startAuditDigestScheduler } from './indexer/audit-digest-scheduler';
 import { startPriceUpdater } from './services/pricing';
-import { startKeyRotationScheduler } from './auth/keyRotationScheduler';
 import { feedOrchestrator } from './feed/orchestrator';
 
 export async function initializeServices(
@@ -156,14 +154,6 @@ export async function initializeServices(
     logger.info('Price updater started');
   } catch (err) {
     logger.warn('Price updater failed to start', { error: String(err) });
-  }
-
-  // JWT signing key rotation — every 30 days (also triggerable via POST /auth/keys/rotate)
-  try {
-    startKeyRotationScheduler();
-    logger.info('JWT key rotation scheduler started');
-  } catch (err) {
-    logger.warn('JWT key rotation scheduler failed to start', { error: String(err) });
   }
 
   await feedOrchestrator.initialize(httpServer);

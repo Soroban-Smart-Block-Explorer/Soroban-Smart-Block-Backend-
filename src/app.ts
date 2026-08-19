@@ -2,24 +2,21 @@
  * Express application factory
  *
  * Owns all HTTP-level concerns: middleware wiring, security headers, CORS,
- * cookie/session handling, routing, health/liveness/readiness probes, the
- * global error handler, and the 404 catch-all. Server creation and
- * background-service startup live in server.ts and services.ts respectively.
+ * routing, health/liveness/readiness probes, the global error handler, and
+ * the 404 catch-all. Server creation and background-service startup live in
+ * server.ts and services.ts respectively.
  */
 
 import express from 'express';
 import cors from 'cors';
-import cookieParser from 'cookie-parser';
 import helmet from 'helmet';
-import hpp from 'hpp';
 import morgan from 'morgan';
 import swaggerUi from 'swagger-ui-express';
 
-import { correlationMiddleware } from './middleware/correlation';
-import { responseEnvelopeMiddleware } from './middleware/responseEnvelope';
-import { compressionMiddleware } from './middleware/compression';
 import { config } from './config';
 import { router } from './api/router';
+import { billingRouter } from './services/stripe-billing';
+import { correlationMiddleware } from './middleware/correlation';
 import { tieredRateLimit } from './middleware/rateLimit';
 import { metricsMiddleware } from './middleware/metricsMiddleware';
 import { sanitizeInputs, requestSizeGuard } from './middleware/sanitize';
@@ -32,14 +29,10 @@ import { swaggerSpec } from './indexer/swaggerSpec';
 import yogaHandler from './graphql';
 import { errorHandler } from './middleware/errorHandler';
 import { requestContext } from './middleware/requestContext';
-import { versioningMiddleware } from './middleware/versioning';
 import { apiKeyAuth } from './middleware/apiKeyAuth';
 import { auditLogMiddleware } from './middleware/auditLog';
 import { asyncHandler } from './middleware/asyncHandler';
 import { rejectUntrustedForwardedHeaders } from './middleware/proxyTrust';
-import { requestTimeout } from './middleware/requestTimeout';
-import { sessionCookieAuth, COOKIE_CONFIG } from './middleware/cookieAuth';
-import { billingRouter } from './services/stripe-billing';
 import { getHealthStatus, getLivenessStatus, getReadinessStatus } from './health';
 import { getP2pStatusSnapshot, resolveLedgerLocation } from './p2p';
 import { getIndexerStatus } from './indexer-state';
@@ -115,126 +108,26 @@ export function createApp(options: AppOptions): express.Express {
     cors({
       origin: corsOrigin,
       methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-      allowedHeaders: [
-        'Content-Type',
-        'Authorization',
-        'X-Api-Key',
-        'X-Request-Id',
-        'X-CSRF-Token',
-      ],
+      allowedHeaders: ['Content-Type', 'Authorization', 'X-Api-Key', 'X-Request-Id'],
       credentials: true,
     }),
   );
 
   // Correlation IDs first — requestId is needed by morgan token and logger.
   app.use(correlationMiddleware);
-  app.use(responseEnvelopeMiddleware);
-
-  // Response compression (gzip/brotli) for large JSON payloads
-  app.use(
-    compressionMiddleware({
-      threshold: 1024, // Compress responses >= 1KB
-      gzipLevel: 6, // Balanced speed/compression
-      brotliLevel: 6, // Balanced speed/compression
-      enableBrotli: true, // Try brotli first, fall back to gzip
-      logStats: config.nodeEnv === 'development', // Log in dev mode
-    }),
-  );
-
   morgan.token('request-id', (req) => (req as express.Request).requestId ?? '-');
-
-  // Query strings can carry sensitive values (API keys, tokens, session ids).
-  // Redact any parameter whose name looks sensitive instead of logging it raw.
-  const SENSITIVE_QUERY_PARAM_PATTERN =
-    /token|key|secret|password|auth|credential|session|signature/i;
-  morgan.token('safe-url', (req) => {
-    const raw = (req as express.Request).originalUrl ?? req.url ?? '';
-    const [pathname, query] = raw.split('?');
-    if (!query) return pathname;
-    const params = new URLSearchParams(query);
-    for (const name of params.keys()) {
-      if (SENSITIVE_QUERY_PARAM_PATTERN.test(name)) {
-        params.set(name, '[REDACTED]');
-      }
-    }
-    return `${pathname}?${params.toString()}`;
-  });
   app.use(
-    morgan(
-      ':method :safe-url :status :res[content-length] - :response-time ms request-id=:request-id',
-    ),
+    morgan(':method :url :status :res[content-length] - :response-time ms request-id=:request-id'),
   );
-
-  // CSRF Protection (Issue #658) ───────────────────────────────────────────────────
-  // Add CSRF token middleware for cookie-based endpoints
-  // Bearer token endpoints are CSRF-protected by design
-  const csrfProtection = (
-    req: express.Request,
-    res: express.Response,
-    next: express.NextFunction,
-  ) => {
-    // Skip CSRF check for API key and Bearer token auth (stateless)
-    const authHeader = req.headers['authorization'];
-    const apiKey = req.headers['x-api-key'];
-    if (authHeader?.startsWith('Bearer ') || apiKey) {
-      return next();
-    }
-
-    // For cookie-based sessions, validate CSRF token from header
-    const csrfToken = req.headers['x-csrf-token'];
-    const sessionToken = req.cookies?.['__session'];
-
-    if (sessionToken && !csrfToken) {
-      return res.status(403).json({ error: 'CSRF token required' });
-    }
-    next();
-  };
-  app.use(csrfProtection);
-
-  // Set SameSite cookie policy (Issue #658)
-  app.use((req: express.Request, res: express.Response, next: express.NextFunction) => {
-    const originalSend = res.send;
-    res.send = function (data: any) {
-      res.setHeader(
-        'Set-Cookie',
-        (res.getHeader('Set-Cookie') || []).map((cookie: string) => {
-          if (!cookie.includes('SameSite')) {
-            return `${cookie}; SameSite=Strict; Secure; HttpOnly`;
-          }
-          return cookie;
-        }),
-      );
-      return originalSend.call(this, data);
-    };
-    next();
-  });
 
   // Request size guard before body parsing (Issue #274)
   app.use(requestSizeGuard(1_048_576)); // 1 MB
 
-  // Explicit request body size limits (Issue #659)
   app.use(express.json({ limit: '1mb' }));
-  app.use(express.urlencoded({ limit: '1mb', extended: true }));
-  app.use(express.raw({ limit: '1mb', type: 'application/octet-stream' }));
-
-  // HTTP Parameter Pollution protection — last duplicate query parameter wins
-  app.use(hpp());
   app.use(networkRouter);
-
-  // Cookie parsing — enables session cookie authentication (cookieAuth middleware)
-  // Uses COOKIE_SECRET env var for HMAC signing if provided
-  app.use(cookieParser(COOKIE_CONFIG.secret || undefined));
 
   // Request context FIRST (generates requestId + start time for correlation)
   app.use(requestContext);
-
-  // Session cookie authentication — complements X-Api-Key header auth
-  // Validates signed cookies and attaches SessionContext to req.session
-  app.use(sessionCookieAuth());
-
-  // Request timeout — prevents long-running queries from hanging indefinitely
-  // Applied early so timeout is enforced for all subsequent middleware/routes
-  app.use(requestTimeout());
 
   // Auth must resolve before rate limiting so tier is known
   app.use(apiKeyAuth);
@@ -259,12 +152,6 @@ export function createApp(options: AppOptions): express.Express {
 
   app.use('/api/graphql', yogaHandler as unknown as express.RequestHandler);
 
-  app.use('/api', versioningMiddleware, (req, res, next) => {
-    if (!req.url.startsWith('/v1/') && req.url !== '/v1') {
-      req.url = '/v1' + (req.url.startsWith('/') ? req.url : '/' + req.url);
-    }
-    next();
-  });
   app.use('/api/v1', router);
   app.use('/api/billing', billingRouter);
 
@@ -337,21 +224,7 @@ export function createApp(options: AppOptions): express.Express {
     res.json(liveness);
   });
 
-  // /healthz — Kubernetes liveness probe (Issue #704)
-  // Returns 200 while the process is alive; 503 during graceful shutdown.
-  // K8s probe config: initialDelaySeconds: 15, periodSeconds: 20, failureThreshold: 3
-  app.get('/healthz', (_req, res) => {
-    if (isShuttingDown()) {
-      return res.status(503).json({ status: 'dead', reason: 'shutting_down' });
-    }
-
-    const liveness = getLivenessStatus(serviceStartTime);
-    res.json(liveness);
-  });
-
   // Readiness probe - detailed check if service can handle traffic
-  // /readyz — Kubernetes readiness probe (Issue #704)
-  // K8s probe config: initialDelaySeconds: 10, periodSeconds: 10, failureThreshold: 3
   app.get('/readyz', (_req, res) => {
     if (isShuttingDown()) {
       return res.status(503).json({ status: 'not_ready', reason: 'shutting_down' });

@@ -1,6 +1,6 @@
-import { EventEmitter } from 'events';
 import { prismaWrite as prisma } from '../db';
 import { logger } from '../logger';
+import { eventBus, EventNames } from '../events/eventBus';
 
 export interface FeedMessage {
   channelName: string;
@@ -9,7 +9,7 @@ export interface FeedMessage {
   timestamp: Date;
 }
 
-class FeedPublisher extends EventEmitter {
+class FeedPublisher {
   private sequenceCounter = 0;
 
   async publish(message: FeedMessage) {
@@ -29,8 +29,8 @@ class FeedPublisher extends EventEmitter {
         },
       });
 
-      // Emit to real-time subscribers
-      this.emit('message', {
+      // Publish to the event bus so subscribers across all instances receive it
+      await eventBus.publish(EventNames.FeedMessage, {
         ...message,
         sequence: this.sequenceCounter,
         indexedAt: storedMessage.indexedAt,

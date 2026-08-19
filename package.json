@@ -3,6 +3,9 @@
   "version": "1.0.0",
   "description": "Human-readable Soroban smart contract block explorer backend",
   "main": "dist/index.js",
+  "workspaces": [
+    "packages/*"
+  ],
   "scripts": {
     "dev": "ts-node-dev --respawn --transpile-only src/index.ts",
     "dev:testnet": "STELLAR_NETWORK=testnet ts-node-dev --respawn --transpile-only src/index.ts",
@@ -46,6 +49,7 @@
     "prepare": "husky",
     "validate-routes": "ts-node scripts/validate-routes.ts",
     "audit:indexes": "ts-node scripts/audit-indexes.ts",
+    "audit:cycles": "ts-node -P tsconfig.scripts.json scripts/detect-import-cycles.ts",
     "test:routes": "vitest run tests/orphaned-routers-integration.test.ts",
     "lint:errors": "eslint src/api",
     "lint:error-handling": "eslint 'src/api/**/*.ts' --rule 'error-handling/require-async-handler: error' --max-warnings 0",
@@ -83,6 +87,7 @@
     "@opentelemetry/api": "1.9.0",
     "@prisma/client": "^5.10.0",
     "@prisma/engines": "^5.10.0",
+    "@soroban-explorer/client": "1.0.0",
     "@stellar/stellar-sdk": "^12.0.0",
     "@types/jsonwebtoken": "^9.0.10",
     "@types/node-cron": "^3.0.11",

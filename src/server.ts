@@ -3,7 +3,7 @@
  *
  * Wraps the Express app in a Node http.Server and attaches the WebSocket
  * upgrades. Optional WebSocket endpoints (privacy, composability, arbitrage)
- * are gated behind feature flags.
+ * are gated behind feature flags; the audit WebSocket is always attached.
  */
 
 import { createServer, Server } from 'http';
@@ -14,6 +14,7 @@ import { attachWebSocketServer } from './ws/eventBroadcaster';
 import { attachPrivacyWebSocket as attachPrivacyWebSocketReal } from './ws/privacyBroadcaster';
 import { attachComposabilityWebSocket as attachComposabilityWebSocketImpl } from './ws/composabilityBroadcaster';
 import { attachArbitrageWebSocket as attachArbitrageWebSocketImpl } from './ws/arbitrageBroadcaster';
+import { attachAuditWebSocket } from './ws/auditBroadcaster';
 
 export interface HttpServerHandle {
   httpServer: Server;
@@ -59,6 +60,9 @@ export function createHttpServer(app: Express, disabledServices: string[]): Http
     disabledServices.push('arbitrageWS');
     logger.debug('Arbitrage WebSocket disabled (ENABLE_ARBITRAGE_WS not set)');
   }
+
+  // /ws/audit — score alerts, finding alerts, signals
+  attachAuditWebSocket(httpServer);
 
   return { httpServer, wssRef };
 }
