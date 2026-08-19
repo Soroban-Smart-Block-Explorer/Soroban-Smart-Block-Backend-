@@ -14,7 +14,10 @@ export class FraudAlertSystem {
    * extracts features, computes risk via models zoo, registers alerts, and applies mitigations.
    * Assures SLA < 50ms p99 execution.
    */
-  async analyzeAndAct(entityId: string, alertType: 'MEV' | 'WASH_TRADING' | 'SYBIL' | 'SMART_CONTRACT_EXPLOIT'): Promise<FraudAlert> {
+  async analyzeAndAct(
+    entityId: string,
+    alertType: 'MEV' | 'WASH_TRADING' | 'SYBIL' | 'SMART_CONTRACT_EXPLOIT',
+  ): Promise<FraudAlert> {
     const startTime = Date.now();
     logger.info(`Starting fraud analysis for ${entityId} (Type: ${alertType})`);
 
@@ -27,17 +30,17 @@ export class FraudAlertSystem {
       create: {
         entityId,
         entityType: alertType === 'SMART_CONTRACT_EXPLOIT' ? 'CONTRACT' : 'WALLET',
-        features: features as any
+        features: features as any,
       },
       update: {
         features: features as any,
-        updatedAt: new Date()
-      }
+        updatedAt: new Date(),
+      },
     });
 
     // 2. Score via Model Zoo (with batched Triton-like inference, < 15ms)
     const scoringResult = await this.mlops.scoreTransaction(features);
-    
+
     const riskScore = scoringResult.activeScore;
     const severity = scoringResult.activeSeverity;
     const explanation = scoringResult.activeExplanation;
@@ -45,19 +48,22 @@ export class FraudAlertSystem {
     // 3. Persist Alert details (SHAP values + LIME explanations)
     const alert = await prismaWrite.fraudAlert.create({
       data: {
-        transactionHash: entityId.startsWith('0x') || entityId.length === 64 ? entityId : `tx_${Date.now()}`,
+        transactionHash:
+          entityId.startsWith('0x') || entityId.length === 64 ? entityId : `tx_${Date.now()}`,
         targetAddress: entityId,
         riskScore,
         severity,
         alertType,
         explanation: explanation as any,
-        mitigationApplied: false
-      }
+        mitigationApplied: false,
+      },
     });
 
     // 4. Hierarchical Alert and Automated Mitigations
     const duration = Date.now() - startTime;
-    logger.info(`Fraud analysis completed in ${duration}ms. Severity: ${severity}. Risk: ${riskScore}`);
+    logger.info(
+      `Fraud analysis completed in ${duration}ms. Severity: ${severity}. Risk: ${riskScore}`,
+    );
 
     await this.applyMitigation(severity, entityId, alert.id, explanation.limeExplanation);
 
@@ -65,7 +71,7 @@ export class FraudAlertSystem {
     if (severity === 'HIGH' || severity === 'CRITICAL') {
       await prismaWrite.fraudAlert.update({
         where: { id: alert.id },
-        data: { mitigationApplied: true }
+        data: { mitigationApplied: true },
       });
     }
 
@@ -79,27 +85,41 @@ export class FraudAlertSystem {
    * - HIGH: Auto-freeze target address in compliance ledger.
    * - CRITICAL: Auto-freeze + Halt contract interactions + Create Incident Report.
    */
-  private async applyMitigation(severity: FraudSeverity, address: string, alertId: string, details: string): Promise<void> {
+  private async applyMitigation(
+    severity: FraudSeverity,
+    address: string,
+    alertId: string,
+    details: string,
+  ): Promise<void> {
     switch (severity) {
       case 'LOW':
         logger.info(`[Hierarchical Alert] LOW severity: Alert logged for ${address}.`);
         break;
 
       case 'MEDIUM':
-        logger.info(`[Hierarchical Alert] MEDIUM severity: Flagged ${address} for manual compliance investigator review.`);
+        logger.info(
+          `[Hierarchical Alert] MEDIUM severity: Flagged ${address} for manual compliance investigator review.`,
+        );
         // Already registered in fraud_alerts table, which UI monitors
         break;
 
       case 'HIGH':
-        logger.warn(`[Hierarchical Alert] HIGH severity detected for ${address}! Triggering auto-freeze compliance order.`);
+        logger.warn(
+          `[Hierarchical Alert] HIGH severity detected for ${address}! Triggering auto-freeze compliance order.`,
+        );
         await this.freezeAddress(address, `Auto-compliance freeze from fraud alert ${alertId}`);
         break;
 
       case 'CRITICAL':
-        logger.error(`[Hierarchical Alert] CRITICAL severity detected for ${address}! Freezing key, creating Incident Report and halting contract interactions.`);
+        logger.error(
+          `[Hierarchical Alert] CRITICAL severity detected for ${address}! Freezing key, creating Incident Report and halting contract interactions.`,
+        );
         // Freeze compliance
-        await this.freezeAddress(address, `Emergency auto-freeze from critical fraud alert ${alertId}`);
-        
+        await this.freezeAddress(
+          address,
+          `Emergency auto-freeze from critical fraud alert ${alertId}`,
+        );
+
         // Halt contract state
         await this.haltContractState(address);
 
@@ -115,14 +135,14 @@ export class FraudAlertSystem {
               {
                 time: new Date().toISOString(),
                 event: 'Critical fraud alert triggered',
-                details
+                details,
               },
               {
                 time: new Date().toISOString(),
-                event: 'Emergency contract halt and asset lock applied'
-              }
-            ] as any
-          }
+                event: 'Emergency contract halt and asset lock applied',
+              },
+            ] as any,
+          },
         });
         break;
     }
@@ -141,16 +161,16 @@ export class FraudAlertSystem {
           active: true,
           frozenAtLedger,
           frozenAtTime: new Date(),
-          reason
+          reason,
         },
         update: {
           active: true,
           reason,
-          updatedAt: new Date()
-        }
+          updatedAt: new Date(),
+        },
       });
       invalidateFreezeCache();
-      
+
       // Log audit
       await prismaWrite.auditLog.create({
         data: {
@@ -158,8 +178,8 @@ export class FraudAlertSystem {
           action: 'CREATE_FREEZE',
           target: address,
           newState: JSON.stringify({ active: true, reason }),
-          reason
-        }
+          reason,
+        },
       });
       logger.info(`Successfully froze address ${address}`);
     } catch (err) {
@@ -175,13 +195,13 @@ export class FraudAlertSystem {
           contractAddress,
           isPaused: true,
           totalPauseCount: 1,
-          pauserType: 'governance_multisig'
+          pauserType: 'governance_multisig',
         },
         update: {
           isPaused: true,
           totalPauseCount: { increment: 1 },
-          updatedAt: new Date()
-        }
+          updatedAt: new Date(),
+        },
       });
       logger.info(`Successfully set Emergency State to PAUSED for contract ${contractAddress}`);
     } catch (err) {

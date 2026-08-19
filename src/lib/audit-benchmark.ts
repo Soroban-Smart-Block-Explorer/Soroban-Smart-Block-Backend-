@@ -22,14 +22,7 @@ import { cacheGet, cacheSet } from '../cache';
 // ── Types ──────────────────────────────────────────────────────────────────────
 
 export type ContractCategory =
-  | 'token'
-  | 'dex'
-  | 'nft'
-  | 'lending'
-  | 'staking'
-  | 'bridge'
-  | 'governance'
-  | 'other';
+  'token' | 'dex' | 'nft' | 'lending' | 'staking' | 'bridge' | 'governance' | 'other';
 
 export type TvlBucket =
   | 'micro' // < $10 K

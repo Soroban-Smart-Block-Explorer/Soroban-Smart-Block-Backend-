@@ -1,4 +1,5 @@
 import { prismaRead, prismaWrite } from '../../db';
+import { logger } from '../../logger';
 import { computeCompositePrice } from './composite-price';
 import { updateStablecoinMonitoring, autoDetectStablecoin } from './stablecoin-peg';
 import { discoverExternalPrice } from './external-api-source';
@@ -38,7 +39,7 @@ export async function runActivePriceUpdate(): Promise<void> {
       WHERE "updatedAt" < NOW() - INTERVAL '5 minutes'
     `);
   } catch (err) {
-    console.error('[PriceUpdater] Active update error:', err);
+    logger.error('[PriceUpdater] Active update error:', { error: err });
   } finally {
     isRunning = false;
   }
@@ -57,7 +58,7 @@ export async function runSlowPriceUpdate(): Promise<void> {
       await Promise.allSettled(batch.map((t) => computeCompositePrice(t.address, t.tokenSymbol)));
     }
   } catch (err) {
-    console.error('[PriceUpdater] Slow update error:', err);
+    logger.error('[PriceUpdater] Slow update error:', { error: err });
   }
 }
 
@@ -106,12 +107,12 @@ export async function runExternalApiUpdate(): Promise<void> {
       }
     }
   } catch (err) {
-    console.error('[PriceUpdater] External API update error:', err);
+    logger.error('[PriceUpdater] External API update error:', { error: err });
   }
 }
 
 export async function startPriceUpdater(): Promise<void> {
-  console.log('[PriceUpdater] Starting background price updates...');
+  logger.info('[PriceUpdater] Starting background price updates...');
 
   if (activeInterval) clearInterval(activeInterval);
   if (slowInterval) clearInterval(slowInterval);
@@ -126,7 +127,7 @@ export async function startPriceUpdater(): Promise<void> {
   externalInterval = setInterval(runExternalApiUpdate, EXTERNAL_API_INTERVAL_MS);
   setTimeout(() => runExternalApiUpdate(), 10_000);
 
-  console.log('[PriceUpdater] Background price updates started');
+  logger.info('[PriceUpdater] Background price updates started');
 }
 
 export async function runStablecoinUpdate(): Promise<void> {
@@ -140,15 +141,15 @@ export async function runStablecoinUpdate(): Promise<void> {
 
     for (const token of tokens) {
       if (token.tokenSymbol) {
-        const existing = await prismaRead.tokenMarketData.findUnique({
-          where: { tokenAddress: token.address },
+        const existing = await prismaRead.token.findUnique({
+          where: { address: token.address },
         });
 
         if (!existing) {
           const isStable = await autoDetectStablecoin(token.address);
-          await prismaWrite.tokenMarketData.create({
+          await prismaWrite.token.create({
             data: {
-              tokenAddress: token.address,
+              address: token.address,
               symbol: token.tokenSymbol,
               isStablecoin: isStable,
               tags: isStable ? ['stablecoin'] : [],
@@ -158,7 +159,7 @@ export async function runStablecoinUpdate(): Promise<void> {
       }
     }
   } catch (err) {
-    console.error('[PriceUpdater] Stablecoin update error:', err);
+    logger.error('[PriceUpdater] Stablecoin update error:', { error: err });
   }
 }
 
@@ -179,5 +180,5 @@ export function stopPriceUpdater(): void {
     clearInterval(externalInterval);
     externalInterval = null;
   }
-  console.log('[PriceUpdater] Background price updates stopped');
+  logger.info('[PriceUpdater] Background price updates stopped');
 }

@@ -1,6 +1,7 @@
 import { Prisma } from '@prisma/client';
 import { Router, Request, Response } from 'express';
 import multer from 'multer';
+import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
 import { z } from 'zod';
@@ -19,14 +20,73 @@ import { background } from '../utils/background';
 
 export const verifyRouter = Router();
 
+// ── upload validation helpers ─────────────────────────────────────────────────
+// Filenames, extensions and client-supplied MIME types are all fully
+// attacker-controlled — the fileFilter checks below are a cheap first pass,
+// but the authoritative check is the magic-byte scan performed once the file
+// is on disk (see readHeader/isGzip/isZip/isWasm).
+
+const SAFE_FILENAME_RE = /^[A-Za-z0-9][A-Za-z0-9._ -]{0,254}$/;
+function isSafeFilename(name: string): boolean {
+  return SAFE_FILENAME_RE.test(name) && !name.includes('..') && !name.includes('\0');
+}
+
+const ARCHIVE_MIME_ALLOWLIST = new Set([
+  'application/gzip',
+  'application/x-gzip',
+  'application/zip',
+  'application/x-zip-compressed',
+  'application/x-tar',
+  'application/octet-stream', // many browsers/clients send this for .tar.gz / .zip
+]);
+
+const WASM_MIME_ALLOWLIST = new Set(['application/wasm', 'application/octet-stream']);
+
+const GZIP_MAGIC = Buffer.from([0x1f, 0x8b]);
+const ZIP_MAGIC = Buffer.from([0x50, 0x4b, 0x03, 0x04]);
+const WASM_MAGIC = Buffer.from([0x00, 0x61, 0x73, 0x6d]);
+
+async function readHeader(filePath: string, length: number): Promise<Buffer> {
+  const fh = await fs.promises.open(filePath, 'r');
+  try {
+    const buf = Buffer.alloc(length);
+    const { bytesRead } = await fh.read(buf, 0, length, 0);
+    return buf.subarray(0, bytesRead);
+  } finally {
+    await fh.close();
+  }
+}
+
+function isGzip(buf: Buffer): boolean {
+  return buf.length >= 2 && buf[0] === GZIP_MAGIC[0] && buf[1] === GZIP_MAGIC[1];
+}
+function isZip(buf: Buffer): boolean {
+  return buf.length >= 4 && buf.subarray(0, 4).equals(ZIP_MAGIC);
+}
+function isWasm(buf: Buffer): boolean {
+  return buf.length >= 4 && buf.subarray(0, 4).equals(WASM_MAGIC);
+}
+
 // Store uploads in OS temp dir; 50 MB limit
 const upload = multer({
   dest: os.tmpdir(),
   limits: { fileSize: 50 * 1024 * 1024 },
-  fileFilter: (_req, file, cb: any) => {
-    const allowed = ['.tar.gz', '.tgz', '.zip'];
-    const ok = allowed.some((ext) => file.originalname.endsWith(ext));
-    cb(ok ? null : new Error('Only .tar.gz / .zip archives are accepted'), ok);
+  fileFilter: (_req, file, cb) => {
+    if (!isSafeFilename(file.originalname)) {
+      cb(new Error('Invalid filename'));
+      return;
+    }
+    const allowedExt = ['.tar.gz', '.tgz', '.zip'];
+    const hasAllowedExt = allowedExt.some((ext) => file.originalname.toLowerCase().endsWith(ext));
+    if (!hasAllowedExt) {
+      cb(new Error('Only .tar.gz / .zip archives are accepted'));
+      return;
+    }
+    if (!ARCHIVE_MIME_ALLOWLIST.has(file.mimetype)) {
+      cb(new Error(`Unsupported content type: ${file.mimetype}`));
+      return;
+    }
+    cb(null, true);
   },
 });
 
@@ -53,6 +113,22 @@ verifyRouter.post(
 
     const { contractAddress, toolchain = 'soroban-cli@0.9.4' } = parsed.data;
 
+    // Authoritative content check — filename and client-supplied mimetype are
+    // both spoofable, so verify the real archive format from its magic bytes.
+    const header = await readHeader(req.file.path, 4);
+    const detectedMimeType = isGzip(header)
+      ? 'application/gzip'
+      : isZip(header)
+        ? 'application/zip'
+        : null;
+    if (!detectedMimeType) {
+      await cleanupDir(req.file.path);
+      res
+        .status(400)
+        .json({ error: 'File content does not match a valid .tar.gz or .zip archive' });
+      return;
+    }
+
     // Hash the raw archive for deduplication / audit
     const uploadedHash = hashFile(req.file.path);
 
@@ -62,7 +138,7 @@ verifyRouter.post(
     });
 
     // Run compilation asynchronously — do not await
-    runVerification(job.id, req.file.path, req.file.mimetype, toolchain, contractAddress).catch(
+    runVerification(job.id, req.file.path, detectedMimeType, toolchain, contractAddress).catch(
       () => {
         // errors are persisted inside runVerification
       },
@@ -197,9 +273,20 @@ async function fetchOnChainHash(contractAddress: string): Promise<string> {
 const wasmUpload = multer({
   dest: os.tmpdir(),
   limits: { fileSize: 10 * 1024 * 1024 },
-  fileFilter: (_req, file, cb: any) => {
-    const ok = file.originalname.endsWith('.wasm') || file.mimetype === 'application/wasm';
-    cb(ok ? null : new Error('Only .wasm files are accepted'), ok);
+  fileFilter: (_req, file, cb) => {
+    if (!isSafeFilename(file.originalname)) {
+      cb(new Error('Invalid filename'));
+      return;
+    }
+    if (!file.originalname.toLowerCase().endsWith('.wasm')) {
+      cb(new Error('Only .wasm files are accepted'));
+      return;
+    }
+    if (!WASM_MIME_ALLOWLIST.has(file.mimetype)) {
+      cb(new Error(`Unsupported content type: ${file.mimetype}`));
+      return;
+    }
+    cb(null, true);
   },
 });
 
@@ -224,7 +311,6 @@ verifyRouter.post(
 
     let wasmBytes: Buffer;
     try {
-      const fs = await import('fs');
       wasmBytes = await fs.promises.readFile(req.file.path);
     } catch (err: any) {
       res.status(500).json({ error: 'Failed to read uploaded file', detail: String(err) });
@@ -232,9 +318,15 @@ verifyRouter.post(
     } finally {
       // Best-effort cleanup of temp file
       background('verify.cleanupTempFile', async () => {
-        const fs = await import('fs');
         await fs.promises.unlink(req.file!.path);
       });
+    }
+
+    // Authoritative content check — extension and client-supplied mimetype are
+    // both spoofable, so verify the real Wasm magic header before parsing.
+    if (!isWasm(wasmBytes)) {
+      res.status(400).json({ error: 'File content is not a valid Wasm binary' });
+      return;
     }
 
     let result;

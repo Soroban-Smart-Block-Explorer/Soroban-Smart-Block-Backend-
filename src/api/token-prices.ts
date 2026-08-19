@@ -78,6 +78,7 @@ tokenPricesRouter.get(
         timestamp: { gte: fromDate, lte: toDate },
       },
       orderBy: { timestamp: 'asc' },
+      select: { timestamp: true, priceUsd: true, volume24hUsd: true },
     });
 
     const bucketSize = getIntervalMs(interval);
@@ -281,7 +282,7 @@ tokenPricesRouter.get(
 
     const [price, marketData, tokenPrice] = await Promise.all([
       computeCompositePrice(address, token.tokenSymbol),
-      prismaRead.tokenMarketData.findUnique({ where: { tokenAddress: address } }),
+      prismaRead.token.findUnique({ where: { address: address } }),
       prismaRead.tokenPrice.findUnique({ where: { tokenAddress: address } }),
     ]);
 
@@ -331,8 +332,8 @@ tokenPricesRouter.get(
   asyncHandler(async (req: Request, res: Response) => {
     const { address } = req.params;
 
-    const marketData = await prismaRead.tokenMarketData.findUnique({
-      where: { tokenAddress: address },
+    const marketData = await prismaRead.token.findUnique({
+      where: { address: address },
     });
 
     if (!marketData || !marketData.isStablecoin) {
@@ -407,11 +408,9 @@ tokenPricesRouter.get(
     });
 
     if (history.length < 20) {
-      return res
-        .status(400)
-        .json({
-          error: 'Insufficient price history for indicators (need at least 20 data points)',
-        });
+      return res.status(400).json({
+        error: 'Insufficient price history for indicators (need at least 20 data points)',
+      });
     }
 
     const prices = history.map((h) => Number(h.priceUsd));

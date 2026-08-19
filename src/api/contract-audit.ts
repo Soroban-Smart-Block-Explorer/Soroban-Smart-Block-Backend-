@@ -165,7 +165,7 @@ function formatSummary(cert: Record<string, unknown>) {
 contractAuditRouter.get(
   '/',
   validateAddressParam('address'),
-  async (req: Request, res: Response) => {
+  asyncHandler(async (req: Request, res: Response) => {
     try {
       const { address } = req.params;
       const cacheKey = `contract-audit:latest:${address}`;
@@ -202,6 +202,21 @@ contractAuditRouter.get(
       const findings = await prismaRead.auditFinding.findMany({
         where: { certificateId: cert.id },
         orderBy: { createdAt: 'asc' },
+        select: {
+          id: true,
+          category: true,
+          severity: true,
+          title: true,
+          detail: true,
+          description: true,
+          recommendation: true,
+          status: true,
+          cweId: true,
+          cvssScore: true,
+          txHash: true,
+          resolvedAt: true,
+          createdAt: true,
+        },
       });
 
       const result = formatFull(
@@ -214,7 +229,7 @@ contractAuditRouter.get(
     } catch (e) {
       res.status(500).json({ error: String(e) });
     }
-  },
+  }),
 );
 
 // ── GET /:address/audit/history — all versions ────────────────────────────────
@@ -228,7 +243,7 @@ const historyQuerySchema = z.object({
 contractAuditRouter.get(
   '/history',
   validateAddressParam('address'),
-  async (req: Request, res: Response) => {
+  asyncHandler(async (req: Request, res: Response) => {
     try {
       const { address } = req.params;
       const q = historyQuerySchema.parse(req.query);
@@ -288,7 +303,7 @@ contractAuditRouter.get(
       if (e instanceof z.ZodError) return res.status(400).json({ error: e.errors });
       res.status(500).json({ error: String(e) });
     }
-  },
+  }),
 );
 
 // ── GET /:address/audit/delta?fromVersion=N&toVersion=M ──────────────────────
@@ -301,7 +316,7 @@ const deltaQuerySchema = z.object({
 contractAuditRouter.get(
   '/delta',
   validateAddressParam('address'),
-  async (req: Request, res: Response) => {
+  asyncHandler(async (req: Request, res: Response) => {
     try {
       const { address } = req.params;
       const { fromVersion, toVersion } = deltaQuerySchema.parse(req.query);
@@ -473,7 +488,7 @@ contractAuditRouter.get(
       if (e instanceof z.ZodError) return res.status(400).json({ error: e.errors });
       res.status(500).json({ error: String(e) });
     }
-  },
+  }),
 );
 
 // ── GET /:address/audit/pdf — downloadable professional PDF report ────────────
@@ -490,7 +505,7 @@ const pdfQuerySchema = z.object({
 contractAuditRouter.get(
   '/pdf',
   validateAddressParam('address'),
-  async (req: Request, res: Response) => {
+  asyncHandler(async (req: Request, res: Response) => {
     try {
       const { address } = req.params;
       const { version, lang } = pdfQuerySchema.parse(req.query);
@@ -530,7 +545,7 @@ contractAuditRouter.get(
       logger.error('PDF generation failed', { error: String(e) });
       res.status(500).json({ error: 'PDF generation failed. ' + String(e) });
     }
-  },
+  }),
 );
 
 // ── GET /:address/audit/:version — specific version ───────────────────────────
@@ -538,7 +553,7 @@ contractAuditRouter.get(
 contractAuditRouter.get(
   '/:version',
   validateAddressParam('address'),
-  async (req: Request, res: Response) => {
+  asyncHandler(async (req: Request, res: Response) => {
     try {
       const { address } = req.params;
       const version = parseInt(req.params.version, 10);
@@ -562,6 +577,21 @@ contractAuditRouter.get(
       const findings = await prismaRead.auditFinding.findMany({
         where: { certificateId: cert.id },
         orderBy: { createdAt: 'asc' },
+        select: {
+          id: true,
+          category: true,
+          severity: true,
+          title: true,
+          detail: true,
+          description: true,
+          recommendation: true,
+          status: true,
+          cweId: true,
+          cvssScore: true,
+          txHash: true,
+          resolvedAt: true,
+          createdAt: true,
+        },
       });
 
       res.json(
@@ -573,7 +603,7 @@ contractAuditRouter.get(
     } catch (e) {
       res.status(500).json({ error: String(e) });
     }
-  },
+  }),
 );
 
 // ── POST /:address/audit/refresh — manual re-audit trigger ────────────────────
@@ -587,7 +617,7 @@ const refreshSchema = z.object({
 contractAuditRouter.post(
   '/refresh',
   validateAddressParam('address'),
-  async (req: Request, res: Response) => {
+  asyncHandler(async (req: Request, res: Response) => {
     try {
       const { address } = req.params;
       const { mode, anchor, reason } = refreshSchema.parse(req.body);
@@ -648,7 +678,7 @@ contractAuditRouter.post(
       if (e instanceof z.ZodError) return res.status(400).json({ error: e.errors });
       res.status(500).json({ error: String(e) });
     }
-  },
+  }),
 );
 
 // ── GET /:address/audit/badge.svg — embeddable SVG badge ─────────────────────
@@ -671,7 +701,7 @@ const badgeStyleSchema = z.object({
 contractAuditRouter.get(
   '/badge.svg',
   validateAddressParam('address'),
-  async (req: Request, res: Response) => {
+  asyncHandler(async (req: Request, res: Response) => {
     try {
       const { address } = req.params;
       const { style, compact } = badgeStyleSchema.parse(req.query);
@@ -719,7 +749,7 @@ contractAuditRouter.get(
       if (e instanceof z.ZodError) return res.status(400).json({ error: e.errors });
       res.status(500).json({ error: String(e) });
     }
-  },
+  }),
 );
 
 // ── GET /:address/audit/score-history?days=90 ─────────────────────────────────
@@ -745,7 +775,7 @@ const scoreHistorySchema = z.object({
 contractAuditRouter.get(
   '/score-history',
   validateAddressParam('address'),
-  async (req: Request, res: Response) => {
+  asyncHandler(async (req: Request, res: Response) => {
     try {
       const { address } = req.params;
       const { days, grain } = scoreHistorySchema.parse(req.query);
@@ -929,7 +959,7 @@ contractAuditRouter.get(
       if (e instanceof z.ZodError) return res.status(400).json({ error: e.errors });
       res.status(500).json({ error: String(e) });
     }
-  },
+  }),
 );
 
 // ── GET /:address/audit/alerts — list active alert subscriptions ──────────────
@@ -937,7 +967,7 @@ contractAuditRouter.get(
 contractAuditRouter.get(
   '/alerts',
   validateAddressParam('address'),
-  async (req: Request, res: Response) => {
+  asyncHandler(async (req: Request, res: Response) => {
     try {
       const { address } = req.params;
       const userId = req.query.userId as string | undefined;
@@ -959,7 +989,7 @@ contractAuditRouter.get(
     } catch (e) {
       res.status(500).json({ error: String(e) });
     }
-  },
+  }),
 );
 
 // ── POST /:address/audit/alerts — create alert subscription ──────────────────
@@ -983,7 +1013,7 @@ const alertCreateSchema = z.object({
 contractAuditRouter.post(
   '/alerts',
   validateAddressParam('address'),
-  async (req: Request, res: Response) => {
+  asyncHandler(async (req: Request, res: Response) => {
     try {
       const { address } = req.params;
       const data = alertCreateSchema.parse(req.body);
@@ -1019,7 +1049,7 @@ contractAuditRouter.post(
       if (e instanceof z.ZodError) return res.status(400).json({ error: e.errors });
       res.status(500).json({ error: String(e) });
     }
-  },
+  }),
 );
 
 // ── DELETE /:address/audit/alerts/:subscriptionId ─────────────────────────────
@@ -1027,7 +1057,7 @@ contractAuditRouter.post(
 contractAuditRouter.delete(
   '/alerts/:subscriptionId',
   validateAddressParam('address'),
-  async (req: Request, res: Response) => {
+  asyncHandler(async (req: Request, res: Response) => {
     try {
       const { address, subscriptionId } = req.params;
 
@@ -1048,7 +1078,7 @@ contractAuditRouter.delete(
     } catch (e) {
       res.status(500).json({ error: String(e) });
     }
-  },
+  }),
 );
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -1056,6 +1086,7 @@ contractAuditRouter.delete(
 // ═══════════════════════════════════════════════════════════════════════════
 
 import { submitExternalAudit } from '../lib/auditor-service';
+import { asyncHandler } from '../middleware/asyncHandler';
 
 // ── POST /:address/audit/external — submit external audit ─────────────────────
 //
@@ -1104,7 +1135,7 @@ const externalSubmitSchema = z.object({
 contractAuditRouter.post(
   '/external',
   validateAddressParam('address'),
-  async (req: Request, res: Response) => {
+  asyncHandler(async (req: Request, res: Response) => {
     try {
       const { address } = req.params;
       const data = externalSubmitSchema.parse(req.body);
@@ -1168,7 +1199,7 @@ contractAuditRouter.post(
       if (e instanceof z.ZodError) return res.status(400).json({ error: e.errors });
       res.status(500).json({ error: String(e) });
     }
-  },
+  }),
 );
 
 // ── GET /:address/audit/external — list external audits for contract ──────────
@@ -1183,7 +1214,7 @@ const externalListSchema = z.object({
 contractAuditRouter.get(
   '/external',
   validateAddressParam('address'),
-  async (req: Request, res: Response) => {
+  asyncHandler(async (req: Request, res: Response) => {
     try {
       const { address } = req.params;
       const q = externalListSchema.parse(req.query);
@@ -1261,7 +1292,7 @@ contractAuditRouter.get(
       if (e instanceof z.ZodError) return res.status(400).json({ error: e.errors });
       res.status(500).json({ error: String(e) });
     }
-  },
+  }),
 );
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -1293,7 +1324,7 @@ const fvTriggerSchema = z.object({
 contractAuditRouter.post(
   '/formal-verification',
   validateAddressParam('address'),
-  async (req: Request, res: Response) => {
+  asyncHandler(async (req: Request, res: Response) => {
     try {
       const { address } = req.params;
       const data = fvTriggerSchema.parse(req.body);
@@ -1368,7 +1399,7 @@ contractAuditRouter.post(
       if (e instanceof z.ZodError) return res.status(400).json({ error: e.errors });
       res.status(500).json({ error: String(e) });
     }
-  },
+  }),
 );
 
 // ── GET /:address/audit/formal-verification — list all jobs for contract ───────
@@ -1376,7 +1407,7 @@ contractAuditRouter.post(
 contractAuditRouter.get(
   '/formal-verification',
   validateAddressParam('address'),
-  async (req: Request, res: Response) => {
+  asyncHandler(async (req: Request, res: Response) => {
     try {
       const { address } = req.params;
       const tool = req.query.tool as string | undefined;
@@ -1392,6 +1423,23 @@ contractAuditRouter.get(
           where,
           orderBy: { createdAt: 'desc' },
           take: limit,
+          select: {
+            id: true,
+            tool: true,
+            status: true,
+            passed: true,
+            propertyCount: true,
+            provenCount: true,
+            violatedCount: true,
+            unknownCount: true,
+            coveragePercent: true,
+            reportUrl: true,
+            durationSeconds: true,
+            triggeredBy: true,
+            startedAt: true,
+            completedAt: true,
+            createdAt: true,
+          },
         }),
         prismaRead.formalVerificationJob.count({ where }),
       ]);
@@ -1436,7 +1484,7 @@ contractAuditRouter.get(
     } catch (e) {
       res.status(500).json({ error: String(e) });
     }
-  },
+  }),
 );
 
 // ── GET /:address/audit/formal-verification/:jobId — single job detail ─────────
@@ -1444,7 +1492,7 @@ contractAuditRouter.get(
 contractAuditRouter.get(
   '/formal-verification/:jobId',
   validateAddressParam('address'),
-  async (req: Request, res: Response) => {
+  asyncHandler(async (req: Request, res: Response) => {
     try {
       const job = await prismaRead.formalVerificationJob.findUnique({
         where: { id: req.params.jobId },
@@ -1485,7 +1533,7 @@ contractAuditRouter.get(
     } catch (e) {
       res.status(500).json({ error: String(e) });
     }
-  },
+  }),
 );
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -1497,7 +1545,7 @@ contractAuditRouter.get(
 contractAuditRouter.get(
   '/benchmark',
   validateAddressParam('address'),
-  async (req: Request, res: Response) => {
+  asyncHandler(async (req: Request, res: Response) => {
     try {
       const { address } = req.params;
 
@@ -1529,7 +1577,7 @@ contractAuditRouter.get(
     } catch (e) {
       res.status(500).json({ error: String(e) });
     }
-  },
+  }),
 );
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -1560,7 +1608,7 @@ const remediateSchema = z.object({
 contractAuditRouter.post(
   '/:findingId/remediate',
   validateAddressParam('address'),
-  async (req: Request, res: Response) => {
+  asyncHandler(async (req: Request, res: Response) => {
     try {
       const { address, findingId } = req.params;
       const { applyPatch, funcName } = remediateSchema.parse(req.body);
@@ -1653,5 +1701,5 @@ contractAuditRouter.post(
       if (e instanceof z.ZodError) return res.status(400).json({ error: e.errors });
       res.status(500).json({ error: String(e) });
     }
-  },
+  }),
 );

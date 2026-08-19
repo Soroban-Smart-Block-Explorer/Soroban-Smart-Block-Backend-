@@ -62,8 +62,8 @@ export function getLineage(jobId: string): EtlLineageRecord | undefined {
 }
 
 export function listLineage(limit = 50): EtlLineageRecord[] {
-  const all = [...lineageStore.values()].sort(
-    (a, b) => b.jobStartedAt.localeCompare(a.jobStartedAt),
+  const all = [...lineageStore.values()].sort((a, b) =>
+    b.jobStartedAt.localeCompare(a.jobStartedAt),
   );
   return all.slice(0, limit);
 }
@@ -181,9 +181,7 @@ export function checkNullsInBatch(
  * Validate that contract_id values in a batch exist in the Contract table.
  * Returns a sample of unresolved IDs (max 20).
  */
-export async function checkForeignKeys(
-  contractIds: string[],
-): Promise<QualityCheckResult> {
+export async function checkForeignKeys(contractIds: string[]): Promise<QualityCheckResult> {
   const checkName = 'foreign_key_check:contract_id';
   const unique = [...new Set(contractIds.filter(Boolean))];
 
@@ -257,7 +255,11 @@ export function checkFileSizes(files: IcebergDataFile[]): QualityCheckResult {
     message: passed
       ? `Average file size ${(avgSize / 1024 / 1024).toFixed(1)} MB meets target`
       : `Average file size ${(avgSize / 1024 / 1024).toFixed(1)} MB below 256 MB target — compaction recommended`,
-    details: { avgSizeMb: (avgSize / 1024 / 1024).toFixed(1), smallFileCount: smallFiles.length, totalFiles: files.length },
+    details: {
+      avgSizeMb: (avgSize / 1024 / 1024).toFixed(1),
+      smallFileCount: smallFiles.length,
+      totalFiles: files.length,
+    },
     checkedAt: new Date().toISOString(),
   };
 }
@@ -287,7 +289,10 @@ export async function runQualityChecks(
 
   const failures = results.filter((r) => !r.passed);
   if (failures.length) {
-    logger.warn('Data quality checks failed', { tableName, failedChecks: failures.map((f) => f.checkName) });
+    logger.warn('Data quality checks failed', {
+      tableName,
+      failedChecks: failures.map((f) => f.checkName),
+    });
   } else {
     logger.info('All data quality checks passed', { tableName, checks: results.length });
   }

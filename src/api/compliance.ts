@@ -266,15 +266,20 @@ complianceRouter.post(
   asyncHandler(async (req: Request, res: Response) => {
     const schema = z.object({
       listName: z.string().min(1).max(200),
-      entries: z.array(z.object({
-        entityType: z.string().default('individual'),
-        name: z.string().optional(),
-        address: z.string().optional(),
-        addressPattern: z.string().optional(),
-        aliases: z.array(z.string()).default([]),
-        program: z.string().optional(),
-        country: z.string().optional(),
-      })).min(1).max(10000),
+      entries: z
+        .array(
+          z.object({
+            entityType: z.string().default('individual'),
+            name: z.string().optional(),
+            address: z.string().optional(),
+            addressPattern: z.string().optional(),
+            aliases: z.array(z.string()).default([]),
+            program: z.string().optional(),
+            country: z.string().optional(),
+          }),
+        )
+        .min(1)
+        .max(10000),
     });
 
     const parsed = schema.safeParse(req.body);
@@ -283,7 +288,7 @@ complianceRouter.post(
     }
 
     const result = await compliance.importCustomList(
-      parsed.data.entries.map(e => ({
+      parsed.data.entries.map((e) => ({
         source: 'custom' as const,
         entityType: e.entityType,
         name: e.name,
@@ -354,7 +359,7 @@ complianceRouter.post(
       beneficiaryVasp: z.string().optional(),
       originatorInfo: z.record(z.unknown()).optional(),
       beneficiaryInfo: z.record(z.unknown()).optional(),
-      transferValue: z.string().min(1),
+      transferValue: z.number().positive(),
     });
 
     const parsed = schema.safeParse(req.body);
@@ -382,9 +387,9 @@ complianceRouter.post(
   asyncHandler(async (req: Request, res: Response) => {
     const schema = z.object({
       url: z.string().url(),
-      events: z.array(
-        z.enum(['match.found', 'list.updated', 'address.status_changed', 'match.reviewed']),
-      ).min(1),
+      events: z
+        .array(z.enum(['match.found', 'list.updated', 'address.status_changed', 'match.reviewed']))
+        .min(1),
       secret: z.string().optional(),
     });
 

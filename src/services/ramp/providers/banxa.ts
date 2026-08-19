@@ -36,7 +36,19 @@ const ASSET_MAP: Record<CryptoAsset, string> = {
   BTC: 'BTC',
 };
 
-const BLOCKED_COUNTRIES = new Set(['IR', 'KP', 'SY', 'CU', 'SD', 'MM', 'RU', 'BY', 'VE', 'AF', 'YE']);
+const BLOCKED_COUNTRIES = new Set([
+  'IR',
+  'KP',
+  'SY',
+  'CU',
+  'SD',
+  'MM',
+  'RU',
+  'BY',
+  'VE',
+  'AF',
+  'YE',
+]);
 
 function buildHmacAuth(method: string, path: string, body: string): string {
   const nonce = Date.now().toString();
@@ -45,11 +57,7 @@ function buildHmacAuth(method: string, path: string, body: string): string {
   return `Token ${API_KEY}:${nonce}:${sig}`;
 }
 
-async function banxaFetch<T>(
-  method: string,
-  path: string,
-  body?: object,
-): Promise<T> {
+async function banxaFetch<T>(method: string, path: string, body?: object): Promise<T> {
   const rawBody = body ? JSON.stringify(body) : '';
   const auth = buildHmacAuth(method, path, rawBody);
   const url = `${BASE_URL}${path}`;
@@ -192,10 +200,9 @@ export class BanxaAdapter implements RampProviderAdapter {
   }
 
   async initiateRefund(providerOrderId: string, amountUsd: number): Promise<RefundResult> {
-    await banxaFetch(
-      'DELETE',
-      `/api/orders/${providerOrderId}`,
-    ).catch((err) => logger.warn('[banxa] refund failed', { error: String(err) }));
+    await banxaFetch('DELETE', `/api/orders/${providerOrderId}`).catch((err) =>
+      logger.warn('[banxa] refund failed', { error: String(err) }),
+    );
 
     return {
       refundId: `refund-banxa-${providerOrderId}`,

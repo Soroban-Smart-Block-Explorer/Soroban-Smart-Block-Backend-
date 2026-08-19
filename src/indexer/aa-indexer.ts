@@ -105,8 +105,7 @@ export async function processAaTransaction(
 
   // 2. Fetch WASM indicators for contract-source accounts
   let wasmResult:
-    | (ReturnType<typeof extractWasmAaIndicators> & { threshold: number | null })
-    | null = null;
+    (ReturnType<typeof extractWasmAaIndicators> & { threshold: number | null }) | null = null;
   if (isContractAddress(sourceAccount)) {
     const contract = await prisma.contract.findUnique({
       where: { address: sourceAccount },

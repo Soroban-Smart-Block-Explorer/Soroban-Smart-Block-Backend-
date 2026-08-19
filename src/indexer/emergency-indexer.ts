@@ -179,8 +179,7 @@ export async function processEventForPause(event: {
   const eventType = isPause ? 'pause' : 'unpause';
   const decoded = event.decoded as Record<string, unknown> | null;
   const pauserAddress = (decoded?.pauser ?? decoded?.admin ?? decoded?.caller ?? null) as
-    | string
-    | null;
+    string | null;
   const reason = (decoded?.reason ?? null) as string | null;
 
   // Get or create emergency state
@@ -190,7 +189,7 @@ export async function processEventForPause(event: {
     update: {},
   });
 
-  let durationSeconds: bigint | null = null;
+  let durationSeconds: number | null = null;
 
   if (isUnpause && state.currentPauseId) {
     // Find the matching pause event to compute duration
@@ -198,8 +197,8 @@ export async function processEventForPause(event: {
       where: { id: state.currentPauseId },
     });
     if (pauseEv) {
-      durationSeconds = BigInt(
-        Math.round((event.ledgerCloseTime.getTime() - pauseEv.timestamp.getTime()) / 1000),
+      durationSeconds = Math.round(
+        (event.ledgerCloseTime.getTime() - pauseEv.timestamp.getTime()) / 1000,
       );
     }
   }

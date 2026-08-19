@@ -47,9 +47,7 @@ const OG_ALERT_URL = (region: string) =>
 // ── Types ─────────────────────────────────────────────────────────────────────
 
 export type IncidentTrigger =
-  | 'CRITICAL_FINDING_HIGH_TVL'
-  | 'SCORE_BELOW_THRESHOLD'
-  | 'CERT_SIGNATURE_FAILURE';
+  'CRITICAL_FINDING_HIGH_TVL' | 'SCORE_BELOW_THRESHOLD' | 'CERT_SIGNATURE_FAILURE';
 
 export interface IncidentContext {
   trigger: IncidentTrigger;

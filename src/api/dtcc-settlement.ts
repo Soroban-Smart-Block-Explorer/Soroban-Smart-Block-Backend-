@@ -49,70 +49,79 @@ const statusSchema = z.object({
 });
 
 // POST /dtcc-settlement — register a new settlement bridge record
-dtccSettlementRouter.post('/', async (req: Request, res: Response) => {
-  try {
-    const data = createSchema.parse(req.body);
-    const record = await prisma.dtccSettlementBridge.create({
-      data: {
-        ...data,
-        settlementDate: data.settlementDate ? new Date(data.settlementDate) : undefined,
-        ledgerCloseTime: new Date(data.ledgerCloseTime),
-      },
-    });
-    res.status(201).json(record);
-  } catch (e) {
-    res.status(400).json({ error: String(e) });
-  }
-});
+dtccSettlementRouter.post(
+  '/',
+  asyncHandler(async (req: Request, res: Response) => {
+    try {
+      const data = createSchema.parse(req.body);
+      const record = await prisma.dtccSettlementBridge.create({
+        data: {
+          ...data,
+          settlementDate: data.settlementDate ? new Date(data.settlementDate) : undefined,
+          ledgerCloseTime: new Date(data.ledgerCloseTime),
+        },
+      });
+      res.status(201).json(record);
+    } catch (e) {
+      res.status(400).json({ error: String(e) });
+    }
+  }),
+);
 
 // GET /dtcc-settlement — list with filters
-dtccSettlementRouter.get('/', async (req: Request, res: Response) => {
-  try {
-    const q = listSchema.parse(req.query);
-    const where = {
-      ...(q.securityId && { securityId: q.securityId }),
-      ...(q.securityType && { securityType: q.securityType }),
-      ...(q.seller && { sellerAddress: q.seller }),
-      ...(q.buyer && { buyerAddress: q.buyer }),
-      ...(q.status && { settlementStatus: q.status }),
-      ...((q.ledgerMin !== undefined || q.ledgerMax !== undefined) && {
-        ledgerSequence: {
-          ...(q.ledgerMin !== undefined && { gte: q.ledgerMin }),
-          ...(q.ledgerMax !== undefined && { lte: q.ledgerMax }),
-        },
-      }),
-    };
+dtccSettlementRouter.get(
+  '/',
+  asyncHandler(async (req: Request, res: Response) => {
+    try {
+      const q = listSchema.parse(req.query);
+      const where = {
+        ...(q.securityId && { securityId: q.securityId }),
+        ...(q.securityType && { securityType: q.securityType }),
+        ...(q.seller && { sellerAddress: q.seller }),
+        ...(q.buyer && { buyerAddress: q.buyer }),
+        ...(q.status && { settlementStatus: q.status }),
+        ...((q.ledgerMin !== undefined || q.ledgerMax !== undefined) && {
+          ledgerSequence: {
+            ...(q.ledgerMin !== undefined && { gte: q.ledgerMin }),
+            ...(q.ledgerMax !== undefined && { lte: q.ledgerMax }),
+          },
+        }),
+      };
 
-    const skip = (q.page - 1) * q.limit;
-    const [data, total] = await Promise.all([
-      prisma.dtccSettlementBridge.findMany({
-        where,
-        orderBy: { ledgerSequence: 'desc' },
-        skip,
-        take: q.limit,
-      }),
-      prisma.dtccSettlementBridge.count({ where }),
-    ]);
+      const skip = (q.page - 1) * q.limit;
+      const [data, total] = await Promise.all([
+        prisma.dtccSettlementBridge.findMany({
+          where,
+          orderBy: { ledgerSequence: 'desc' },
+          skip,
+          take: q.limit,
+        }),
+        prisma.dtccSettlementBridge.count({ where }),
+      ]);
 
-    res.json({ data, total, page: q.page, limit: q.limit, pages: Math.ceil(total / q.limit) });
-  } catch (e) {
-    res.status(400).json({ error: String(e) });
-  }
-});
+      res.json({ data, total, page: q.page, limit: q.limit, pages: Math.ceil(total / q.limit) });
+    } catch (e) {
+      res.status(400).json({ error: String(e) });
+    }
+  }),
+);
 
 // GET /dtcc-settlement/id/:dtccId — lookup by DTCC settlement ID
-dtccSettlementRouter.get('/id/:dtccId', async (req: Request, res: Response) => {
-  try {
-    const records = await prisma.dtccSettlementBridge.findMany({
-      where: { dtccSettlementId: req.params.dtccId },
-      orderBy: { createdAt: 'desc' },
-    });
-    if (!records.length) return res.status(404).json({ error: 'Not found' });
-    res.json({ dtccSettlementId: req.params.dtccId, count: records.length, records });
-  } catch (e) {
-    res.status(400).json({ error: String(e) });
-  }
-});
+dtccSettlementRouter.get(
+  '/id/:dtccId',
+  asyncHandler(async (req: Request, res: Response) => {
+    try {
+      const records = await prisma.dtccSettlementBridge.findMany({
+        where: { dtccSettlementId: req.params.dtccId },
+        orderBy: { createdAt: 'desc' },
+      });
+      if (!records.length) return res.status(404).json({ error: 'Not found' });
+      res.json({ dtccSettlementId: req.params.dtccId, count: records.length, records });
+    } catch (e) {
+      res.status(400).json({ error: String(e) });
+    }
+  }),
+);
 
 // GET /dtcc-settlement/:txHash — get by transaction hash
 dtccSettlementRouter.get(
@@ -127,18 +136,21 @@ dtccSettlementRouter.get(
 );
 
 // PATCH /dtcc-settlement/:txHash/status — update settlement status
-dtccSettlementRouter.patch('/:txHash/status', async (req: Request, res: Response) => {
-  try {
-    const { settlementStatus, settlementDate } = statusSchema.parse(req.body);
-    const record = await prisma.dtccSettlementBridge.update({
-      where: { transactionHash: req.params.txHash },
-      data: {
-        settlementStatus,
-        ...(settlementDate && { settlementDate: new Date(settlementDate) }),
-      },
-    });
-    res.json(record);
-  } catch (e) {
-    res.status(400).json({ error: String(e) });
-  }
-});
+dtccSettlementRouter.patch(
+  '/:txHash/status',
+  asyncHandler(async (req: Request, res: Response) => {
+    try {
+      const { settlementStatus, settlementDate } = statusSchema.parse(req.body);
+      const record = await prisma.dtccSettlementBridge.update({
+        where: { transactionHash: req.params.txHash },
+        data: {
+          settlementStatus,
+          ...(settlementDate && { settlementDate: new Date(settlementDate) }),
+        },
+      });
+      res.json(record);
+    } catch (e) {
+      res.status(400).json({ error: String(e) });
+    }
+  }),
+);

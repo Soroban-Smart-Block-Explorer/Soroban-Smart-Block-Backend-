@@ -4,15 +4,29 @@
  * Manages oracle price feed subscriptions, retrieves real-time and
  * historical price data, and exposes feed configuration for Soroban
  * contracts consuming on-chain oracle data.
+ *
+ * Price resolution order (per asset):
+ *  1. CoinGecko public API  (COINGECKO_API_KEY optional – raises rate limit)
+ *  2. Stellar Horizon DEX order-book  (XLM-based pairs only, no key needed)
+ *  3. Cached last-known value (TTL controlled by ORACLE_PRICE_TTL_MS)
  */
 import { Router, Request, Response } from 'express';
 import { z } from 'zod';
 import axios from 'axios';
+import { logger } from '../logger';
+import { asyncHandler } from '../middleware/asyncHandler';
 
-export const oracleFeedsRouter = Router();
+// ── Configuration ─────────────────────────────────────────────────────────────
 
-const COINGECKO_API = 'https://api.coingecko.com/api/v3';
+const COINGECKO_API_KEY = process.env.COINGECKO_API_KEY ?? '';
+const COINGECKO_BASE = COINGECKO_API_KEY
+  ? 'https://pro-api.coingecko.com/api/v3'
+  : 'https://api.coingecko.com/api/v3';
 
+const HORIZON_URL = process.env.TESTNET_HORIZON_URL ?? 'https://horizon.stellar.org';
+const PRICE_TTL_MS = parseInt(process.env.ORACLE_PRICE_TTL_MS ?? '30000', 10);
+
+// CoinGecko coin IDs for each supported pair
 const COINGECKO_IDS: Record<string, string> = {
   'XLM/USD': 'stellar',
   'BTC/USD': 'bitcoin',
@@ -20,39 +34,115 @@ const COINGECKO_IDS: Record<string, string> = {
   'USDC/USD': 'usd-coin',
 };
 
-const cachedPrices: Record<string, { price: number; timestamp: number }> = {};
-let cacheTimestamp = 0;
-const CACHE_TTL_MS = 30_000;
+// ── In-memory price cache ─────────────────────────────────────────────────────
 
-async function fetchLivePrices(): Promise<void> {
-  const ids = Object.values(COINGECKO_IDS).join(',');
-  const vsCurrencies = 'usd';
+interface CachedPrice {
+  price: number;
+  source: string;
+  fetchedAt: number;
+}
+
+const priceCache = new Map<string, CachedPrice>();
+
+// ── CoinGecko fetch ───────────────────────────────────────────────────────────
+
+async function fetchFromCoinGecko(coinId: string): Promise<number | null> {
   try {
-    const { data } = await axios.get<Record<string, { usd: number }>>(
-      `${COINGECKO_API}/simple/price?ids=${ids}&vs_currencies=${vsCurrencies}`,
-      { timeout: 5000 },
-    );
-    const now = Date.now();
-    for (const [pair, id] of Object.entries(COINGECKO_IDS)) {
-      const price = data[id]?.usd;
-      if (price) {
-        cachedPrices[pair] = { price, timestamp: now };
-      }
-    }
-    cacheTimestamp = now;
+    const headers: Record<string, string> = COINGECKO_API_KEY
+      ? { 'x-cg-pro-api-key': COINGECKO_API_KEY }
+      : {};
+
+    const { data } = await axios.get(`${COINGECKO_BASE}/simple/price`, {
+      params: { ids: coinId, vs_currencies: 'usd' },
+      headers,
+      timeout: 5000,
+    });
+
+    const price = data?.[coinId]?.usd;
+    if (typeof price === 'number') return price;
+    return null;
   } catch (err) {
-    console.warn('[oracle-feeds] CoinGecko API error, using cached prices:', err);
+    logger.warn('CoinGecko price fetch failed', {
+      coinId,
+      error: err instanceof Error ? err.message : String(err),
+    });
+    return null;
   }
 }
 
-async function getPrice(pair: string): Promise<{ price: number; timestamp: string } | null> {
-  if (Date.now() - cacheTimestamp > CACHE_TTL_MS) {
-    await fetchLivePrices();
+// ── Stellar Horizon DEX fetch (XLM/USD via USDC order-book) ──────────────────
+
+async function fetchXlmUsdFromHorizon(): Promise<number | null> {
+  try {
+    // USDC on Stellar: issued by Centre (USDC issuer on mainnet)
+    const usdcIssuer = 'GA5ZSEJYB37JRC5AVCIA5MOP4RHTM335X2KGX3IHOJAPP5RE34K4KZVN';
+    const { data } = await axios.get(`${HORIZON_URL}/order_book`, {
+      params: {
+        selling_asset_type: 'native',
+        buying_asset_type: 'credit_alphanum4',
+        buying_asset_code: 'USDC',
+        buying_asset_issuer: usdcIssuer,
+        limit: 1,
+      },
+      timeout: 5000,
+    });
+
+    // Mid-price from top bid/ask
+    const bids: { price: string }[] = data?.bids ?? [];
+    const asks: { price: string }[] = data?.asks ?? [];
+    if (bids.length && asks.length) {
+      const mid = (parseFloat(bids[0].price) + parseFloat(asks[0].price)) / 2;
+      if (mid > 0) return mid;
+    }
+    return null;
+  } catch (err) {
+    logger.warn('Horizon DEX XLM/USD fetch failed', {
+      error: err instanceof Error ? err.message : String(err),
+    });
+    return null;
   }
-  const entry = cachedPrices[pair];
-  if (!entry) return null;
-  return { price: entry.price, timestamp: new Date(entry.timestamp).toISOString() };
 }
+
+// ── Unified price resolver ────────────────────────────────────────────────────
+
+async function resolvePrice(pair: string): Promise<{ price: number; source: string } | null> {
+  // 1. Return cached value if still fresh
+  const cached = priceCache.get(pair);
+  if (cached && Date.now() - cached.fetchedAt < PRICE_TTL_MS) {
+    return { price: cached.price, source: `${cached.source} (cached)` };
+  }
+
+  const coinId = COINGECKO_IDS[pair];
+  let price: number | null = null;
+  let source = 'unknown';
+
+  // 2. Try CoinGecko
+  if (coinId) {
+    price = await fetchFromCoinGecko(coinId);
+    if (price !== null) source = 'coingecko';
+  }
+
+  // 3. Fallback: Horizon DEX for XLM/USD
+  if (price === null && pair === 'XLM/USD') {
+    price = await fetchXlmUsdFromHorizon();
+    if (price !== null) source = 'horizon-dex';
+  }
+
+  if (price === null) {
+    // 4. Use stale cache if available rather than returning nothing
+    if (cached) {
+      logger.warn('All price sources failed – using stale cache', { pair });
+      return { price: cached.price, source: `${cached.source} (stale)` };
+    }
+    return null;
+  }
+
+  // Update cache
+  priceCache.set(pair, { price, source, fetchedAt: Date.now() });
+  return { price, source };
+}
+
+export const oracleFeedsRouter = Router();
 
 // ── GET / ─────────────────────────────────────────────────────────────────────
 
@@ -129,30 +219,46 @@ oracleFeedsRouter.get('/assets', (_req: Request, res: Response) => {
  *       404:
  *         description: Asset pair not supported
  */
-oracleFeedsRouter.get('/assets/:assetPair/price', (req: Request, res: Response) => {
-  const assetPair = req.params.assetPair.toUpperCase().replace('-', '/');
-  const supported = ['XLM/USD', 'BTC/USD', 'ETH/USD', 'USDC/USD'];
+oracleFeedsRouter.get(
+  '/assets/:assetPair/price',
+  asyncHandler(async (req: Request, res: Response) => {
+    const assetPair = req.params.assetPair.toUpperCase().replace('-', '/');
+    const supported = ['XLM/USD', 'BTC/USD', 'ETH/USD', 'USDC/USD'];
 
-  if (!supported.includes(assetPair)) {
-    return res
-      .status(404)
-      .json({ error: `Asset pair ${assetPair} not supported. Supported: ${supported.join(', ')}` });
-  }
+    if (!supported.includes(assetPair)) {
+      return res.status(404).json({
+        error: `Asset pair ${assetPair} not supported. Supported: ${supported.join(', ')}`,
+      });
+    }
 
-  const result = await getPrice(assetPair);
-  if (!result) {
-    return res.status(503).json({ error: 'Price data temporarily unavailable. Try again later.' });
-  }
+    const result = await resolvePrice(assetPair);
 
-  res.json({
-    pair: assetPair,
-    price: result.price,
-    currency: 'USD',
-    source: 'coingecko',
-    confidence: 0.95,
-    timestamp: result.timestamp,
-  });
-});
+    if (!result) {
+      logger.error('All price sources exhausted and no cached value available', {
+        pair: assetPair,
+      });
+      return res.status(503).json({
+        error:
+          'Price data temporarily unavailable. All providers failed and no cached value exists.',
+        pair: assetPair,
+      });
+    }
+
+    const isStale = result.source.includes('stale');
+
+    res.json({
+      pair: assetPair,
+      price: result.price,
+      currency: 'USD',
+      source: result.source,
+      confidence: isStale ? 0.5 : 0.99,
+      timestamp: new Date().toISOString(),
+      ...(isStale
+        ? { warning: 'Price data is stale – live providers are currently unreachable.' }
+        : {}),
+    });
+  }),
+);
 
 // ── GET /assets/:assetPair/history ─────────────────────────────────────────────
 

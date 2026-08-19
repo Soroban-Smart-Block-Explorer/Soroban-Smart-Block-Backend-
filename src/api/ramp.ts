@@ -24,11 +24,29 @@ import crypto from 'crypto';
 import { asyncHandler } from '../middleware/asyncHandler';
 import { requireAuth } from '../auth/middleware';
 import { logger } from '../logger';
-import { aggregateQuotes, executeOrder as gatewayExecuteOrder, getProviderOrderStatus, initiateProviderRefund, listProviderAvailability } from '../services/ramp/gateway';
+import {
+  aggregateQuotes,
+  executeOrder as gatewayExecuteOrder,
+  getProviderOrderStatus,
+  initiateProviderRefund,
+  listProviderAvailability,
+} from '../services/ramp/gateway';
 import { checkKycAllowance, getOrCreateKycRecord, recordKycUsage } from '../services/ramp/kyc';
-import { createOrder, transitionOrder, getOrder, listUserOrders, attachProviderOrderId, markRefundInitiated } from '../services/ramp/order-management';
+import {
+  createOrder,
+  transitionOrder,
+  getOrder,
+  listUserOrders,
+  attachProviderOrderId,
+  markRefundInitiated,
+} from '../services/ramp/order-management';
 import { raiseFlagIfNeeded } from '../services/ramp/aml';
-import type { CryptoAsset, PaymentMethod, ProviderName, RampDirection } from '../services/ramp/types';
+import type {
+  CryptoAsset,
+  PaymentMethod,
+  ProviderName,
+  RampDirection,
+} from '../services/ramp/types';
 
 export const rampRouter = Router();
 
@@ -36,45 +54,54 @@ export const rampRouter = Router();
 
 const CRYPTO_ASSETS = ['USDC', 'XLM', 'USDT', 'ETH', 'BTC'] as const;
 const PAYMENT_METHODS = [
-  'credit_card', 'debit_card', 'bank_transfer',
-  'ach', 'wire', 'sepa', 'apple_pay', 'google_pay', 'open_banking',
+  'credit_card',
+  'debit_card',
+  'bank_transfer',
+  'ach',
+  'wire',
+  'sepa',
+  'apple_pay',
+  'google_pay',
+  'open_banking',
 ] as const;
 const PROVIDERS = ['moonpay', 'transak', 'ramp', 'banxa', 'stripe'] as const;
 const DIRECTIONS = ['buy', 'sell'] as const;
 
 const quoteSchema = z.object({
-  direction:     z.enum(DIRECTIONS),
-  fiatAmount:    z.number().positive().max(500_000),
-  fiatCurrency:  z.string().length(3).default('USD'),
-  cryptoAsset:   z.enum(CRYPTO_ASSETS),
+  direction: z.enum(DIRECTIONS),
+  fiatAmount: z.number().positive().max(500_000),
+  fiatCurrency: z.string().length(3).default('USD'),
+  cryptoAsset: z.enum(CRYPTO_ASSETS),
   paymentMethod: z.enum(PAYMENT_METHODS),
-  country:       z.string().length(2).optional().default('US'),
+  country: z.string().length(2).optional().default('US'),
 });
 
 const executeSchema = z.object({
-  provider:      z.enum(PROVIDERS),
-  direction:     z.enum(DIRECTIONS),
-  fiatAmount:    z.number().positive().max(500_000),
-  fiatCurrency:  z.string().length(3).default('USD'),
-  cryptoAsset:   z.enum(CRYPTO_ASSETS),
+  provider: z.enum(PROVIDERS),
+  direction: z.enum(DIRECTIONS),
+  fiatAmount: z.number().positive().max(500_000),
+  fiatCurrency: z.string().length(3).default('USD'),
+  cryptoAsset: z.enum(CRYPTO_ASSETS),
   walletAddress: z.string().min(1).max(200),
   paymentMethod: z.enum(PAYMENT_METHODS),
-  country:       z.string().length(2).optional().default('US'),
+  country: z.string().length(2).optional().default('US'),
 });
 
 const refundSchema = z.object({
-  orderId:    z.string().min(1),
-  amountUsd:  z.number().positive().optional(),
+  orderId: z.string().min(1),
+  amountUsd: z.number().positive().optional(),
 });
 
 const listOrdersSchema = z.object({
-  status: z.enum(['pending', 'processing', 'completed', 'failed', 'refunded', 'cancelled']).optional(),
-  limit:  z.coerce.number().int().min(1).max(100).default(20),
+  status: z
+    .enum(['pending', 'processing', 'completed', 'failed', 'refunded', 'cancelled'])
+    .optional(),
+  limit: z.coerce.number().int().min(1).max(100).default(20),
   offset: z.coerce.number().int().min(0).default(0),
 });
 
 const providersQuerySchema = z.object({
-  country:       z.string().length(2).optional().default('US'),
+  country: z.string().length(2).optional().default('US'),
   paymentMethod: z.enum(PAYMENT_METHODS).optional().default('credit_card'),
 });
 
@@ -120,10 +147,13 @@ rampRouter.post(
   asyncHandler(async (req: Request, res: Response) => {
     const parsed = quoteSchema.safeParse(req.body);
     if (!parsed.success) {
-      return res.status(400).json({ error: 'Invalid request', details: parsed.error.flatten().fieldErrors });
+      return res
+        .status(400)
+        .json({ error: 'Invalid request', details: parsed.error.flatten().fieldErrors });
     }
 
-    const { direction, fiatAmount, fiatCurrency, cryptoAsset, paymentMethod, country } = parsed.data;
+    const { direction, fiatAmount, fiatCurrency, cryptoAsset, paymentMethod, country } =
+      parsed.data;
 
     const bundle = await aggregateQuotes(
       direction as RampDirection,
@@ -173,12 +203,20 @@ rampRouter.post(
   asyncHandler(async (req: Request, res: Response) => {
     const parsed = executeSchema.safeParse(req.body);
     if (!parsed.success) {
-      return res.status(400).json({ error: 'Invalid request', details: parsed.error.flatten().fieldErrors });
+      return res
+        .status(400)
+        .json({ error: 'Invalid request', details: parsed.error.flatten().fieldErrors });
     }
 
     const {
-      provider, direction, fiatAmount, fiatCurrency,
-      cryptoAsset, walletAddress, paymentMethod, country,
+      provider,
+      direction,
+      fiatAmount,
+      fiatCurrency,
+      cryptoAsset,
+      walletAddress,
+      paymentMethod,
+      country,
     } = parsed.data;
 
     const userId = req.user!.id;
@@ -243,7 +281,9 @@ rampRouter.post(
       await transitionOrder(order.id, 'failed', 'system', {
         failureReason: `Provider error: ${String(err)}`,
       });
-      return res.status(502).json({ error: 'Provider unavailable. Please try again or choose a different provider.' });
+      return res
+        .status(502)
+        .json({ error: 'Provider unavailable. Please try again or choose a different provider.' });
     }
 
     // ── Link provider order ID and advance state ───────────────────────────────
@@ -308,7 +348,9 @@ rampRouter.get(
   asyncHandler(async (req: Request, res: Response) => {
     const parsed = listOrdersSchema.safeParse(req.query);
     if (!parsed.success) {
-      return res.status(400).json({ error: 'Invalid query', details: parsed.error.flatten().fieldErrors });
+      return res
+        .status(400)
+        .json({ error: 'Invalid query', details: parsed.error.flatten().fieldErrors });
     }
 
     const { status, limit, offset } = parsed.data;
@@ -358,7 +400,10 @@ rampRouter.get(
     // Optionally sync status from provider before returning
     if (order.status === 'processing' && order.providerOrderId) {
       try {
-        const remote = await getProviderOrderStatus(order.provider as ProviderName, order.providerOrderId);
+        const remote = await getProviderOrderStatus(
+          order.provider as ProviderName,
+          order.providerOrderId,
+        );
         if (remote.status !== order.status) {
           await transitionOrder(order.id, remote.status, 'system', {
             txHash: remote.txHash,
@@ -409,7 +454,9 @@ rampRouter.post(
   asyncHandler(async (req: Request, res: Response) => {
     const parsed = refundSchema.safeParse(req.body);
     if (!parsed.success) {
-      return res.status(400).json({ error: 'Invalid request', details: parsed.error.flatten().fieldErrors });
+      return res
+        .status(400)
+        .json({ error: 'Invalid request', details: parsed.error.flatten().fieldErrors });
     }
 
     const { orderId, amountUsd } = parsed.data;
@@ -431,7 +478,9 @@ rampRouter.post(
     }
 
     if (!order.providerOrderId) {
-      return res.status(400).json({ error: 'Order has no provider reference — refund unavailable' });
+      return res
+        .status(400)
+        .json({ error: 'Order has no provider reference — refund unavailable' });
     }
 
     const refundAmount = amountUsd ?? order.fiatAmount;
@@ -481,7 +530,9 @@ rampRouter.get(
   asyncHandler(async (req: Request, res: Response) => {
     const parsed = providersQuerySchema.safeParse(req.query);
     if (!parsed.success) {
-      return res.status(400).json({ error: 'Invalid query', details: parsed.error.flatten().fieldErrors });
+      return res
+        .status(400)
+        .json({ error: 'Invalid query', details: parsed.error.flatten().fieldErrors });
     }
 
     const { country, paymentMethod } = parsed.data;
@@ -557,11 +608,7 @@ rampRouter.post(
     }
 
     // Validate HMAC signature where applicable
-    const signatureValid = verifyProviderSignature(
-      provider as ProviderName,
-      req.headers,
-      req.body,
-    );
+    const signatureValid = verifyProviderSignature(provider as ProviderName, req.headers, req.body);
 
     if (!signatureValid) {
       logger.warn('[ramp-webhook] invalid signature', { provider });
@@ -572,14 +619,15 @@ rampRouter.post(
     const update = extractStatusUpdate(provider as ProviderName, req.body);
 
     if (update) {
-      const order = await getOrder(update.platformOrderId).catch(() => null)
-        ?? await (async () => {
+      const order =
+        (await getOrder(update.platformOrderId).catch(() => null)) ??
+        (await (async () => {
           if (update.providerOrderId) {
             const { getOrderByProviderRef } = await import('../services/ramp/order-management');
             return getOrderByProviderRef(provider as ProviderName, update.providerOrderId);
           }
           return null;
-        })();
+        })());
 
       if (order) {
         await transitionOrder(order.id, update.status, 'provider', {
@@ -708,12 +756,14 @@ function extractStatusUpdate(provider: ProviderName, body: unknown): StatusUpdat
     }
 
     case 'stripe': {
-      const obj = (b.data as Record<string, unknown>)?.object as Record<string, unknown> | undefined;
+      const obj = (b.data as Record<string, unknown>)?.object as
+        Record<string, unknown> | undefined;
       if (!obj) return null;
       return {
         providerOrderId: obj.id as string | undefined,
         status: stripeStatus((obj.status as string) ?? ''),
-        txHash: (obj.transaction_details as Record<string, unknown>)?.transaction_hash as string | undefined,
+        txHash: (obj.transaction_details as Record<string, unknown>)?.transaction_hash as
+          string | undefined,
       };
     }
 

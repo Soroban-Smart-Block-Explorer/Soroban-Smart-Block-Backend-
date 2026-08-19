@@ -127,13 +127,7 @@ export interface ExecutionPath {
   constraints: PathConstraint[];
   result?: SymbolicValue;
   terminated:
-    | 'return'
-    | 'panic'
-    | 'assert_fail'
-    | 'overflow'
-    | 'underflow'
-    | 'div_by_zero'
-    | 'unreachable';
+    'return' | 'panic' | 'assert_fail' | 'overflow' | 'underflow' | 'div_by_zero' | 'unreachable';
   error?: string;
 }
 

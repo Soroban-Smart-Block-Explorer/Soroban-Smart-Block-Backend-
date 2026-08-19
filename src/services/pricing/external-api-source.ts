@@ -1,4 +1,5 @@
 import { cacheGet, cacheSet } from '../../cache';
+import { logger } from '../../logger';
 
 const RATE_LIMIT_WINDOW_MS = 60_000;
 const MAX_REQUESTS_PER_WINDOW = 30;
@@ -57,7 +58,7 @@ function coingeckoIdFromSymbol(symbol: string): string {
 
 async function fetchCoinGeckoPrice(tokenSymbol: string): Promise<ExternalPrice | null> {
   if (!checkRateLimit('coingecko')) {
-    console.warn('[ExternalPrice] CoinGecko rate limited');
+    logger.warn('[ExternalPrice] CoinGecko rate limited');
     return null;
   }
 
@@ -100,7 +101,7 @@ async function fetchCoinGeckoPrice(tokenSymbol: string): Promise<ExternalPrice |
 
 async function fetchCoinMarketCapPrice(tokenSymbol: string): Promise<ExternalPrice | null> {
   if (!checkRateLimit('cmc')) {
-    console.warn('[ExternalPrice] CMC rate limited');
+    logger.warn('[ExternalPrice] CMC rate limited');
     return null;
   }
 

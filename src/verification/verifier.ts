@@ -10,11 +10,7 @@ import {
 import { ConcolicExecutor, type TestCase } from './concolic-executor';
 import { ReentrancyAnalyzer, type ReentrancyAnalysisResult } from './reentrancy-analyzer';
 import { GasAnalyzer, type GasResult } from './gas-analyzer';
-import {
-  type Specification,
-  type Property,
-  type VerificationBadge,
-} from './dsl';
+import { type Specification, type Property, type VerificationBadge } from './dsl';
 import { logger } from '../logger';
 
 export interface VerificationConfig {

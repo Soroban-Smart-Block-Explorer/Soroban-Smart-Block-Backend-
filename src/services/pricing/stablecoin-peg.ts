@@ -98,7 +98,7 @@ export async function autoDetectStablecoin(tokenAddress: string): Promise<boolea
 }
 
 export async function updateStablecoinMonitoring(): Promise<void> {
-  const tokenMarketData = await prismaRead.tokenMarketData.findMany({
+  const tokenMarketData = await prismaRead.token.findMany({
     where: { isStablecoin: true },
   });
 
@@ -107,7 +107,7 @@ export async function updateStablecoinMonitoring(): Promise<void> {
     if (!stableInfo) continue;
 
     const priceRecord = await prismaRead.tokenPrice.findUnique({
-      where: { tokenAddress: data.tokenAddress },
+      where: { tokenAddress: data.address },
     });
 
     if (!priceRecord) continue;
@@ -117,7 +117,7 @@ export async function updateStablecoinMonitoring(): Promise<void> {
 
     const history24h = await prismaRead.tokenPriceHistory.findMany({
       where: {
-        tokenAddress: data.tokenAddress,
+        tokenAddress: data.address,
         timestamp: { gte: new Date(Date.now() - 24 * 60 * 60 * 1000) },
       },
       orderBy: { timestamp: 'asc' },
@@ -138,7 +138,7 @@ export async function updateStablecoinMonitoring(): Promise<void> {
       stableInfo.targetPrice,
     );
 
-    await prismaWrite.tokenMarketData.update({
+    await prismaWrite.token.update({
       where: { id: data.id },
       data: {
         pegDeviation24h: maxDeviation24h,
@@ -154,12 +154,12 @@ export async function updateStablecoinMonitoring(): Promise<void> {
 
   for (const token of allTokens) {
     if (token.tokenSymbol && isStablecoin(token.tokenSymbol)) {
-      const existing = await prismaRead.tokenMarketData.findUnique({
-        where: { tokenAddress: token.address },
+      const existing = await prismaRead.token.findUnique({
+        where: { address: token.address },
       });
       if (existing && !existing.isStablecoin) {
-        await prismaWrite.tokenMarketData.update({
-          where: { tokenAddress: token.address },
+        await prismaWrite.token.update({
+          where: { address: token.address },
           data: {
             isStablecoin: true,
             stablecoinPeg: KNOWN_STABLECOINS[token.tokenSymbol.toUpperCase()]?.peg ?? 'USD',
@@ -167,9 +167,9 @@ export async function updateStablecoinMonitoring(): Promise<void> {
           },
         });
       } else if (!existing) {
-        await prismaWrite.tokenMarketData.create({
+        await prismaWrite.token.create({
           data: {
-            tokenAddress: token.address,
+            address: token.address,
             symbol: token.tokenSymbol,
             isStablecoin: true,
             stablecoinPeg: KNOWN_STABLECOINS[token.tokenSymbol.toUpperCase()]?.peg ?? 'USD',

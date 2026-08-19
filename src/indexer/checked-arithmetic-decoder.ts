@@ -31,8 +31,7 @@ export interface CheckedArithmeticOperation {
 }
 
 export type CheckedArithmeticResult =
-  | { status: 'success'; value: bigint }
-  | { status: 'overflow'; value: null };
+  { status: 'success'; value: bigint } | { status: 'overflow'; value: null };
 
 export interface CheckedArithmeticAnalysis {
   isCheckedOperation: boolean;
@@ -67,9 +66,7 @@ export function isCheckedArithmeticFunction(functionName: string): boolean {
  * Parse the operation type and operand type from function name.
  * e.g. "checked_add_i256" → { type: 'checked_add', operandType: 'i256' }
  */
-function parseCheckedFunctionName(
-  functionName: string,
-): {
+function parseCheckedFunctionName(functionName: string): {
   type: 'checked_add' | 'checked_sub' | 'checked_mul' | 'checked_pow';
   operandType: 'i256' | 'u256';
 } | null {
