@@ -2288,7 +2288,7 @@ model Attestation {
 }
 
 model AuditLog {
-  id String @map("id") @id @default(cuid())
+  id String @map("id") @id
   actor String @map("actor")
   action String @map("action")
   target String @map("target")
@@ -3599,7 +3599,7 @@ model VulnerabilitySource {
 }
 
 model WebhookDelivery {
-  id String @map("id") @id @default(cuid())
+  id String @map("id") @id
   subscriptionId String @map("subscription_id")
   eventId String? @map("event_id")
   attempt Int? @map("attempt")

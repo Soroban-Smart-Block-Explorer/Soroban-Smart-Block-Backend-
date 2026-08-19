@@ -3,6 +3,7 @@ import { prismaRead, prismaWrite } from '../db';
 import { processResponseBody } from './redaction';
 import { assertSafeUrl, safePost, SsrfBlockedError } from './ssrf-guard';
 import { logger } from '../logger';
+import { uuidv7 } from '../utils/uuidv7';
 
 // Maximum delivery attempts before a delivery is marked permanently failed
 export const MAX_ATTEMPTS = 5;
@@ -328,6 +329,7 @@ async function deliverOnce(
       })
     : await prismaWrite.webhookDelivery.create({
         data: {
+          id: uuidv7(),
           subscriptionId,
           eventId,
           attempt,

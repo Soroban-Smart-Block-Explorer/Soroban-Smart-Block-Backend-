@@ -10,6 +10,7 @@ import { z } from 'zod';
 import { prismaWrite as prisma } from '../db';
 import { invalidateFreezeCache } from '../indexer/freeze-scanner';
 import { adminAuth } from '../middleware/adminAuth';
+import { uuidv7 } from '../utils/uuidv7';
 
 export const freezeRouter = Router();
 
@@ -25,6 +26,7 @@ async function logAudit(
 ) {
   await prisma.auditLog.create({
     data: {
+      id: uuidv7(),
       actor,
       action,
       target,
