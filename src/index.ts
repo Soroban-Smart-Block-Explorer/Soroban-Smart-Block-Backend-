@@ -16,33 +16,11 @@ import { stopP2pNode } from './p2p';
 import { shutdownWebSocketServer } from './ws/eventBroadcaster';
 import { stopBridgeWorker } from './bridge-tracker';
 import { feedOrchestrator } from './feed/orchestrator';
+import { stopPriceUpdater } from './services/pricing';
+import { cacheClose } from './cache';
+import { dbConnectionStatus, cacheBackendStatus } from './metrics';
 import { eventBus } from './events/eventBus';
-import { startGraphqlEventBridge } from './graphql/subscriptions';
-import { startAuditPipeline } from './indexer/audit-pipeline';
-import { startAuditScheduler } from './indexer/audit-scheduler';
-import { startContinuousAuditMonitor } from './indexer/audit-monitor';
-import { startAuditExpiryChecker } from './indexer/audit-expiry-checker';
-import { startAuditDigestScheduler } from './indexer/audit-digest-scheduler';
-import { startKeyRotationScheduler } from './auth/keyRotationScheduler';
-import { startPriceUpdater, stopPriceUpdater } from './services/pricing';
-import { startBridgeWorker, stopBridgeWorker } from './bridge-tracker';
-import { writeFile, mkdir } from 'fs/promises';
-import { resolve } from 'path';
-import { getIndexerStatus } from './indexer-state';
-import { startArbitrageScanner as startArbitrageScannerImpl } from './indexer/arbitrage-scanner';
-import { startPoolPriceMonitor as startPoolPriceMonitorImpl } from './indexer/pool-price-monitor';
-import { startFeeAggregator as startFeeAggregatorImpl } from './indexer/fee-aggregator';
-import { attachArbitrageWebSocket as attachArbitrageWebSocketImpl } from './ws/arbitrageBroadcaster';
-import { attachComposabilityWebSocket as attachComposabilityWebSocketImpl } from './ws/composabilityBroadcaster';
-import { getHealthStatus, getLivenessStatus, getReadinessStatus } from './health';
-import {
-  getP2pStatusSnapshot,
-  resolveLedgerLocation,
-  startP2pNode,
-  stopP2pNode,
-  wireOnTheFlyIndexer,
-} from './p2p';
-import { indexSingleLedger } from './indexer/indexer';
+import { logger } from './logger';
 
 let isShuttingDown = false;
 const SERVICE_START_TIME = Date.now();
@@ -193,25 +171,10 @@ async function main() {
   registerShutdownHandlers();
   await validateStateDumpPath();
 
-  await initRateLimitStore();
-
-  await cacheConnect();
-  if (isCacheReady()) markReady('cache');
-  cacheBackendStatus.set(cacheBackendType() === 'redis' ? 1 : 0);
-
-  await eventBus.connect();
-  startGraphqlEventBridge();
-
-  await prisma.$connect();
-  dbConnectionStatus.set(1);
-  markReady('db');
-
-  await initializeColdStorage();
-  markReady('coldStorage');
-
-  wireOnTheFlyIndexer(indexSingleLedger);
-  await startP2pNode().catch((err) => {
-    logger.error('[p2p] failed to start', { error: String(err) });
+  const app = createApp({
+    isShuttingDown: () => isShuttingDown,
+    serviceStartTime: SERVICE_START_TIME,
+    disabledServices,
   });
 
   const server = createHttpServer(app, disabledServices);
