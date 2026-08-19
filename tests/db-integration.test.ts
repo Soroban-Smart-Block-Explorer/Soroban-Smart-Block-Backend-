@@ -399,6 +399,7 @@ describeIf('PostgreSQL integration – migration & query compatibility', () => {
 
     await prisma.wasmUpgradeHistory.create({
       data: {
+        id: uuidv7(),
         contractAddress: addr,
         newHash: 'abc123',
         ledgerSequence: 1,

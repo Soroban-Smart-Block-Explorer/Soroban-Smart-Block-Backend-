@@ -13,6 +13,7 @@ import type { PrismaClient } from '@prisma/client';
 import { scheduler } from '../scheduler/cron-scheduler';
 import type { Logger } from '../services/container';
 import { container } from '../services/container';
+import { uuidv7 } from '../utils/uuidv7';
 
 type Bucket = 'hour' | 'day' | 'week';
 
@@ -71,6 +72,7 @@ export class GasAnalyticsProcessor {
     await this.prismaWrite.gasAnalyticsSnapshot.upsert({
       where: { bucket_bucketStart: { bucket, bucketStart } },
       create: {
+        id: uuidv7(),
         bucket,
         bucketStart,
         bucketEnd,

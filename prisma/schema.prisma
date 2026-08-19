@@ -24,7 +24,7 @@ model Ledger {
 }
 
 model WasmUpgradeHistory {
-  id String @map("id") @id @default(cuid())
+  id String @map("id") @id
   contractAddress String @map("contract_address")
   previousHash String? @map("previous_hash")
   newHash String @map("new_hash")
@@ -2540,7 +2540,7 @@ model FuzzRun {
 }
 
 model GasAnalyticsSnapshot {
-  id String @map("id") @id @default(cuid())
+  id String @map("id") @id
   bucket String @map("bucket")
   bucketStart DateTime @map("bucket_start")
   bucketEnd DateTime @map("bucket_end")
@@ -3045,7 +3045,7 @@ model PrivacyTransaction {
 }
 
 model ReentrancyAlert {
-  id String @map("id") @id @default(cuid())
+  id String @map("id") @id
   transactionHash String @map("transaction_hash") @unique
   contractAddress String @map("contract_address")
   severity String? @map("severity")
@@ -3349,7 +3349,7 @@ model ShieldedTransfer {
 }
 
 model SignatureInspection {
-  id String @map("id") @id @default(cuid())
+  id String @map("id") @id
   transactionHash String @map("transaction_hash") @unique
   ledgerSequence Int @map("ledger_sequence")
   curveType String? @map("curve_type")

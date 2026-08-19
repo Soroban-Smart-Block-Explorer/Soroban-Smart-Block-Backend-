@@ -1,5 +1,6 @@
 import { prismaWrite as prisma } from '../db';
 import { type CallTrace } from './call-trace';
+import { uuidv7 } from '../utils/uuidv7';
 
 // Topic symbols that indicate value withdrawal / drain operations
 const WITHDRAW_TOPICS = new Set(['withdraw', 'transfer', 'burn', 'redeem', 'claim', 'payout']);
@@ -135,6 +136,7 @@ export async function storeReentrancyAlert(signal: ReentrancySignal): Promise<vo
         signals: storedSignals,
       },
       create: {
+        id: uuidv7(),
         transactionHash: signal.transactionHash,
         contractAddress: signal.contractAddress,
         ledgerSequence: signal.ledgerSequence,
