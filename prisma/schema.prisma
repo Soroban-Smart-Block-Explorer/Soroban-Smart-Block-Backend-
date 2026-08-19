@@ -2512,14 +2512,12 @@ model FrozenLedgerKey {
 
 model FuzzFinding {
   id String @map("id") @id @default(cuid())
-  runId String @map("run_id")
-  findingType String @map("finding_type")
+  fuzzRunId String @map("fuzz_run_id")
+  findingType String? @map("finding_type")
   description String? @map("description")
-  fuzzRunId String? @map("fuzz_run_id")
   severity String? @map("severity")
   createdAt DateTime @map("created_at") @default(now())
 
-  @@index([runId])
   @@index([fuzzRunId])
   @@map("_fuzz_findings")
 }
