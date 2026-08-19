@@ -1,7 +1,7 @@
 # ADR-005: CUID vs UUIDv7 for Primary Keys
 
 ## Status
-Phase 2 in progress (phased rollout, pending maintainer feedback per phase)
+Phase 3 in progress (phased rollout, pending maintainer feedback per phase)
 
 Refs #734
 
@@ -89,11 +89,17 @@ than generated, so please verify against a real migration diff/CI before
 merging. Existing rows keep their CUID values; only new inserts get
 UUIDv7 ids.
 
-**Phase 3+ (pending maintainer go-ahead, chunked): remaining tables.** The
-other ~188 `cuid()` models (187 plus `Event` once its dedup-key question is
-resolved), in reviewable batches, skipping models where a natural/composite
-key is more appropriate than a surrogate one at all (e.g. `Ledger` already
-uses `sequence Int @id`, not a CUID).
+**Phase 3+ (in progress, chunked): remaining tables.** The other ~188
+`cuid()` models (187 plus `Event` once its dedup-key question is resolved),
+in reviewable batches, skipping models where a natural/composite key is
+more appropriate than a surrogate one at all (e.g. `Ledger` already uses
+`sequence Int @id`, not a CUID).
+
+Chunk 1 (`prisma/migrations/20260819000003_wasm_gas_reentrancy_signature_uuidv7_ids/`):
+`WasmUpgradeHistory`, `GasAnalyticsSnapshot`, `ReentrancyAlert`,
+`SignatureInspection`. All four are append-mostly, indexer-written records
+with no id-as-dedup-key landmine like `Event`'s (their upserts key off
+`transactionHash`/`bucket_bucketStart`/etc, never `id`).
 
 Each phase is a separate PR/commit set gated on feedback from the previous
 one; this ADR's Status line and the phase notes above will be kept current
