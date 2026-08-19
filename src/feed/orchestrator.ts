@@ -1,6 +1,7 @@
 import { EventEmitter } from 'events';
 import { ChannelManager } from './channelManager';
 import { feedPublisher } from './publisher';
+import { eventBus, EventNames } from '../events/eventBus';
 import { deliveryService } from './deliveryService';
 import { SubscriptionManager } from './subscriptionManager';
 import { FeedWebSocketServer } from './websocketServer';
@@ -35,6 +36,7 @@ export class FeedOrchestrator extends EventEmitter {
   private wsServer?: FeedWebSocketServer;
   private metricsJobId = 'feed-orchestrator-metrics';
   private logger: Logger;
+  private feedMessageUnsubscribe: (() => void) | null = null;
 
   /**
    * Create a FeedOrchestrator with optional dependency injection.
@@ -57,9 +59,11 @@ export class FeedOrchestrator extends EventEmitter {
       this.wsServer = new FeedWebSocketServer(httpServer);
     }
 
-    // Listen for feed messages and distribute to subscribers
-    feedPublisher.on('message', async (message) => {
-      await this.distributeMessage(message);
+    // Listen for feed messages (local + cross-instance) and distribute to subscribers
+    this.feedMessageUnsubscribe = eventBus.subscribe(EventNames.FeedMessage, (message) => {
+      this.distributeMessage(message.payload).catch((error) => {
+        this.logger.error('Failed to distribute feed message:', error);
+      });
     });
 
     // Start metrics collection
@@ -279,6 +283,11 @@ export class FeedOrchestrator extends EventEmitter {
     }
 
     await deliveryService.shutdown();
+
+    if (this.feedMessageUnsubscribe) {
+      this.feedMessageUnsubscribe();
+      this.feedMessageUnsubscribe = null;
+    }
 
     this.removeAllListeners();
 

@@ -3,7 +3,7 @@ import { defineConfig } from 'vitest/config';
 export default defineConfig({
   test: {
     globals: false,
-    include: ['tests/**/*.test.ts', 'src/**/*.test.ts'],
+    include: ['tests/**/*.test.ts', 'src/**/*.test.ts', 'packages/**/*.test.ts'],
     exclude: ['tests/orphaned-routers-integration.test.ts'],
     testTimeout: 30_000,
     hookTimeout: 30_000,
@@ -42,7 +42,6 @@ export default defineConfig({
         'src/db.ts',
         'src/config.ts',
         'src/reputation/**',
-        'src/sdk/**',
         'src/tip/**',
         'src/webhooks/**',
         'src/ws/**',

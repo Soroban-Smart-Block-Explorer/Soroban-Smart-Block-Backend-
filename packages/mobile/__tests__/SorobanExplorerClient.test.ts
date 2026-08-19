@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { SorobanExplorerClient } from '../SorobanExplorerClient';
+import { SorobanExplorerClient } from '../src/SorobanExplorerClient';
 
 const mockFetch = vi.fn();
 global.fetch = mockFetch;

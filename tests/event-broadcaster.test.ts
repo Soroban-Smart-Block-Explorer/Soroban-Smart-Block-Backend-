@@ -1,4 +1,4 @@
-import { describe, expect, it, afterEach } from 'vitest';
+import { describe, expect, it, afterEach, vi } from 'vitest';
 import { createServer, type Server } from 'node:http';
 import { AddressInfo } from 'node:net';
 import { WebSocket } from 'ws';
@@ -7,6 +7,14 @@ import {
   broadcastEvent,
   shutdownWebSocketServer,
 } from '../src/ws/eventBroadcaster';
+
+vi.mock('../src/db', () => ({
+  prismaWrite: {
+    apiKey: {
+      findUnique: vi.fn().mockResolvedValue({ active: true }),
+    },
+  },
+}));
 
 const servers: Server[] = [];
 
@@ -29,7 +37,7 @@ describe('event broadcaster', () => {
 
     const messages: string[] = [];
     const client = new WebSocket(
-      `ws://127.0.0.1:${port}/ws/events?contract=C123&eventType=token_transfer`,
+      `ws://127.0.0.1:${port}/ws/events?apiKey=test-key&contract=C123&eventType=token_transfer`,
     );
 
     await new Promise<void>((resolve, reject) => {

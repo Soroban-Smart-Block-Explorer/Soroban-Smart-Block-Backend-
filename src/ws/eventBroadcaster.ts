@@ -1,6 +1,7 @@
 import { WebSocketServer, WebSocket } from 'ws';
 import { IncomingMessage, Server } from 'http';
 import { prismaWrite as prisma } from '../db';
+import { eventBus, EventNames } from '../events/eventBus';
 
 const WS_API_KEY = process.env.WS_API_KEY ?? '';
 const MAX_CONNECTIONS_PER_IP = parseInt(process.env.WS_MAX_CONNECTIONS_PER_IP ?? '5', 10);
@@ -44,6 +45,7 @@ async function validateApiKey(key: string): Promise<boolean> {
 let pingInterval: NodeJS.Timeout | null = null;
 
 export function attachWebSocketServer(httpServer: Server): WebSocketServer {
+  ensureBusSubscriptions();
   const wss = new WebSocketServer({ server: httpServer, path: '/ws/events' });
 
   // Start the ping/pong heartbeat check interval (every 30s) if not already active
@@ -110,7 +112,7 @@ export function attachWebSocketServer(httpServer: Server): WebSocketServer {
   return wss;
 }
 
-export function broadcastEvent(event: {
+export interface EventPayload {
   id: string;
   contractAddress: string;
   eventType: string;
@@ -118,7 +120,9 @@ export function broadcastEvent(event: {
   ledger: number;
   ledgerCloseTime: Date;
   transactionHash: string;
-}) {
+}
+
+function sendEventToClients(event: EventPayload): void {
   const payload = JSON.stringify({ type: 'event', data: event });
 
   for (const client of clients) {
@@ -127,6 +131,33 @@ export function broadcastEvent(event: {
     if (client.eventTypeFilter && client.eventTypeFilter !== event.eventType) continue;
     client.ws.send(payload);
   }
+}
+
+function sendEmergencyToClients(payload: { event: string; data: Record<string, unknown> }): void {
+  const msg = JSON.stringify({ type: 'emergency', ...payload });
+  for (const client of clients) {
+    if (client.ws.readyState !== WebSocket.OPEN) continue;
+    client.ws.send(msg);
+  }
+}
+
+let busSubscriptionsReady = false;
+
+function ensureBusSubscriptions(): void {
+  if (busSubscriptionsReady) return;
+  busSubscriptionsReady = true;
+
+  eventBus.subscribe<EventPayload>(EventNames.WsEvent, (message) =>
+    sendEventToClients(message.payload),
+  );
+  eventBus.subscribe<{ event: string; data: Record<string, unknown> }>(
+    EventNames.WsEmergency,
+    (message) => sendEmergencyToClients(message.payload),
+  );
+}
+
+export function broadcastEvent(event: EventPayload): void {
+  void eventBus.publish(EventNames.WsEvent, event);
 }
 
 export function shutdownWebSocketServer(): void {
@@ -142,10 +173,9 @@ export function shutdownWebSocketServer(): void {
   clients.clear();
 }
 
-export function broadcastEmergencyEvent(payload: { event: string; data: Record<string, unknown> }) {
-  const msg = JSON.stringify({ type: 'emergency', ...payload });
-  for (const client of clients) {
-    if (client.ws.readyState !== WebSocket.OPEN) continue;
-    client.ws.send(msg);
-  }
+export function broadcastEmergencyEvent(payload: {
+  event: string;
+  data: Record<string, unknown>;
+}): void {
+  void eventBus.publish(EventNames.WsEmergency, payload);
 }
