@@ -18,6 +18,7 @@ import { feedOrchestrator } from '../feed/orchestrator';
 import { enqueueInitialAudit } from './audit-pipeline';
 import { amIResponsibleFor, getRangeCursor, isP2pEnabled, setRangeCursor } from '../p2p';
 import { logger } from '../logger';
+import { uuidv7 } from '../utils/uuidv7';
 
 const BATCH = config.indexerBatchSize;
 const WORKERS = config.indexerCatchupWorkers;
@@ -210,6 +211,7 @@ export async function processLedgerRange(
         where: { hash: event.transactionHash },
         update: {},
         create: {
+          id: uuidv7(),
           hash: event.transactionHash,
           ledgerSequence: event.ledgerSequence,
           ledgerCloseTime: event.ledgerCloseTime,

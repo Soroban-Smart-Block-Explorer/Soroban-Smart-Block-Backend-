@@ -59,7 +59,7 @@ model WasmUpgradeHistory {
 }
 
 model Transaction {
-  id String @map("id") @id @default(cuid())
+  id String @map("id") @id
   hash String @map("hash") @unique
   ledgerSequence Int @map("ledger_sequence")
   ledgerCloseTime DateTime @map("ledger_close_time")

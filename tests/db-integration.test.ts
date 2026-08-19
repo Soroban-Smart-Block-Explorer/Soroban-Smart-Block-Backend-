@@ -1,5 +1,6 @@
 import { PrismaClient } from '@prisma/client';
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
+import { uuidv7 } from '../src/utils/uuidv7';
 
 const TEST_DB_URL = process.env.TEST_DATABASE_URL ?? process.env.DATABASE_URL;
 
@@ -296,6 +297,7 @@ describeIf('PostgreSQL integration – migration & query compatibility', () => {
       txHashes.push(th);
       await prisma.transaction.create({
         data: {
+          id: uuidv7(),
           hash: th,
           ledgerSequence: seq,
           ledgerCloseTime: now,
@@ -330,6 +332,7 @@ describeIf('PostgreSQL integration – migration & query compatibility', () => {
     });
     await prisma.transaction.create({
       data: {
+        id: uuidv7(),
         hash: txHash,
         ledgerSequence: seq,
         ledgerCloseTime: now,
@@ -430,6 +433,7 @@ describeIf('PostgreSQL integration – migration & query compatibility', () => {
       });
       await tx.transaction.create({
         data: {
+          id: uuidv7(),
           hash: txHash,
           ledgerSequence: seq,
           ledgerCloseTime: now,
