@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { SorobanExplorerAuth } from '../SorobanExplorerAuth';
+import { SorobanExplorerAuth } from '../src/SorobanExplorerAuth';
 
 const mockStorage = {
   getItem: vi.fn(),

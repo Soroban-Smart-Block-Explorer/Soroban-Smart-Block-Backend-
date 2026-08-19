@@ -41,10 +41,9 @@ export class SorobanExplorerClient {
 
   constructor(config: SorobanExplorerConfig) {
     this.config = {
-      baseUrl: config.baseUrl.replace(/\/$/, ''),
-      apiKey: config.apiKey,
-      timeout: config.timeout ?? 10000,
       ...config,
+      baseUrl: config.baseUrl.replace(/\/$/, ''),
+      timeout: config.timeout ?? 10000,
     };
     this.retryConfig = { ...DEFAULT_RETRY, ...config.retryConfig };
     this.cacheConfig = { ...DEFAULT_CACHE, ...config.cacheConfig };
