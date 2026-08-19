@@ -14,6 +14,7 @@ extendedRouter.get(
     const anchors = await prisma.anchorsRegistry.findMany({
       where: { supportedSeps: { has: 'SEP-38' } },
       take: 50,
+      select: { assets: true, homeDomain: true },
     });
 
     const pairs = anchors.flatMap((a) => {
@@ -73,6 +74,7 @@ extendedRouter.get(
     const txs = await prisma.transaction.findMany({
       take: 100,
       orderBy: { ledgerCloseTime: 'desc' },
+      select: { sourceAccount: true, contractAddress: true },
     });
     const nodes = new Set<string>();
     const links: Array<{ source: string; target: string; value: number }> = [];
@@ -99,6 +101,7 @@ extendedRouter.get(
     const assets = await prisma.stellarAsset.findMany({
       take: 20,
       orderBy: { numHolders: 'desc' },
+      select: { assetCode: true, numHolders: true },
     });
     res.json({
       type: 'pie',
@@ -188,7 +191,16 @@ extendedRouter.post(
 extendedRouter.get(
   '/export/accounts',
   asyncHandler(async (_req: Request, res: Response) => {
-    const accounts = await prisma.stellarAccount.findMany({ take: 1000 });
+    const accounts = await prisma.stellarAccount.findMany({
+      take: 1000,
+      select: {
+        address: true,
+        xlmBalance: true,
+        sequenceNumber: true,
+        subentryCount: true,
+        isActivated: true,
+      },
+    });
     const csv = ['address,xlm_balance,sequence_number,subentry_count,is_activated'];
     for (const a of accounts) {
       csv.push(
@@ -203,7 +215,17 @@ extendedRouter.get(
 extendedRouter.get(
   '/export/assets',
   asyncHandler(async (_req: Request, res: Response) => {
-    const assets = await prisma.stellarAsset.findMany({ take: 1000 });
+    const assets = await prisma.stellarAsset.findMany({
+      take: 1000,
+      select: {
+        assetCode: true,
+        assetIssuer: true,
+        assetType: true,
+        totalSupply: true,
+        numHolders: true,
+        volume24h: true,
+      },
+    });
     const csv = ['code,issuer,type,total_supply,num_holders,volume_24h'];
     for (const a of assets) {
       csv.push(
@@ -221,6 +243,14 @@ extendedRouter.get(
     const txs = await prisma.unifiedTransaction.findMany({
       take: 1000,
       orderBy: { createdAt: 'desc' },
+      select: {
+        network: true,
+        txHash: true,
+        type: true,
+        amount: true,
+        successful: true,
+        createdAt: true,
+      },
     });
     const csv = ['network,tx_hash,type,amount,successful,created_at'];
     for (const t of txs) {
@@ -285,11 +315,13 @@ extendedRouter.post(
         where: { assetCode: 'USDC' },
         orderBy: { numHolders: 'desc' },
         take: 5,
+        select: { assetCode: true, numHolders: true },
       });
       response = `Top USDC assets by holders: ${assets.map((a) => `${a.assetCode} (${a.numHolders} holders)`).join(', ')}`;
     } else if (lower.includes('sep-31') || lower.includes('sep31')) {
       const anchors = await prisma.anchorsRegistry.findMany({
         where: { supportedSeps: { has: 'SEP-31' } },
+        select: { name: true },
       });
       response = `Anchors supporting SEP-31: ${anchors.map((a) => a.name).join(', ') || 'none indexed yet'}`;
     } else if (lower.includes('soroban') && lower.includes('volume')) {

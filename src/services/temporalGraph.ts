@@ -115,10 +115,11 @@ export class TemporalGraphAnalyzer {
     const last = metrics[metrics.length - 1];
     const days = metrics.length;
 
-    const nodeGrowthRate = ((last.nodeCount - first.nodeCount) / first.nodeCount) * 100 / days;
-    const edgeGrowthRate = ((last.edgeCount - first.edgeCount) / first.edgeCount) * 100 / days;
+    const nodeGrowthRate = (((last.nodeCount - first.nodeCount) / first.nodeCount) * 100) / days;
+    const edgeGrowthRate = (((last.edgeCount - first.edgeCount) / first.edgeCount) * 100) / days;
     const hubFormationRate = last.newHubs.length / days;
-    const communityStability = 1 - Math.abs(last.communityCount - first.communityCount) / first.communityCount;
+    const communityStability =
+      1 - Math.abs(last.communityCount - first.communityCount) / first.communityCount;
 
     return {
       nodeGrowthRate,
@@ -259,7 +260,7 @@ export class TemporalGraphAnalyzer {
 
       // Estimate community count and modularity
       const communityCount = Math.floor(stats.nodeCount / 100); // Simple estimate
-      const modularityScore = 0.3 + (Math.random() * 0.4); // Placeholder
+      const modularityScore = 0.3 + Math.random() * 0.4; // Placeholder
 
       await this.prisma.$executeRaw`
         INSERT INTO graph_metrics_snapshot 

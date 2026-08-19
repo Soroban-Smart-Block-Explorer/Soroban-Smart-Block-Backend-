@@ -59,7 +59,10 @@ function argsToScVal(args: unknown[]): xdr.ScVal[] {
         const n = BigInt(a);
         const lo = n < 0n ? n + 2n ** 128n : n;
         return xdr.ScVal.scvI128(
-          new xdr.Int128Parts({ hi: new xdr.Int64(lo >> 64n), lo: new xdr.Uint64(lo & 0xffffffffffffffffn) }),
+          new xdr.Int128Parts({
+            hi: new xdr.Int64(lo >> 64n),
+            lo: new xdr.Uint64(lo & 0xffffffffffffffffn),
+          }),
         );
       }
       return xdr.ScVal.scvString(Buffer.from(a, 'utf8'));
@@ -68,7 +71,10 @@ function argsToScVal(args: unknown[]): xdr.ScVal[] {
   });
 }
 
-function classifyError(error: string | undefined): { severity: FindingSeverity; exploitable: boolean } {
+function classifyError(error: string | undefined): {
+  severity: FindingSeverity;
+  exploitable: boolean;
+} {
   if (!error) return { severity: 'low', exploitable: false };
   const lower = error.toLowerCase();
   if (lower.includes('panic') || lower.includes('overflow') || lower.includes('underflow')) {
@@ -158,7 +164,10 @@ export async function fuzzContract(
       if (executed >= maxCases) break;
       const mutations = generateMutations(entry.args);
 
-      for (const { args: mutatedArgs, mutations: muts } of mutations.slice(0, Math.ceil(maxCases / functions.length))) {
+      for (const { args: mutatedArgs, mutations: muts } of mutations.slice(
+        0,
+        Math.ceil(maxCases / functions.length),
+      )) {
         if (executed >= maxCases) break;
         const pathKey = `${fn}:${JSON.stringify(mutatedArgs)}`;
         if (seenPaths.has(pathKey)) continue;
@@ -192,7 +201,13 @@ export async function fuzzContract(
       const { severity, exploitable } = classifyError(error);
       if (exploitable) {
         const finding: FuzzFinding = {
-          functionName: fn, args: boundaryArgs, mutation: 'boundary_value', result, error, severity, exploitable,
+          functionName: fn,
+          args: boundaryArgs,
+          mutation: 'boundary_value',
+          result,
+          error,
+          severity,
+          exploitable,
         };
         finding.regressionTest = generateRegressionTest(finding);
         findings.push(finding);
@@ -235,13 +250,15 @@ export function startFuzzJob(
   const job: FuzzJob = { id, status: 'running', startedAt: new Date().toISOString() };
   fuzzJobs.set(id, job);
 
-  fuzzContract(contractAddress, options).then((report) => {
-    job.status = 'completed';
-    job.report = report;
-  }).catch((e) => {
-    job.status = 'failed';
-    job.error = String(e);
-  });
+  fuzzContract(contractAddress, options)
+    .then((report) => {
+      job.status = 'completed';
+      job.report = report;
+    })
+    .catch((e) => {
+      job.status = 'failed';
+      job.error = String(e);
+    });
 
   return id;
 }

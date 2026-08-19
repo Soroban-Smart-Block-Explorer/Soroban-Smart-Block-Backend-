@@ -131,21 +131,13 @@ reputationRouter.get(
     const limit = Math.min(100, Math.max(1, Number(req.query.limit ?? 10)));
 
     // Load all profiles from DB
-    const profiles = await prismaRead.reputationProfile.findMany();
+    const profiles = await prismaRead.reputationProfile.findMany({ select: { address: true } });
 
-    // Transform profiles back to ChainReputationData for calculation
-    const mockChainData: ChainReputationData[] = [];
-    for (const p of profiles) {
-      mockChainData.push({
-        chainId: p.chain,
-        address: p.address,
-        transactionCount: 10,
-        successfulTransactionCount: 10,
-        sybilRisk: p.combinedScore && p.combinedScore < 300 ? 0.8 : 0.1,
-      });
-    }
+    // Fetch real on-chain data for every address in parallel
+    const chainDataArrays = await Promise.all(profiles.map((p) => fetchProfileData(p.address)));
+    const allChainData: ChainReputationData[] = chainDataArrays.flat();
 
-    const leaderboard = createLeaderboard(mockChainData, category, limit);
+    const leaderboard = createLeaderboard(allChainData, category, limit);
     return res.json({ category, leaderboard });
   }),
 );
@@ -1902,8 +1894,12 @@ reputationRouter.get(
     const address = canonicalAddress(req.params.address);
 
     // Fetch all balances and delegations
-    const delegations = await prismaRead.reputationDelegation.findMany();
-    const profiles = await prismaRead.reputationProfile.findMany();
+    const delegations = await prismaRead.reputationDelegation.findMany({
+      select: { delegator: true, delegatee: true, amount: true },
+    });
+    const profiles = await prismaRead.reputationProfile.findMany({
+      select: { address: true, combinedScore: true },
+    });
 
     const accounts = profiles.map((p) => ({
       address: p.address,

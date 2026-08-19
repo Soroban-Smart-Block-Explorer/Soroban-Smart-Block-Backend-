@@ -64,6 +64,88 @@ prisma/
 5. Run `npm test` and ensure all tests pass.
 6. Open a Pull Request against `main`. Reference the issue number.
 
+## Branch Naming Conventions
+
+Use the following prefixes to keep branches organized:
+
+- `feature/` — new features or enhancements (e.g. `feature/add-health-endpoint`)
+- `fix/` — bug fixes (e.g. `fix/issue-123-invalid-amount`)
+- `chore/` — tooling, dependencies, CI, docs (e.g. `chore/update-deps`)
+- `refactor/` — code changes that neither fix bugs nor add features
+- `test/` — test-only changes
+
+Include the issue number when possible: `feature/456-add-user-search`.
+
+## Commit Message Format
+
+We use [Conventional Commits](https://www.conventionalcommits.org/):
+
+```
+<type>(<scope>): <subject>
+```
+
+Types:
+- `feat` — new feature
+- `fix` — bug fix
+- `docs` — documentation only
+- `style` — formatting, missing semicolons, etc.
+- `refactor` — code change that neither fixes a bug nor adds a feature
+- `perf` — performance improvement
+- `test` — adding or updating tests
+- `chore` — build process, dependencies, CI
+
+Scope is optional but encouraged (e.g. `api`, `indexer`, `prisma`).
+
+Examples:
+```
+feat(api): add /health/rpc endpoint
+fix(indexer): handle missing ledger gracefully
+docs(contributing): expand branch naming rules
+```
+
+## Code Review Process
+
+1. All PRs require at least **one approving review** before merging.
+2. Keep PRs small and focused. Prefer multiple small PRs over one large PR.
+3. Update documentation when changing behavior.
+4. Ensure CI passes (lint, type-check, tests).
+5. Address review comments promptly; mark conversations as resolved.
+
+## PR Template Guidelines
+
+When opening a PR, include:
+
+- **Summary** — what changed and why
+- **Issue** — reference with `Closes #123` or `Fixes #123`
+- **Test plan** — how you verified the change
+- **Screenshots** — if the change affects the UI or API responses
+- **Checklist**
+  - [ ] `npm run lint` passes
+  - [ ] `npm run build` passes
+  - [ ] `npm test` passes
+  - [ ] Documentation updated
+
+## Testing Requirements
+
+- Write unit tests for new business logic.
+- Integration tests should cover new API routes.
+- Run `npm test` locally before pushing.
+- CI must be green before merge.
+
+## Issue Labeling Guide
+
+Core labels used by maintainers:
+
+- `Stellar Wave` — Drips Wave assignment required
+- `good first issue` — suitable for new contributors
+- `bug` — confirmed defect
+- `enhancement` — feature request
+- `documentation` — docs-only work
+- `devops` — CI, Docker, infrastructure
+- `security` — security-related change
+- `performance` — latency, memory, throughput
+- `blocked` — waiting on external dependency
+
 ## Code Style
 
 - TypeScript strict mode is enabled — no `any` unless unavoidable.

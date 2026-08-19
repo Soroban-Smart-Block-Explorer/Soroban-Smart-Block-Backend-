@@ -17,7 +17,14 @@ vi.mock('../../src/db', () => ({
 vi.mock('../../src/bridge-tracker', () => ({
   detectBridgeTransactions: vi.fn().mockResolvedValue({ detected: false, events: [] }),
   pollAndResolvePending: vi.fn().mockResolvedValue(0),
-  checkFinality: vi.fn().mockResolvedValue({ status: 'completed', confirmations: 12, requiredConfirmations: 12, reorgDetected: false, blocksUntilFinality: 0, progressPercent: 100 }),
+  checkFinality: vi.fn().mockResolvedValue({
+    status: 'completed',
+    confirmations: 12,
+    requiredConfirmations: 12,
+    reorgDetected: false,
+    blocksUntilFinality: 0,
+    progressPercent: 100,
+  }),
   getVolumeByProtocol: vi.fn().mockResolvedValue([]),
   getVolumeByChain: vi.fn().mockResolvedValue([]),
   getVolumeByAsset: vi.fn().mockResolvedValue([]),
@@ -25,7 +32,14 @@ vi.mock('../../src/bridge-tracker', () => ({
   getFeeComparison: vi.fn().mockResolvedValue([]),
   getAlerts: vi.fn().mockResolvedValue({ alerts: [], total: 0 }),
   acknowledgeAlert: vi.fn().mockResolvedValue(undefined),
-  addMonitoredAddress: vi.fn().mockResolvedValue({ id: 'mon-1', address: '0xabc', chain: 'ethereum', alertOnTx: true, alertOnBridging: true, active: true }),
+  addMonitoredAddress: vi.fn().mockResolvedValue({
+    id: 'mon-1',
+    address: '0xabc',
+    chain: 'ethereum',
+    alertOnTx: true,
+    alertOnBridging: true,
+    active: true,
+  }),
   removeMonitoredAddress: vi.fn().mockResolvedValue(undefined),
   listMonitoredAddresses: vi.fn().mockResolvedValue([]),
   startBridgeWorker: vi.fn(),
@@ -35,8 +49,20 @@ vi.mock('../../src/bridge-tracker', () => ({
 
 vi.mock('../../src/bridge-tracker/config', () => ({
   BRIDGE_CONTRACTS: [
-    { address: '0x1234', chain: 'ethereum', protocol: 'wormhole', deployedAtBlock: 0, eventSignatures: [] },
-    { address: '0x5678', chain: 'bsc', protocol: 'axelar', deployedAtBlock: 0, eventSignatures: [] },
+    {
+      address: '0x1234',
+      chain: 'ethereum',
+      protocol: 'wormhole',
+      deployedAtBlock: 0,
+      eventSignatures: [],
+    },
+    {
+      address: '0x5678',
+      chain: 'bsc',
+      protocol: 'axelar',
+      deployedAtBlock: 0,
+      eventSignatures: [],
+    },
   ],
 }));
 

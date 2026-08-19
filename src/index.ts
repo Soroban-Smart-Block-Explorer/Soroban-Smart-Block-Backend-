@@ -4,13 +4,17 @@ import './tracer';
 import express from 'express';
 import { createServer, Server } from 'http';
 import cors from 'cors';
+import cookieParser from 'cookie-parser';
 import helmet from 'helmet';
+import hpp from 'hpp';
 import morgan from 'morgan';
 import swaggerUi from 'swagger-ui-express';
 import { correlationMiddleware } from './middleware/correlation';
+import { responseEnvelopeMiddleware } from './middleware/responseEnvelope';
+import { compressionMiddleware } from './middleware/compression';
 import { config } from './config';
 import { router } from './api/router';
-import { prismaWrite as prisma, prismaRead } from './db';
+import { prismaWrite as prisma, prismaRead, prismaBackfill } from './db';
 import { startIndexerService, stopIndexerService } from './indexer/indexer';
 import { tieredRateLimit, initRateLimitStore } from './middleware/rateLimit';
 import { metricsMiddleware } from './middleware/metricsMiddleware';
@@ -29,13 +33,22 @@ import { cacheConnect, cacheClose, isCacheReady, cacheBackendType } from './cach
 import { markReady, markNotReady } from './readiness';
 import { errorHandler } from './middleware/errorHandler';
 import { requestContext } from './middleware/requestContext';
+import { versioningMiddleware } from './middleware/versioning';
 import { apiKeyAuth } from './middleware/apiKeyAuth';
 import { auditLogMiddleware } from './middleware/auditLog';
 import { asyncHandler } from './middleware/asyncHandler';
 import { rejectUntrustedForwardedHeaders } from './middleware/proxyTrust';
+import { requestTimeout } from './middleware/requestTimeout';
+import { sessionCookieAuth, COOKIE_CONFIG } from './middleware/cookieAuth';
 import { billingRouter } from './services/stripe-billing';
 import { logger } from './logger';
 import { feedOrchestrator } from './feed/orchestrator';
+import { startAuditPipeline } from './indexer/audit-pipeline';
+import { startAuditScheduler } from './indexer/audit-scheduler';
+import { startContinuousAuditMonitor } from './indexer/audit-monitor';
+import { startAuditExpiryChecker } from './indexer/audit-expiry-checker';
+import { startAuditDigestScheduler } from './indexer/audit-digest-scheduler';
+import { startKeyRotationScheduler } from './auth/keyRotationScheduler';
 import { startPriceUpdater, stopPriceUpdater } from './services/pricing';
 import { startBridgeWorker, stopBridgeWorker } from './bridge-tracker';
 import { writeFile, mkdir } from 'fs/promises';
@@ -47,10 +60,20 @@ import { startFeeAggregator as startFeeAggregatorImpl } from './indexer/fee-aggr
 import { attachArbitrageWebSocket as attachArbitrageWebSocketImpl } from './ws/arbitrageBroadcaster';
 import { attachComposabilityWebSocket as attachComposabilityWebSocketImpl } from './ws/composabilityBroadcaster';
 import { getHealthStatus, getLivenessStatus, getReadinessStatus } from './health';
+import {
+  getP2pStatusSnapshot,
+  resolveLedgerLocation,
+  startP2pNode,
+  stopP2pNode,
+  wireOnTheFlyIndexer,
+} from './p2p';
+import { indexSingleLedger } from './indexer/indexer';
 
 let isShuttingDown = false;
 const SERVICE_START_TIME = Date.now();
 let wssRef: ReturnType<typeof attachWebSocketServer> | null = null;
+let serverRef: Server | null = null;
+const activeConnections = new Set<any>();
 
 const SHUTDOWN_TIMEOUT_MS = parseInt(process.env.SHUTDOWN_TIMEOUT_MS ?? '30000');
 // Default to /tmp/state so the path is writable in read-only container filesystems.
@@ -127,26 +150,120 @@ app.use(
   cors({
     origin: corsOrigin,
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization', 'X-Api-Key', 'X-Request-Id'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'X-Api-Key', 'X-Request-Id', 'X-CSRF-Token'],
     credentials: true,
   }),
 );
 
 // Correlation IDs first — requestId is needed by morgan token and logger.
 app.use(correlationMiddleware);
-morgan.token('request-id', (req) => (req as express.Request).requestId ?? '-');
+app.use(responseEnvelopeMiddleware);
+
+// Response compression (gzip/brotli) for large JSON payloads
 app.use(
-  morgan(':method :url :status :res[content-length] - :response-time ms request-id=:request-id'),
+  compressionMiddleware({
+    threshold: 1024, // Compress responses >= 1KB
+    gzipLevel: 6, // Balanced speed/compression
+    brotliLevel: 6, // Balanced speed/compression
+    enableBrotli: true, // Try brotli first, fall back to gzip
+    logStats: config.nodeEnv === 'development', // Log in dev mode
+  }),
 );
+
+morgan.token('request-id', (req) => (req as express.Request).requestId ?? '-');
+
+// Query strings can carry sensitive values (API keys, tokens, session ids).
+// Redact any parameter whose name looks sensitive instead of logging it raw.
+const SENSITIVE_QUERY_PARAM_PATTERN =
+  /token|key|secret|password|auth|credential|session|signature/i;
+morgan.token('safe-url', (req) => {
+  const raw = (req as express.Request).originalUrl ?? req.url ?? '';
+  const [pathname, query] = raw.split('?');
+  if (!query) return pathname;
+  const params = new URLSearchParams(query);
+  for (const name of params.keys()) {
+    if (SENSITIVE_QUERY_PARAM_PATTERN.test(name)) {
+      params.set(name, '[REDACTED]');
+    }
+  }
+  return `${pathname}?${params.toString()}`;
+});
+app.use(
+  morgan(
+    ':method :safe-url :status :res[content-length] - :response-time ms request-id=:request-id',
+  ),
+);
+
+// CSRF Protection (Issue #658) ───────────────────────────────────────────────────
+// Add CSRF token middleware for cookie-based endpoints
+// Bearer token endpoints are CSRF-protected by design
+const csrfProtection = (
+  req: express.Request,
+  res: express.Response,
+  next: express.NextFunction,
+) => {
+  // Skip CSRF check for API key and Bearer token auth (stateless)
+  const authHeader = req.headers['authorization'];
+  const apiKey = req.headers['x-api-key'];
+  if (authHeader?.startsWith('Bearer ') || apiKey) {
+    return next();
+  }
+
+  // For cookie-based sessions, validate CSRF token from header
+  const csrfToken = req.headers['x-csrf-token'];
+  const sessionToken = req.cookies?.['__session'];
+
+  if (sessionToken && !csrfToken) {
+    return res.status(403).json({ error: 'CSRF token required' });
+  }
+  next();
+};
+app.use(csrfProtection);
+
+// Set SameSite cookie policy (Issue #658)
+app.use((req: express.Request, res: express.Response, next: express.NextFunction) => {
+  const originalSend = res.send;
+  res.send = function (data: any) {
+    res.setHeader(
+      'Set-Cookie',
+      (res.getHeader('Set-Cookie') || []).map((cookie: string) => {
+        if (!cookie.includes('SameSite')) {
+          return `${cookie}; SameSite=Strict; Secure; HttpOnly`;
+        }
+        return cookie;
+      }),
+    );
+    return originalSend.call(this, data);
+  };
+  next();
+});
 
 // Request size guard before body parsing (Issue #274)
 app.use(requestSizeGuard(1_048_576)); // 1 MB
 
+// Explicit request body size limits (Issue #659)
 app.use(express.json({ limit: '1mb' }));
+app.use(express.urlencoded({ limit: '1mb', extended: true }));
+app.use(express.raw({ limit: '1mb', type: 'application/octet-stream' }));
+
+// HTTP Parameter Pollution protection — last duplicate query parameter wins
+app.use(hpp());
 app.use(networkRouter);
+
+// Cookie parsing — enables session cookie authentication (cookieAuth middleware)
+// Uses COOKIE_SECRET env var for HMAC signing if provided
+app.use(cookieParser(COOKIE_CONFIG.secret || undefined));
 
 // Request context FIRST (generates requestId + start time for correlation)
 app.use(requestContext);
+
+// Session cookie authentication — complements X-Api-Key header auth
+// Validates signed cookies and attaches SessionContext to req.session
+app.use(sessionCookieAuth());
+
+// Request timeout — prevents long-running queries from hanging indefinitely
+// Applied early so timeout is enforced for all subsequent middleware/routes
+app.use(requestTimeout());
 
 // Auth must resolve before rate limiting so tier is known
 app.use(apiKeyAuth);
@@ -171,6 +288,12 @@ app.get('/api/v1/openapi.json', (_req, res) => res.json(swaggerSpec));
 
 app.use('/api/graphql', yogaHandler as unknown as express.RequestHandler);
 
+app.use('/api', versioningMiddleware, (req, res, next) => {
+  if (!req.url.startsWith('/v1/') && req.url !== '/v1') {
+    req.url = '/v1' + (req.url.startsWith('/') ? req.url : '/' + req.url);
+  }
+  next();
+});
 app.use('/api/v1', router);
 app.use('/api/billing', billingRouter);
 
@@ -202,6 +325,35 @@ app.get(
   }),
 );
 
+// P2P indexer network status — peer table, range ownership, recent challenge
+// results (see docs/P2P_INDEXER_DESIGN.md §1.4 dashboard). Reports enabled:false
+// with an empty snapshot on single-node deployments rather than erroring.
+app.get(
+  '/p2p/status',
+  asyncHandler(async (_req, res) => {
+    const snapshot = await getP2pStatusSnapshot();
+    res.json(snapshot);
+  }),
+);
+
+// Coordinator-less ledger lookup (design doc §1.3): local DB first, then
+// DHT-forward to a live range owner, then on-the-fly indexing as a last
+// resort. Works identically whether P2P is enabled or not — in single-node
+// mode it's just a local lookup with graceful degradation to on-the-fly
+// indexing, which is a strict improvement over a plain 404.
+app.get(
+  '/p2p/ledger/:seq',
+  asyncHandler(async (req, res) => {
+    const seq = parseInt(req.params.seq, 10);
+    if (!Number.isFinite(seq) || seq < 0) {
+      return res.status(400).json({ error: 'Invalid ledger sequence' });
+    }
+    const includeEvents = req.query.events !== 'false';
+    const result = await resolveLedgerLocation(config.stellarNetwork, seq, includeEvents);
+    res.status(result.found ? 200 : 404).json(result);
+  }),
+);
+
 // Liveness probe - basic check that service is alive
 app.get('/livez', (_req, res) => {
   if (isShuttingDown) {
@@ -212,7 +364,21 @@ app.get('/livez', (_req, res) => {
   res.json(liveness);
 });
 
+// /healthz — Kubernetes liveness probe (Issue #704)
+// Returns 200 while the process is alive; 503 during graceful shutdown.
+// K8s probe config: initialDelaySeconds: 15, periodSeconds: 20, failureThreshold: 3
+app.get('/healthz', (_req, res) => {
+  if (isShuttingDown) {
+    return res.status(503).json({ status: 'dead', reason: 'shutting_down' });
+  }
+
+  const liveness = getLivenessStatus(SERVICE_START_TIME);
+  res.json(liveness);
+});
+
 // Readiness probe - detailed check if service can handle traffic
+// /readyz — Kubernetes readiness probe (Issue #704)
+// K8s probe config: initialDelaySeconds: 10, periodSeconds: 10, failureThreshold: 3
 app.get('/readyz', (_req, res) => {
   if (isShuttingDown) {
     return res.status(503).json({ status: 'not_ready', reason: 'shutting_down' });
@@ -273,8 +439,37 @@ async function gracefulShutdown(signal: string): Promise<void> {
   }, SHUTDOWN_TIMEOUT_MS);
 
   try {
+    if (serverRef) {
+      logger.info('[shutdown] Closing HTTP server, draining connections...');
+      const closePromise = new Promise<void>((resolve) => {
+        serverRef!.close(() => {
+          logger.info('[shutdown] HTTP server closed');
+          resolve();
+        });
+      });
+
+      const connForceTimeout = setTimeout(() => {
+        if (activeConnections.size > 0) {
+          logger.warn(
+            `[shutdown] Forcing close of ${activeConnections.size} remaining active connections`,
+          );
+          for (const socket of activeConnections) {
+            socket.destroy();
+          }
+        }
+      }, 5000);
+
+      await closePromise;
+      clearTimeout(connForceTimeout);
+    }
+
     stopIndexerService();
     logger.info('[shutdown] Indexer service stopped');
+
+    await stopP2pNode().catch((err) =>
+      logger.warn('[shutdown] Error stopping p2p node', { error: String(err) }),
+    );
+    logger.info('[shutdown] P2P node stopped');
 
     if (wssRef) {
       shutdownWebSocketServer();
@@ -300,6 +495,7 @@ async function gracefulShutdown(signal: string): Promise<void> {
 
     await prismaRead.$disconnect();
     await prisma.$disconnect();
+    await prismaBackfill.$disconnect();
     dbConnectionStatus.set(0);
     logger.info('[shutdown] Database connections closed');
 
@@ -358,6 +554,11 @@ async function main() {
   await initializeColdStorage();
   markReady('coldStorage');
 
+  wireOnTheFlyIndexer(indexSingleLedger);
+  await startP2pNode().catch((err) => {
+    logger.error('[p2p] failed to start', { error: String(err) });
+  });
+
   if (!process.env.DISABLE_INDEXER) {
     markReady('indexer');
     startIndexerService().catch((err) => {
@@ -372,6 +573,13 @@ async function main() {
   }
 
   const httpServer: Server = createServer(app);
+  serverRef = httpServer;
+  httpServer.on('connection', (socket) => {
+    activeConnections.add(socket);
+    socket.on('close', () => {
+      activeConnections.delete(socket);
+    });
+  });
   wssRef = attachWebSocketServer(httpServer);
 
   if (ENABLE_PRIVACY_WS) {
@@ -448,6 +656,41 @@ async function main() {
     } catch (err) {
       logger.warn('Bridge worker failed to start', { error: String(err) });
     }
+
+    // Audit Pipeline — initial-audit queue drain (fires within 5 min of first detection)
+    try {
+      startAuditPipeline();
+    } catch (err) {
+      logger.warn('Audit pipeline failed to start', { error: String(err) });
+    }
+
+    // Audit Scheduler — daily (TVL > $100K, incremental) + weekly (all, full recompute)
+    try {
+      startAuditScheduler();
+    } catch (err) {
+      logger.warn('Audit scheduler failed to start', { error: String(err) });
+    }
+
+    // Continuous Audit Monitor — real-time 7-signal detector, 1-min poll
+    try {
+      startContinuousAuditMonitor();
+    } catch (err) {
+      logger.warn('Continuous audit monitor failed to start', { error: String(err) });
+    }
+
+    // Certificate Expiry Checker — 30/14/7-day warnings, auto re-audit at 7d
+    try {
+      startAuditExpiryChecker();
+    } catch (err) {
+      logger.warn('Audit expiry checker failed to start', { error: String(err) });
+    }
+
+    // Weekly Audit Digest Scheduler — posts to Slack/Discord every Monday 09:00 UTC
+    try {
+      startAuditDigestScheduler();
+    } catch (err) {
+      logger.warn('Audit digest scheduler failed to start', { error: String(err) });
+    }
   }
 
   try {
@@ -455,6 +698,14 @@ async function main() {
     logger.info('Price updater started');
   } catch (err) {
     logger.warn('Price updater failed to start', { error: String(err) });
+  }
+
+  // JWT signing key rotation — every 30 days (also triggerable via POST /auth/keys/rotate)
+  try {
+    startKeyRotationScheduler();
+    logger.info('JWT key rotation scheduler started');
+  } catch (err) {
+    logger.warn('JWT key rotation scheduler failed to start', { error: String(err) });
   }
 
   await feedOrchestrator.initialize(httpServer);

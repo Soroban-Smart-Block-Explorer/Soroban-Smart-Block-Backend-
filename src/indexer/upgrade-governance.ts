@@ -10,6 +10,7 @@
 
 import { prismaWrite, prismaRead } from '../db';
 import { diffWasm, type WasmDiff } from './wasm-diff';
+import { logger } from '../logger';
 
 /** Approximate Stellar ledger close interval, used to convert ages → ledgers. */
 const LEDGER_SECONDS = 5;
@@ -421,7 +422,7 @@ export async function recordUpgradeWithIntelligence(input: RecordUpgradeInput) {
   });
 
   if (suspicious.isSuspicious) {
-    console.warn(
+    logger.warn(
       `[upgrade-governance] suspicious upgrade on ${contractAddress} at ledger ${ledgerSequence}: ` +
         `${suspicious.riskLevel} risk [${suspicious.flags.join(', ')}]`,
     );

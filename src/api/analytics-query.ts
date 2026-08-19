@@ -279,7 +279,13 @@ analyticsQueryRouter.get(
       default:
         res.status(404).json({
           error: `Unknown dashboard type "${type}"`,
-          available: ['top-contracts', 'gas-distribution', 'wallet-creation', 'token-heatmap', 'protocol-summary'],
+          available: [
+            'top-contracts',
+            'gas-distribution',
+            'wallet-creation',
+            'token-heatmap',
+            'protocol-summary',
+          ],
         });
     }
   }),

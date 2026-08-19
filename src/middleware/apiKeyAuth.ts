@@ -39,16 +39,6 @@ export interface ApiKeyContext {
   allowedDomains?: string[];
 }
 
-declare global {
-  // eslint-disable-next-line @typescript-eslint/no-namespace
-  namespace Express {
-    interface Request {
-      apiKey?: ApiKeyContext;
-      rateLimitResult?: import('./tokenBucket').TokenBucketResult;
-    }
-  }
-}
-
 function hashKey(raw: string): string {
   return crypto.createHash('sha256').update(raw).digest('hex');
 }

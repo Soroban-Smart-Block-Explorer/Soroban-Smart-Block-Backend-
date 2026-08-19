@@ -13,6 +13,7 @@ import { Writable } from 'stream';
 import { Prisma } from '@prisma/client';
 import { prismaRead, prismaWrite } from '../db';
 import { config } from '../config';
+import { logger } from '../logger';
 
 function getExportDir(): string {
   return process.env.EXPORT_DIR ?? config.exportDir;
@@ -256,7 +257,7 @@ export async function enqueueExport(
     },
   });
   // Fire-and-forget; caller can poll job status
-  runExportJob(job.id).catch((err) => console.error(`[csv-exporter] job ${job.id} failed:`, err));
+  runExportJob(job.id).catch((err) => logger.error(`[csv-exporter] job ${job.id} failed:`, err));
   return job.id;
 }
 

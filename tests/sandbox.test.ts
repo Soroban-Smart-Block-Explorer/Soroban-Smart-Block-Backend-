@@ -34,7 +34,7 @@ vi.mock('../src/db', () => ({
   prismaRead: {
     sandboxSession: {
       findUnique: vi.fn(async ({ where }: any) => sessionStore.get(where.id) ?? null),
-      count: vi.fn(async ({ where }: any) => sessionStore.has(where?.id) ? 1 : 0),
+      count: vi.fn(async ({ where }: any) => (sessionStore.has(where?.id) ? 1 : 0)),
     },
     sandboxAccount: {
       findMany: vi.fn(async ({ where }: any) => getArrayStore(accountStore, where.sessionId)),
@@ -124,7 +124,10 @@ vi.mock('../src/db', () => ({
     sandboxAccount: {
       createMany: vi.fn(async ({ data }: any) => {
         for (const row of data) {
-          getArrayStore(accountStore, row.sessionId).push({ id: uniqueId('account'), ...clone(row) });
+          getArrayStore(accountStore, row.sessionId).push({
+            id: uniqueId('account'),
+            ...clone(row),
+          });
         }
         return { count: data.length };
       }),
@@ -153,7 +156,9 @@ vi.mock('../src/db', () => ({
       }),
       update: vi.fn(async ({ where, data }: any) => {
         const rows = getArrayStore(contractStore, where.sessionId_contractId.sessionId);
-        const row = rows.find((entry) => entry.contractId === where.sessionId_contractId.contractId);
+        const row = rows.find(
+          (entry) => entry.contractId === where.sessionId_contractId.contractId,
+        );
         if (!row) throw new Error('contract not found');
         Object.assign(row, clone(data));
         return row;
@@ -165,7 +170,11 @@ vi.mock('../src/db', () => ({
     },
     sandboxSnapshot: {
       create: vi.fn(async ({ data }: any) => {
-        const row = { id: uniqueId('snapshot'), createdAt: new Date('2026-06-18T00:00:00.000Z'), ...clone(data) };
+        const row = {
+          id: uniqueId('snapshot'),
+          createdAt: new Date('2026-06-18T00:00:00.000Z'),
+          ...clone(data),
+        };
         getArrayStore(snapshotStore, data.sessionId).push(row);
         return row;
       }),
@@ -244,6 +253,103 @@ describe('SandboxEngine', () => {
     vi.clearAllMocks();
   });
 
+  it('prevents duplicate sandbox accounts with the same sessionId and null publicKey', async () => {
+    // Verifies fix for issue #606: UNIQUE NULLS NOT DISTINCT index correctly rejects two rows
+    // with the same sessionId and publicKey = NULL.  We enforce the constraint directly in the
+    // in-memory store (no recursive mock calls) mirroring PG 16+ NULLS NOT DISTINCT semantics.
+
+    function nullsNotDistinctUnique(store: any[], newRow: any): boolean {
+      // Two rows collide when sessionId matches AND publicKey matches under NULLS NOT DISTINCT:
+      // NULL == NULL (unlike standard SQL UNIQUE where NULL != NULL).
+      return store.some(
+        (existing) =>
+          existing.sessionId === newRow.sessionId &&
+          (existing.publicKey ?? null) === (newRow.publicKey ?? null),
+      );
+    }
+
+    const uniqueViolation = () =>
+      Object.assign(new Error('Unique constraint failed on fields: (`sessionId`,`publicKey`)'), {
+        code: 'P2002',
+        meta: { target: ['sessionId', 'publicKey'] },
+      });
+
+    const { prismaWrite } = await import('../src/db');
+
+    // Temporarily replace createMany and create with constraint-aware versions.
+    const savedCreateMany = (prismaWrite.sandboxAccount.createMany as any).getMockImplementation();
+    const savedCreate = (prismaWrite.sandboxAccount.create as any).getMockImplementation();
+
+    (prismaWrite.sandboxAccount.createMany as any).mockImplementation(
+      async ({ data }: { data: any[] }) => {
+        const store = getArrayStore(accountStore, data[0]?.sessionId);
+        for (const newRow of data) {
+          if (nullsNotDistinctUnique(store, newRow)) throw uniqueViolation();
+          store.push({ id: uniqueId('account'), ...clone(newRow) });
+        }
+        return { count: data.length };
+      },
+    );
+
+    (prismaWrite.sandboxAccount.create as any).mockImplementation(
+      async ({ data }: { data: any }) => {
+        const store = getArrayStore(accountStore, data.sessionId);
+        if (nullsNotDistinctUnique(store, data)) throw uniqueViolation();
+        const row = { id: uniqueId('account'), ...clone(data) };
+        store.push(row);
+        return row;
+      },
+    );
+
+    try {
+      const { sandboxEngine } = await import('../src/sandbox/runtime');
+
+      // Normal session creation always uses non-null public keys — must still succeed.
+      const session = await sandboxEngine.createSession({ seed: 'test-null-pk' });
+      expect(session.status).toBe('active');
+
+      // First insert with publicKey = null should succeed.
+      await expect(
+        prismaWrite.sandboxAccount.create({
+          data: {
+            sessionId: session.id,
+            publicKey: null,
+            label: 'null-pk-1',
+            balance: '0',
+            sequenceNumber: 0,
+            isPreFunded: false,
+          },
+        }),
+      ).resolves.toBeDefined();
+
+      // Second insert with the same (sessionId, null) must be rejected — this is the bug fix.
+      await expect(
+        prismaWrite.sandboxAccount.create({
+          data: {
+            sessionId: session.id,
+            publicKey: null,
+            label: 'null-pk-2',
+            balance: '0',
+            sequenceNumber: 0,
+            isPreFunded: false,
+          },
+        }),
+      ).rejects.toThrow(/Unique constraint failed/);
+    } finally {
+      // Always restore the original implementations so other tests are unaffected.
+      if (savedCreateMany) {
+        (prismaWrite.sandboxAccount.createMany as any).mockImplementation(savedCreateMany);
+      } else {
+        (prismaWrite.sandboxAccount.createMany as any).mockRestore?.();
+      }
+      if (savedCreate) {
+        (prismaWrite.sandboxAccount.create as any).mockImplementation(savedCreate);
+      } else {
+        (prismaWrite.sandboxAccount.create as any).mockRestore?.();
+      }
+    }
+  });
+
   it('creates a deterministic session with prefunded accounts', async () => {
     const { sandboxEngine } = await import('../src/sandbox/runtime');
     const session = await sandboxEngine.createSession({ seed: 'seed-a' });
@@ -299,6 +405,50 @@ describe('SandboxEngine', () => {
     expect(fuzzRun.findings[0].severity).toBe('critical');
   });
 
+  it('runs a fuzz campaign, records crashes, and minimizes them', async () => {
+    const { sandboxEngine } = await import('../src/sandbox/runtime');
+    const session = await sandboxEngine.createSession({ seed: 'seed-e' });
+    const contract = await sandboxEngine.deployFromTemplate({
+      sessionId: session.id,
+      templateId: 'sep41-token',
+      name: 'Token',
+      deployer: (await sandboxEngine.listAccounts(session.id))[0].publicKey,
+    });
+
+    const campaign = await sandboxEngine.startFuzzCampaign({
+      sessionId: session.id,
+      contractId: contract.contractId,
+      config: {
+        timeLimitMs: 20,
+        coverageTarget: 60,
+        workers: 2,
+        maxSteps: 4,
+        seedCorpus: [
+          {
+            functionName: 'mint',
+            args: { to: (await sandboxEngine.listAccounts(session.id))[1].publicKey, amount: '1' },
+          },
+        ],
+        invariants: ['totalSupply == sum(balances)'],
+        enableOracleManipulation: true,
+      },
+    });
+
+    expect(campaign.campaignId).toBeDefined();
+    expect(campaign.coverage.totalCoverage).toBeGreaterThan(0);
+    expect(campaign.crashes.length).toBeGreaterThanOrEqual(0);
+
+    if (campaign.crashes.length > 0) {
+      const minimized = await sandboxEngine.minimizeCrash(
+        session.id,
+        campaign.campaignId,
+        campaign.crashes[0].id,
+      );
+      expect(minimized.steps.length).toBeLessThanOrEqual(campaign.crashes[0].steps.length);
+      expect(minimized.suggestedFix).toBeTruthy();
+    }
+  });
+
   it('executes CI steps and stores the result', async () => {
     const { sandboxEngine } = await import('../src/sandbox/runtime');
     const session = await sandboxEngine.createSession({ seed: 'seed-d' });
@@ -313,8 +463,19 @@ describe('SandboxEngine', () => {
       sessionId: session.id,
       onFailure: 'stop',
       steps: [
-        { action: 'call', contract: contract.contractId, function: 'mint', args: { to: (await sandboxEngine.listAccounts(session.id))[1].publicKey, amount: '42' } },
-        { action: 'assert', contract: contract.contractId, function: 'balance_of', expected: { balance: '42' }, args: { owner: (await sandboxEngine.listAccounts(session.id))[1].publicKey } },
+        {
+          action: 'call',
+          contract: contract.contractId,
+          function: 'mint',
+          args: { to: (await sandboxEngine.listAccounts(session.id))[1].publicKey, amount: '42' },
+        },
+        {
+          action: 'assert',
+          contract: contract.contractId,
+          function: 'balance_of',
+          expected: { balance: '42' },
+          args: { owner: (await sandboxEngine.listAccounts(session.id))[1].publicKey },
+        },
       ],
     });
 

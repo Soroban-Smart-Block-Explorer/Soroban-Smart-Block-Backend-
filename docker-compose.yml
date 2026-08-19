@@ -470,6 +470,183 @@ services:
     logging: *logging
     profiles: [analytics]
 
+  # ═══════════════════════════════════════════════════════════════════════════
+  # P2P INDEXER NETWORK (testnet) — see docs/P2P_INDEXER_DESIGN.md §7-8.
+  #
+  # A minimal 3-node local swarm (1 seed + 2 peers) for exercising the P2P
+  # code paths end-to-end. Each node gets its own Postgres so replication is
+  # genuinely exercised across independent databases rather than shared
+  # state. Peer discovery uses mDNS (P2P_MDNS_ENABLED=true) since all
+  # containers share the compose bridge network — this sidesteps needing to
+  # know the seed's PeerId ahead of time for local testing. Real multi-host
+  # deployments should set P2P_BOOTSTRAP_PEERS to a static seed multiaddr
+  # instead (mDNS is LAN-only by design).
+  #
+  # Scale beyond 3 nodes (e.g. the 10+ node acceptance-criteria harness) via
+  # `ts-node scripts/gen-p2p-compose.ts N > docker-compose.p2p.generated.yml`
+  # rather than hand-editing this block.
+  # ═══════════════════════════════════════════════════════════════════════════
+  db-testnet-p2p-seed:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+      POSTGRES_DB: soroban_testnet_p2p_seed
+    volumes:
+      - pgdata-testnet-p2p-seed:/var/lib/postgresql/data
+    healthcheck: *db-healthcheck
+    deploy:
+      resources: *db-resources
+    logging: *logging
+    profiles: [p2p]
+
+  # Each p2p-profile node runs the COMBINED api+indexer process
+  # (dist/index.js, same as api-testnet/mainnet) rather than the headless
+  # indexer-only entrypoint, so every node exposes /health, /p2p/status, and
+  # /p2p/ledger/:seq over HTTP — that's what makes the chaos scripts
+  # (scripts/chaos/*.ts) able to exercise query-forwarding, kill nodes, and
+  # inject a bad hash against a real reachable endpoint per node.
+  indexer-testnet-p2p-seed:
+    <<: [*app-build, *security]
+    restart: unless-stopped
+    ports:
+      - '3010:3010'
+    environment:
+      STELLAR_NETWORK: testnet
+      PORT: 3010
+      TESTNET_DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}@db-testnet-p2p-seed:5432/soroban_testnet_p2p_seed
+      DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}@db-testnet-p2p-seed:5432/soroban_testnet_p2p_seed
+      TESTNET_RPC_URL: https://soroban-testnet.stellar.org
+      TESTNET_HORIZON_URL: https://horizon-testnet.stellar.org
+      TESTNET_PASSPHRASE: "Test SDF Network ; September 2015"
+      P2P_ENABLED: 'true'
+      P2P_MDNS_ENABLED: 'true'
+      P2P_IS_RELAY_SERVER: 'true'
+      P2P_LISTEN_ADDR: /ip4/0.0.0.0/tcp/4001
+      P2P_IDENTITY_PATH: /app/data/p2p/testnet/identity.key
+      P2P_CHALLENGE_INTERVAL_MS: '15000'
+    volumes:
+      - p2p-identity-seed:/app/data/p2p
+    depends_on:
+      db-testnet-p2p-seed:
+        condition: service_healthy
+    healthcheck:
+      test: ['CMD-SHELL', 'wget -qO- http://localhost:3010/health || exit 1']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    deploy:
+      resources: *indexer-resources
+    logging: *logging
+    command: sh -c "npx prisma migrate deploy && node dist/index.js"
+    profiles: [p2p]
+
+  db-testnet-p2p-peer1:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+      POSTGRES_DB: soroban_testnet_p2p_peer1
+    volumes:
+      - pgdata-testnet-p2p-peer1:/var/lib/postgresql/data
+    healthcheck: *db-healthcheck
+    deploy:
+      resources: *db-resources
+    logging: *logging
+    profiles: [p2p]
+
+  indexer-testnet-p2p-peer1:
+    <<: [*app-build, *security]
+    restart: unless-stopped
+    ports:
+      - '3011:3011'
+    environment:
+      STELLAR_NETWORK: testnet
+      PORT: 3011
+      TESTNET_DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}@db-testnet-p2p-peer1:5432/soroban_testnet_p2p_peer1
+      DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}@db-testnet-p2p-peer1:5432/soroban_testnet_p2p_peer1
+      TESTNET_RPC_URL: https://soroban-testnet.stellar.org
+      TESTNET_HORIZON_URL: https://horizon-testnet.stellar.org
+      TESTNET_PASSPHRASE: "Test SDF Network ; September 2015"
+      P2P_ENABLED: 'true'
+      P2P_MDNS_ENABLED: 'true'
+      P2P_LISTEN_ADDR: /ip4/0.0.0.0/tcp/4001
+      P2P_IDENTITY_PATH: /app/data/p2p/testnet/identity.key
+      P2P_CHALLENGE_INTERVAL_MS: '15000'
+    volumes:
+      - p2p-identity-peer1:/app/data/p2p
+    depends_on:
+      db-testnet-p2p-peer1:
+        condition: service_healthy
+      indexer-testnet-p2p-seed:
+        condition: service_started
+    healthcheck:
+      test: ['CMD-SHELL', 'wget -qO- http://localhost:3011/health || exit 1']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    deploy:
+      resources: *indexer-resources
+    logging: *logging
+    command: sh -c "npx prisma migrate deploy && node dist/index.js"
+    profiles: [p2p]
+
+  db-testnet-p2p-peer2:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+      POSTGRES_DB: soroban_testnet_p2p_peer2
+    volumes:
+      - pgdata-testnet-p2p-peer2:/var/lib/postgresql/data
+    healthcheck: *db-healthcheck
+    deploy:
+      resources: *db-resources
+    logging: *logging
+    profiles: [p2p]
+
+  indexer-testnet-p2p-peer2:
+    <<: [*app-build, *security]
+    restart: unless-stopped
+    ports:
+      - '3012:3012'
+    environment:
+      STELLAR_NETWORK: testnet
+      PORT: 3012
+      TESTNET_DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}@db-testnet-p2p-peer2:5432/soroban_testnet_p2p_peer2
+      DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}@db-testnet-p2p-peer2:5432/soroban_testnet_p2p_peer2
+      TESTNET_RPC_URL: https://soroban-testnet.stellar.org
+      TESTNET_HORIZON_URL: https://horizon-testnet.stellar.org
+      TESTNET_PASSPHRASE: "Test SDF Network ; September 2015"
+      P2P_ENABLED: 'true'
+      P2P_MDNS_ENABLED: 'true'
+      P2P_LISTEN_ADDR: /ip4/0.0.0.0/tcp/4001
+      P2P_IDENTITY_PATH: /app/data/p2p/testnet/identity.key
+      P2P_CHALLENGE_INTERVAL_MS: '15000'
+    volumes:
+      - p2p-identity-peer2:/app/data/p2p
+    depends_on:
+      db-testnet-p2p-peer2:
+        condition: service_healthy
+      indexer-testnet-p2p-seed:
+        condition: service_started
+    healthcheck:
+      test: ['CMD-SHELL', 'wget -qO- http://localhost:3012/health || exit 1']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    deploy:
+      resources: *indexer-resources
+    logging: *logging
+    command: sh -c "npx prisma migrate deploy && node dist/index.js"
+    profiles: [p2p]
+
 volumes:
   pgdata-testnet:
   pgdata-mainnet:
@@ -479,3 +656,9 @@ volumes:
   zookeeper-log:
   kafka-data:
   trino-catalog:
+  pgdata-testnet-p2p-seed:
+  pgdata-testnet-p2p-peer1:
+  pgdata-testnet-p2p-peer2:
+  p2p-identity-seed:
+  p2p-identity-peer1:
+  p2p-identity-peer2:

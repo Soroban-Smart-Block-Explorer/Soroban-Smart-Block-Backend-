@@ -32,19 +32,22 @@ function ownedJobWhere(req: Request, jobId?: string) {
 }
 
 // POST /exports — enqueue
-exportsRouter.post('/', async (req: Request, res: Response) => {
-  try {
-    const body = createSchema.parse(req.body);
-    const jobId = await enqueueExport(
-      body.exportType,
-      body.filters as Record<string, unknown>,
-      req.apiKey!.developerId,
-    );
-    res.status(202).json({ jobId, status: 'pending' });
-  } catch (e) {
-    res.status(400).json({ error: String(e) });
-  }
-});
+exportsRouter.post(
+  '/',
+  asyncHandler(async (req: Request, res: Response) => {
+    try {
+      const body = createSchema.parse(req.body);
+      const jobId = await enqueueExport(
+        body.exportType,
+        body.filters as Record<string, unknown>,
+        req.apiKey!.developerId,
+      );
+      res.status(202).json({ jobId, status: 'pending' });
+    } catch (e) {
+      res.status(400).json({ error: String(e) });
+    }
+  }),
+);
 
 // GET /exports — list
 exportsRouter.get(

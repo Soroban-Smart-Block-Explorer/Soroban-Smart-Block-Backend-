@@ -29,7 +29,11 @@ function closeServer(server: http.Server): Promise<void> {
   return new Promise((resolve) => server.close(() => resolve()));
 }
 
-function request(port: number, path = '/', extraHeaders: Record<string, string> = {}): Promise<{ status: number; body: string }> {
+function request(
+  port: number,
+  path = '/',
+  extraHeaders: Record<string, string> = {},
+): Promise<{ status: number; body: string }> {
   return new Promise((resolve, reject) => {
     const req = http.request(
       {
@@ -44,7 +48,9 @@ function request(port: number, path = '/', extraHeaders: Record<string, string> 
       },
       (res) => {
         let body = '';
-        res.on('data', (chunk) => { body += chunk; });
+        res.on('data', (chunk) => {
+          body += chunk;
+        });
         res.on('end', () => resolve({ status: res.statusCode ?? 0, body }));
       },
     );
@@ -56,11 +62,13 @@ function request(port: number, path = '/', extraHeaders: Record<string, string> 
 describe('graceful shutdown', () => {
   it('close callback fires after in-flight requests complete', async () => {
     let release: () => void;
-    const released = new Promise<void>((r) => { release = r; });
+    const released = new Promise<void>((r) => {
+      release = r;
+    });
 
     const server = makeServer((_req, res) => {
       released.then(() => {
-        res.writeHead(200, { 'Content-Type': 'application/json', 'Connection': 'close' });
+        res.writeHead(200, { 'Content-Type': 'application/json', Connection: 'close' });
         res.end(JSON.stringify({ done: true }));
       });
     });
@@ -109,10 +117,10 @@ describe('graceful shutdown', () => {
 
     // A fresh TCP connection attempt should now be refused
     const err = await new Promise<Error | null>((resolve) => {
-      const req = http.request(
-        { hostname: '127.0.0.1', port, path: '/', agent: false },
-        (res) => { res.resume(); resolve(null); },
-      );
+      const req = http.request({ hostname: '127.0.0.1', port, path: '/', agent: false }, (res) => {
+        res.resume();
+        resolve(null);
+      });
       req.on('error', (e) => resolve(e));
       req.end();
     });
@@ -135,7 +143,10 @@ describe('graceful shutdown', () => {
 
     function shutdown(): Promise<void> {
       return new Promise((resolve) => {
-        if (!httpServer) { resolve(); return; }
+        if (!httpServer) {
+          resolve();
+          return;
+        }
         httpServer.close(() => resolve());
       });
     }
@@ -149,7 +160,9 @@ describe('graceful shutdown', () => {
 
     // After shutdown, a new connection must be refused
     const err = await new Promise<Error | null>((resolve) => {
-      const req = http.request({ hostname: '127.0.0.1', port, path: '/ping', agent: false }, () => resolve(null));
+      const req = http.request({ hostname: '127.0.0.1', port, path: '/ping', agent: false }, () =>
+        resolve(null),
+      );
       req.on('error', (e) => resolve(e));
       req.end();
     });

@@ -1,5 +1,6 @@
 import WebSocket from 'ws';
-import { prismaRead, prismaWrite } from '../db';
+import { xdr } from '@stellar/stellar-sdk';
+import { prismaWrite as prisma } from '../db';
 import { config } from '../config';
 import {
   fetchEvents,
@@ -11,18 +12,33 @@ import {
   fetchLedgerMetadata,
 } from './rpc';
 import { decodeTransaction, decodeEvent } from './decoder';
+import { decodeZkpVerification, recordZkpVerification } from './zkp-verifier';
 import { processAaTransaction } from './aa-indexer';
 import { feedOrchestrator } from '../feed/orchestrator';
+import { enqueueInitialAudit } from './audit-pipeline';
+import { amIResponsibleFor, getRangeCursor, isP2pEnabled, setRangeCursor } from '../p2p';
+import { logger } from '../logger';
 
 const BATCH = config.indexerBatchSize;
 const WORKERS = config.indexerCatchupWorkers;
 
 // ---------------------------------------------------------------------------
 // IndexerState helpers
+//
+// In single-node mode (P2P_ENABLED unset/false — the default, zero behavior
+// change) these delegate to the singleton IndexerState row exactly as
+// before. In P2P mode they delegate to per-range cursors (IndexerRangeClaim)
+// instead: getLastIndexedLedger() returns the furthest-behind cursor among
+// ranges this node currently owns, and setLastIndexedLedger(ledger) advances
+// the cursor of whichever range `ledger` falls in. See
+// docs/P2P_INDEXER_DESIGN.md §3.
 // ---------------------------------------------------------------------------
 
 export async function getLastIndexedLedger(): Promise<number> {
-  const state = await prismaWrite.indexerState.upsert({
+  if (isP2pEnabled()) {
+    return getLastIndexedLedgerP2p();
+  }
+  const state = await prisma.indexerState.upsert({
     where: { id: 'singleton' },
     update: {},
     create: { id: 'singleton', lastLedger: config.indexerStartLedger },
@@ -30,8 +46,22 @@ export async function getLastIndexedLedger(): Promise<number> {
   return state.lastLedger;
 }
 
+async function getLastIndexedLedgerP2p(): Promise<number> {
+  // Probe from the configured start ledger: the cursor of whichever range it
+  // falls in tells us where this node last left off for that range. Ranges
+  // this node doesn't own report their own cursor too (harmless — the
+  // per-ledger responsibility check in processLedgerRange skips them), so we
+  // simply use the probe range's cursor as the resume point for the main
+  // sequential loop, same shape as the single-node singleton cursor.
+  return getRangeCursor(config.indexerStartLedger);
+}
+
 export async function setLastIndexedLedger(ledger: number): Promise<void> {
-  await prismaWrite.indexerState.upsert({
+  if (isP2pEnabled()) {
+    await setRangeCursor(ledger, ledger);
+    return;
+  }
+  await prisma.indexerState.upsert({
     where: { id: 'singleton' },
     update: { lastLedger: ledger },
     create: { id: 'singleton', lastLedger: ledger },
@@ -39,7 +69,7 @@ export async function setLastIndexedLedger(ledger: number): Promise<void> {
 }
 
 export async function rollbackLedgers(sequences: number[]) {
-  console.log(`⚠️ Rollback triggered for ledgers: ${sequences.join(', ')}`);
+  logger.info(`⚠️ Rollback triggered for ledgers: ${sequences.join(', ')}`);
 
   await prismaWrite.$transaction([
     // Delete SessionAuthorizations related to these ledgers
@@ -79,18 +109,32 @@ export async function rollbackLedgers(sequences: number[]) {
   ]);
 }
 
-export async function processLedgerRange(start: number, end: number) {
-  console.log(`Indexing ledgers ${start} → ${end}`);
+export async function processLedgerRange(
+  start: number,
+  end: number,
+  opts: { force?: boolean } = {},
+) {
+  logger.info(`Indexing ledgers ${start} → ${end}`);
 
   // 1. Fetch metadata and check reorgs sequentially for all ledgers in the range first
   for (let seq = start; seq <= end; seq++) {
+    if (!opts.force && !(await amIResponsibleFor(seq))) {
+      // Not one of this range's rendezvous-hash owners (P2P mode only — see
+      // docs/P2P_INDEXER_DESIGN.md §1.2/§3). Another replica indexes it;
+      // skip without writing so we don't do redundant RPC/DB work outside
+      // our assigned ranges. opts.force bypasses this for on-the-fly
+      // graceful-degradation indexing (indexSingleLedger below), where we
+      // explicitly want to index a ledger regardless of steady-state
+      // ownership because no reachable owner had it.
+      continue;
+    }
     const ledgerMeta = await fetchLedgerMetadata(seq);
 
     // Reorg check
     const prevSeq = seq - 1;
     const prevLedger = await prismaRead.ledger.findUnique({ where: { sequence: prevSeq } });
     if (prevLedger && prevLedger.hash !== ledgerMeta.previousLedgerHash) {
-      console.warn(
+      logger.warn(
         `🚨 REORG DETECTED at ledger ${seq}! Expected prev hash ${prevLedger.hash}, but network says ${ledgerMeta.previousLedgerHash}`,
       );
 
@@ -139,7 +183,13 @@ export async function processLedgerRange(start: number, end: number) {
       create: { address: event.contractId },
     });
 
-    const existingTx = await prismaRead.transaction.findUnique({
+    // Queue an initial audit for newly discovered contracts (fires after 5 min)
+    enqueueInitialAudit(event.contractId);
+
+    const existingTx = await prisma.transaction.findUnique({
+      where: { hash: event.transactionHash },
+    });
+    const existingTx = await prisma.transaction.findUnique({
       where: { hash: event.transactionHash },
     });
     if (!existingTx) {
@@ -174,6 +224,36 @@ export async function processLedgerRange(start: number, end: number) {
         },
       });
 
+      // Record ZKP verifier invocations when the invoked function looks like
+      // a proof verification entry point (verify_proof / verify_snark /
+      // verify_stark / verify_groth16). Best-effort: a failure here must
+      // never disrupt the main indexing loop.
+      try {
+        if (rawXdr && decoded.functionName && decoded.contractAddress) {
+          const envelope = xdr.TransactionEnvelope.fromXDR(rawXdr, 'base64');
+          const ops =
+            envelope.switch().name === 'envelopeTypeTx'
+              ? envelope.v1().tx().operations()
+              : envelope.v0().tx().operations();
+          const invokeOp = ops.find((op) => op.body().switch().name === 'invokeHostFunction');
+          const scArgs = invokeOp
+            ? invokeOp.body().invokeHostFunctionOp().hostFunction().invokeContract().args()
+            : [];
+          const zkpData = decodeZkpVerification(decoded.functionName, scArgs);
+          if (zkpData) {
+            await recordZkpVerification(
+              transaction.hash,
+              decoded.contractAddress,
+              zkpData,
+              transaction.ledgerSequence,
+              transaction.ledgerCloseTime,
+            );
+          }
+        }
+      } catch (zkpErr) {
+        logger.error('ZKP recording error:', zkpErr);
+      }
+
       // Trigger Account Abstraction processing (non-blocking)
       try {
         void processAaTransaction(
@@ -185,11 +265,13 @@ export async function processLedgerRange(start: number, end: number) {
           transaction.feeCharged ?? undefined,
         );
       } catch (err) {
-        console.error('AA processing error:', err);
+        logger.error('AA processing error:', err);
       }
 
       // Publish to feed
-      await feedOrchestrator.publishTransaction(transaction).catch(console.error);
+      await feedOrchestrator
+        .publishTransaction(transaction)
+        .catch((err) => logger.error('publishTransaction error:', err));
     }
 
     const { eventType, decoded } = decodeEvent(event.topics, event.data);
@@ -214,10 +296,21 @@ export async function processLedgerRange(start: number, end: number) {
     });
 
     // Publish event to feed
-    await feedOrchestrator.publishEvent(savedEvent).catch(console.error);
+    await feedOrchestrator
+      .publishEvent(savedEvent)
+      .catch((err) => logger.error('publishEvent error:', err));
 
     await processSessionAuthorization(event, eventType, decoded, eventId);
   }
+}
+
+/**
+ * Indexes exactly one ledger regardless of range ownership — used as the
+ * P2P "graceful degradation" on-the-fly indexing fallback (design doc §1.3)
+ * when a query's range owners are all unreachable.
+ */
+export async function indexSingleLedger(ledgerSeq: number): Promise<void> {
+  await processLedgerRange(ledgerSeq, ledgerSeq, { force: true });
 }
 
 // ---------------------------------------------------------------------------
@@ -245,13 +338,13 @@ function chunkRange(from: number, to: number, n: number): Array<[number, number]
  */
 async function catchUp(from: number, to: number): Promise<void> {
   const chunks = chunkRange(from, to, WORKERS);
-  console.log(
+  logger.info(
     `[catch-up] ${chunks.length} worker(s) covering ledgers ${from}–${to} ` +
       `(chunk size ~${chunks[0][1] - chunks[0][0] + 1})`,
   );
   await Promise.all(chunks.map(([s, e]) => processLedgerRange(s, e)));
   await setLastIndexedLedger(to);
-  console.log(`[catch-up] done — cursor advanced to ${to}`);
+  logger.info(`[catch-up] done — cursor advanced to ${to}`);
 }
 
 async function processSessionAuthorization(
@@ -436,7 +529,7 @@ export class SorobanEventWorker {
   }
 
   async start() {
-    console.log('🔍 Soroban event worker starting...');
+    logger.info('🔍 Soroban event worker starting...');
     this.connectWebsocket();
 
     while (!this.shouldStop) {
@@ -449,7 +542,7 @@ export class SorobanEventWorker {
         const latest = await getLatestLedger();
         await this.syncToLatest(latest);
       } catch (err) {
-        console.error('Indexer error:', err);
+        logger.error('Indexer error:', err);
         await sleep(config.indexerPollIntervalMs);
       }
     }
@@ -468,7 +561,7 @@ export class SorobanEventWorker {
         if (last < targetLedger - 1) {
           const gapStart = last + 1;
           const gapEnd = targetLedger - 1;
-          console.warn(
+          logger.warn(
             `⚠️ Ledger gap detected: expected next ledger to be ${targetLedger}, but last indexed is ${last}. Gap range: ${gapStart} → ${gapEnd}`,
           );
 
@@ -483,7 +576,7 @@ export class SorobanEventWorker {
 
           // Attempt to backfill the gap
           try {
-            console.log(`🔄 Attempting to backfill gap ${gapStart} → ${gapEnd}...`);
+            logger.info(`🔄 Attempting to backfill gap ${gapStart} → ${gapEnd}...`);
             if (gapEnd - gapStart >= BATCH && WORKERS > 1) {
               await catchUp(gapStart, gapEnd);
             } else {
@@ -500,11 +593,11 @@ export class SorobanEventWorker {
               },
               data: { resolved: true },
             });
-            console.log(
+            logger.info(
               `✅ Ledger gap ${gapStart} → ${gapEnd} successfully backfilled and resolved.`,
             );
           } catch (backfillErr) {
-            console.error(`❌ Failed to backfill ledger gap ${gapStart} → ${gapEnd}:`, backfillErr);
+            logger.error(`❌ Failed to backfill ledger gap ${gapStart} → ${gapEnd}:`, backfillErr);
             throw backfillErr;
           }
 
@@ -538,7 +631,7 @@ export class SorobanEventWorker {
     }
 
     const url = getRpcWebsocketUrl();
-    console.log(`Connecting Soroban RPC websocket to ${url}`);
+    logger.info(`Connecting Soroban RPC websocket to ${url}`);
     try {
       this.websocket = new WebSocket(url);
       this.websocket.on('open', () => this.handleWsOpen());
@@ -546,13 +639,13 @@ export class SorobanEventWorker {
       this.websocket.on('close', (code, reason) => this.handleWsClose(code, reason.toString()));
       this.websocket.on('error', (error) => this.handleWsError(error));
     } catch (error) {
-      console.error('Failed to establish websocket connection:', error);
+      logger.error('Failed to establish websocket connection:', error);
       this.scheduleReconnect();
     }
   }
 
   private handleWsOpen() {
-    console.log('Soroban RPC websocket connected');
+    logger.info('Soroban RPC websocket connected');
     this.reconnectDelayMs = 1000;
     this.subscribeLedgerClose();
   }
@@ -573,15 +666,16 @@ export class SorobanEventWorker {
     const payload = this.dataToString(data);
     if (!payload) return;
     try {
-      const message = JSON.parse(payload) as any;
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const message: any = JSON.parse(payload);
       const ledgerNumber = this.extractLedgerNumber(message);
       if (typeof ledgerNumber === 'number') {
         this.onLedgerClose(ledgerNumber).catch((err) =>
-          console.error('Ledger close handler failed:', err),
+          logger.error('Ledger close handler failed:', err),
         );
       }
     } catch (error) {
-      console.warn('Failed to parse websocket event payload:', error);
+      logger.warn('Failed to parse websocket event payload:', error);
     }
   }
 
@@ -599,17 +693,17 @@ export class SorobanEventWorker {
 
   private async onLedgerClose(ledger: number) {
     if (this.isProcessing) return;
-    console.log(`Ledger close event received for ledger ${ledger}`);
+    logger.info(`Ledger close event received for ledger ${ledger}`);
     await this.syncToLatest(ledger);
   }
 
   private handleWsClose(code: number, reason: string) {
-    console.warn(`Soroban RPC websocket closed (${code}) ${reason}`);
+    logger.warn(`Soroban RPC websocket closed (${code}) ${reason}`);
     this.scheduleReconnect();
   }
 
   private handleWsError(error: Error) {
-    console.error('Soroban RPC websocket error:', error.message ?? error);
+    logger.error('Soroban RPC websocket error:', error.message ?? error);
     this.websocket?.close();
   }
 

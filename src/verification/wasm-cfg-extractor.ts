@@ -25,7 +25,7 @@ export interface WasmMemory {
   maximum?: number;
 }
 
-interface WasmOpcode {
+interface _WasmOpcode {
   offset: number;
   opcode: string;
   immediates: number[];
@@ -140,7 +140,7 @@ export class WasmCfgExtractor {
   private parseTypeSection(
     buf: Buffer,
     start: number,
-    end: number,
+    _end: number,
   ): Array<{ params: number[]; results: number[] }> {
     const types: Array<{ params: number[]; results: number[] }> = [];
     let offset = start;
@@ -167,7 +167,7 @@ export class WasmCfgExtractor {
     return types;
   }
 
-  private parseImportSection(buf: Buffer, start: number, end: number): WasmImport[] {
+  private parseImportSection(buf: Buffer, start: number, _end: number): WasmImport[] {
     const imports: WasmImport[] = [];
     let offset = start;
     const count = this.readLEB128(buf, offset);
@@ -205,7 +205,7 @@ export class WasmCfgExtractor {
   private parseFunctionSection(
     buf: Buffer,
     start: number,
-    end: number,
+    _end: number,
   ): Array<{ typeIndex: number; locals: number[]; body: Buffer }> {
     const functions: Array<{ typeIndex: number; locals: number[]; body: Buffer }> = [];
     let offset = start;
@@ -221,7 +221,7 @@ export class WasmCfgExtractor {
     return functions;
   }
 
-  private parseExportSection(buf: Buffer, start: number, end: number): WasmExport[] {
+  private parseExportSection(buf: Buffer, start: number, _end: number): WasmExport[] {
     const exports: WasmExport[] = [];
     let offset = start;
     const count = this.readLEB128(buf, offset);
@@ -247,7 +247,7 @@ export class WasmCfgExtractor {
     return exports;
   }
 
-  private parseMemorySection(buf: Buffer, start: number, end: number): WasmMemory[] {
+  private parseMemorySection(buf: Buffer, start: number, _end: number): WasmMemory[] {
     const memories: WasmMemory[] = [];
     let offset = start;
     const count = this.readLEB128(buf, offset);
@@ -280,7 +280,7 @@ export class WasmCfgExtractor {
     for (let i = 0; i < functions.length; i++) {
       const bodySize = this.readLEB128(buf, offset);
       offset += this.leb128Size(buf, offset);
-      const bodyStart = offset;
+      const _bodyStart = offset;
       const bodyEnd = offset + bodySize;
 
       const localsCount = this.readLEB128(buf, offset);
@@ -333,7 +333,7 @@ export class WasmCfgExtractor {
       case 0x01:
         return { instr: { op: 'nop' }, newOffset: offset };
       case 0x02: {
-        const blockType = this.readLEB128(buf, offset);
+        const _blockType = this.readLEB128(buf, offset);
         offset += this.leb128Size(buf, offset);
         const blockBody: WasmInstr[] = [];
         while (buf[offset] !== 0x0b) {
@@ -348,7 +348,7 @@ export class WasmCfgExtractor {
         };
       }
       case 0x03: {
-        const blockType = this.readLEB128(buf, offset);
+        const _blockType = this.readLEB128(buf, offset);
         offset += this.leb128Size(buf, offset);
         const loopBody: WasmInstr[] = [];
         while (buf[offset] !== 0x0b) {

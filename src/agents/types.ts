@@ -1,11 +1,5 @@
 export type AgentStatus =
-  | 'deployed'
-  | 'validating'
-  | 'active'
-  | 'running'
-  | 'paused'
-  | 'terminated'
-  | 'archived';
+  'deployed' | 'validating' | 'active' | 'running' | 'paused' | 'terminated' | 'archived';
 export type ExecutionStatus = 'running' | 'success' | 'failed';
 export type ExecutionTrigger = 'scheduled' | 'manual' | 'event';
 
@@ -74,14 +68,7 @@ export interface AgentTemplate {
 export interface AgentMessagePayload {
   id: string;
   type:
-    | 'request'
-    | 'negotiate'
-    | 'accept'
-    | 'reject'
-    | 'execute'
-    | 'complete'
-    | 'escalate'
-    | 'rate';
+    'request' | 'negotiate' | 'accept' | 'reject' | 'execute' | 'complete' | 'escalate' | 'rate';
   fromAgentId: string;
   toAgentId: string;
   subject: string;

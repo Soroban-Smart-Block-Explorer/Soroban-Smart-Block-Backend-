@@ -8,6 +8,13 @@ import { getGraphDb } from '../db/graph';
 import { getGraphTemplates } from '../services/graphTemplates';
 import { logger } from '../logger';
 import { z } from 'zod';
+import {
+  traverseUpstream,
+  traverseDownstream,
+  DEFAULT_MAX_DEPTH,
+  DEFAULT_MAX_NODES,
+  DEFAULT_TIMEOUT_MS,
+} from '../indexer/graph-traversal-db';
 
 /**
  * @swagger
@@ -149,7 +156,12 @@ graphRouter.post(
     const { query, parameters, timeout } = cypherQuerySchema.parse(req.body);
 
     // Security checks
-    if (query.includes('CREATE') || query.includes('DELETE') || query.includes('SET') || query.includes('REMOVE')) {
+    if (
+      query.includes('CREATE') ||
+      query.includes('DELETE') ||
+      query.includes('SET') ||
+      query.includes('REMOVE')
+    ) {
       return res.status(403).json({
         error: 'Write operations are not allowed through this endpoint',
       });
@@ -309,7 +321,7 @@ graphRouter.get(
 
     if (result.data.length > 0) {
       const rawData = result.data[0];
-      
+
       if (rawData.nodes) {
         for (const node of rawData.nodes) {
           const nodeId = node.id || node.identity;
@@ -651,5 +663,145 @@ graphRouter.post(
     const templates = getGraphTemplates();
     const result = await templates.contractCallGraph(req.body);
     res.json(result);
+  }),
+);
+
+// Schema for upstream graph query
+const upstreamQuerySchema = z.object({
+  maxDepth: z.coerce.number().int().min(1).max(10).optional().default(DEFAULT_MAX_DEPTH),
+  maxNodes: z.coerce.number().int().min(1).max(100000).optional().default(DEFAULT_MAX_NODES),
+  timeoutMs: z.coerce.number().int().min(100).max(30000).optional().default(DEFAULT_TIMEOUT_MS),
+});
+
+/**
+ * @swagger
+ * /api/v1/graph/contracts/:address/upstream:
+ *   get:
+ *     summary: Get upstream contract dependencies using frontier-paginated BFS
+ *     tags: [Graph]
+ *     parameters:
+ *       - in: path
+ *         name: address
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: Contract address to traverse upstream from
+ *       - in: query
+ *         name: maxDepth
+ *         schema:
+ *           type: integer
+ *           default: 5
+ *         description: Maximum traversal depth
+ *       - in: query
+ *         name: maxNodes
+ *         schema:
+ *           type: integer
+ *           default: 10000
+ *         description: Maximum nodes to visit
+ *       - in: query
+ *         name: timeoutMs
+ *         schema:
+ *           type: integer
+ *           default: 5000
+ *         description: Query timeout in milliseconds
+ *     responses:
+ *       200:
+ *         description: Upstream dependency graph
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 startAddress: { type: string }
+ *                 nodes: { type: array, items: { type: string } }
+ *                 edges: { type: array, items: { type: object, properties: { source: { type: string }, target: { type: string } } } }
+ *                 depthReached: { type: integer }
+ *                 totalNodes: { type: integer }
+ *                 totalEdges: { type: integer }
+ *                 truncated: { type: boolean }
+ *                 timedOut: { type: boolean }
+ */
+graphRouter.get(
+  '/contracts/:address/upstream',
+  asyncHandler(async (req: Request, res: Response) => {
+    const { address } = req.params;
+    const opts = upstreamQuerySchema.parse(req.query);
+
+    const result = await traverseUpstream(address, opts);
+
+    res.json({
+      startAddress: address,
+      ...result,
+    });
+  }),
+);
+
+// Schema for downstream graph query (mirrors upstream — same knobs, different direction)
+const downstreamQuerySchema = z.object({
+  maxDepth: z.coerce.number().int().min(1).max(10).optional().default(DEFAULT_MAX_DEPTH),
+  maxNodes: z.coerce.number().int().min(1).max(100000).optional().default(DEFAULT_MAX_NODES),
+  timeoutMs: z.coerce.number().int().min(100).max(30000).optional().default(DEFAULT_TIMEOUT_MS),
+});
+
+/**
+ * @swagger
+ * /api/v1/graph/contracts/:address/downstream:
+ *   get:
+ *     summary: Get downstream contract dependencies using frontier-paginated BFS
+ *     tags: [Graph]
+ *     parameters:
+ *       - in: path
+ *         name: address
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: Contract address to traverse downstream from
+ *       - in: query
+ *         name: maxDepth
+ *         schema:
+ *           type: integer
+ *           default: 5
+ *         description: Maximum traversal depth
+ *       - in: query
+ *         name: maxNodes
+ *         schema:
+ *           type: integer
+ *           default: 10000
+ *         description: Maximum nodes to visit
+ *       - in: query
+ *         name: timeoutMs
+ *         schema:
+ *           type: integer
+ *           default: 5000
+ *         description: Query timeout in milliseconds
+ *     responses:
+ *       200:
+ *         description: Downstream dependency graph
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 startAddress: { type: string }
+ *                 nodes: { type: array, items: { type: string } }
+ *                 edges: { type: array, items: { type: object, properties: { source: { type: string }, target: { type: string } } } }
+ *                 depthReached: { type: integer }
+ *                 totalNodes: { type: integer }
+ *                 totalEdges: { type: integer }
+ *                 truncated: { type: boolean }
+ *                 timedOut: { type: boolean }
+ */
+graphRouter.get(
+  '/contracts/:address/downstream',
+  asyncHandler(async (req: Request, res: Response) => {
+    const { address } = req.params;
+    const opts = downstreamQuerySchema.parse(req.query);
+
+    const result = await traverseDownstream(address, opts);
+
+    res.json({
+      startAddress: address,
+      ...result,
+    });
   }),
 );

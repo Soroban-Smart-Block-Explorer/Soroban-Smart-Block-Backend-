@@ -6,6 +6,13 @@ on:
   pull_request:
     branches: [main]
 
+# Explicit token scopes. `security-events: write` is required for CodeQL to
+# access the CodeQL API and upload SARIF results; without it the Security job
+# fails with "Resource not accessible by integration".
+permissions:
+  contents: read
+  security-events: write
+
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
@@ -14,13 +21,36 @@ jobs:
   build:
     name: Build
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        # pgvector image: the search_engine migration (20260625000000) creates
+        # the "vector" extension for embeddings, which plain postgres lacks.
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: test
+          POSTGRES_PASSWORD: test
+          POSTGRES_DB: test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U test -d test"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
-          node-version: 20
+          node-version: 24
           cache: npm
+
+      - name: Cache Prisma generate
+        uses: actions/cache@v5
+        with:
+          path: node_modules/.prisma
+          key: prisma-${{ hashFiles('prisma/schema.prisma') }}
+          restore-keys: prisma-
 
       - name: Install dependencies
         run: npm ci
@@ -31,22 +61,53 @@ jobs:
       - name: Prisma field reference validator
         run: npm run validate:prisma
 
+      # Verify the Prisma schema is valid and fully materializable on a clean
+      # database. `migrate deploy` is not used here: the migration history is
+      # incomplete (several schema models were never materialized by a
+      # migration), so it fails on every fresh database. `db push` applies the
+      # full schema, which is exactly what this verification step needs.
+      - name: Verify schema (prisma db push)
+        run: npx prisma db push --skip-generate
+        env:
+          DATABASE_URL: postgresql://test:test@localhost:5432/test
+          TESTNET_DATABASE_URL: postgresql://test:test@localhost:5432/test
+
   lint:
     name: Lint
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
-          node-version: 20
+          node-version: 24
           cache: npm
+
+      - name: Cache Prisma generate
+        uses: actions/cache@v5
+        with:
+          path: node_modules/.prisma
+          key: prisma-${{ hashFiles('prisma/schema.prisma') }}
+          restore-keys: prisma-
 
       - name: Install dependencies
         run: npm ci
 
       - name: Lint
         run: npm run lint
+
+      # #696: Prettier formatting check — fails CI if any file is not formatted
+      - name: Check formatting
+        run: npm run format
+
+      - name: Validate prisma imports (must use prismaRead or prismaWrite)
+        run: |
+          RESULT=$(grep -rn "import { prisma } from" --include='*.ts' src/ || true)
+          if [ -n "$RESULT" ]; then
+            echo "ERROR: Found deprecated 'prisma' imports. Use prismaRead or prismaWrite:"
+            echo "$RESULT"
+            exit 1
+          fi
 
       - name: Type-check (src)
         run: npm run build:strict || echo 'Type errors found (pre-existing)'
@@ -57,13 +118,36 @@ jobs:
   test:
     name: Test
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        # pgvector image: the search_engine migration (20260625000000) creates
+        # the "vector" extension for embeddings, which plain postgres lacks.
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: test
+          POSTGRES_PASSWORD: test
+          POSTGRES_DB: test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U test -d test"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
-          node-version: 20
+          node-version: 24
           cache: npm
+
+      - name: Cache Prisma generate
+        uses: actions/cache@v5
+        with:
+          path: node_modules/.prisma
+          key: prisma-${{ hashFiles('prisma/schema.prisma') }}
+          restore-keys: prisma-
 
       - name: Install dependencies
         run: npm ci
@@ -74,3 +158,28 @@ jobs:
           DATABASE_URL: postgresql://test:test@localhost:5432/test
           TESTNET_DATABASE_URL: postgresql://test:test@localhost:5432/test
           STELLAR_NETWORK: testnet
+
+  security:
+    name: Security
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run npm audit
+        run: npm audit --audit-level=high || true
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v4
+        with:
+          languages: javascript, typescript
+
+      - name: Perform CodeQL Analysis
+        uses: github/codeql-action/analyze@v4

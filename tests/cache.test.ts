@@ -155,11 +155,7 @@ describe('cache — concurrent operations', () => {
     const { cacheSet, cacheGet } = await freshCache();
     await cacheSet('shared', 'initial');
     await expect(
-      Promise.all([
-        cacheGet('shared'),
-        cacheSet('shared', 'updated'),
-        cacheGet('shared'),
-      ]),
+      Promise.all([cacheGet('shared'), cacheSet('shared', 'updated'), cacheGet('shared')]),
     ).resolves.not.toThrow();
   });
 });

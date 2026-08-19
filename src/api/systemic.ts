@@ -9,6 +9,7 @@ import {
   buildSystemDependencyGraph,
 } from '../indexer/systemicRisk';
 import { getCurrentRiskIndex, getAlerts, getRiskIndexHistory } from '../indexer/systemicMonitor';
+import { asyncHandler } from '../middleware/asyncHandler';
 
 export const systemicRouter = Router();
 
@@ -29,14 +30,17 @@ export const systemicRouter = Router();
  *       200:
  *         description: Systemic risk dashboard with index, critical nodes, and concentration
  */
-systemicRouter.get('/overview', async (_req: Request, res: Response) => {
-  try {
-    const overview = await getSystemicOverview();
-    res.json(overview);
-  } catch (e) {
-    res.status(500).json({ error: String(e) });
-  }
-});
+systemicRouter.get(
+  '/overview',
+  asyncHandler(async (_req: Request, res: Response) => {
+    try {
+      const overview = await getSystemicOverview();
+      res.json(overview);
+    } catch (e) {
+      res.status(500).json({ error: String(e) });
+    }
+  }),
+);
 
 /**
  * @swagger
@@ -54,17 +58,20 @@ systemicRouter.get('/overview', async (_req: Request, res: Response) => {
  *       200:
  *         description: Protocol-level systemic risk profile
  */
-systemicRouter.get('/protocols/:address', async (req: Request, res: Response) => {
-  try {
-    const profile = await getProtocolRiskProfile(req.params.address);
-    if (!profile) {
-      return res.status(404).json({ error: 'Protocol not found' });
+systemicRouter.get(
+  '/protocols/:address',
+  asyncHandler(async (req: Request, res: Response) => {
+    try {
+      const profile = await getProtocolRiskProfile(req.params.address);
+      if (!profile) {
+        return res.status(404).json({ error: 'Protocol not found' });
+      }
+      res.json(profile);
+    } catch (e) {
+      res.status(500).json({ error: String(e) });
     }
-    res.json(profile);
-  } catch (e) {
-    res.status(500).json({ error: String(e) });
-  }
-});
+  }),
+);
 
 /**
  * @swagger
@@ -76,14 +83,17 @@ systemicRouter.get('/protocols/:address', async (req: Request, res: Response) =>
  *       200:
  *         description: List of critical protocol nodes
  */
-systemicRouter.get('/critical-nodes', async (_req: Request, res: Response) => {
-  try {
-    const nodes = await getCriticalNodes();
-    res.json({ criticalNodes: nodes, count: nodes.length });
-  } catch (e) {
-    res.status(500).json({ error: String(e) });
-  }
-});
+systemicRouter.get(
+  '/critical-nodes',
+  asyncHandler(async (_req: Request, res: Response) => {
+    try {
+      const nodes = await getCriticalNodes();
+      res.json({ criticalNodes: nodes, count: nodes.length });
+    } catch (e) {
+      res.status(500).json({ error: String(e) });
+    }
+  }),
+);
 
 /**
  * @swagger
@@ -95,15 +105,18 @@ systemicRouter.get('/critical-nodes', async (_req: Request, res: Response) => {
  *       200:
  *         description: TVL, dependency, and diversity concentration metrics
  */
-systemicRouter.get('/concentration', async (_req: Request, res: Response) => {
-  try {
-    const graph = await buildSystemDependencyGraph();
-    const metrics = computeConcentrationMetrics(graph);
-    res.json(metrics);
-  } catch (e) {
-    res.status(500).json({ error: String(e) });
-  }
-});
+systemicRouter.get(
+  '/concentration',
+  asyncHandler(async (_req: Request, res: Response) => {
+    try {
+      const graph = await buildSystemDependencyGraph();
+      const metrics = computeConcentrationMetrics(graph);
+      res.json(metrics);
+    } catch (e) {
+      res.status(500).json({ error: String(e) });
+    }
+  }),
+);
 
 const simulateSchema = z.object({
   failedProtocol: z.string(),
@@ -132,21 +145,24 @@ const simulateSchema = z.object({
  *       200:
  *         description: Cascade simulation results
  */
-systemicRouter.post('/simulate-cascade', async (req: Request, res: Response) => {
-  try {
-    const { failedProtocol, failureType } = simulateSchema.parse(req.body);
-    const result = await simulateCascade(failedProtocol, failureType);
-    if (!result) {
-      return res.status(404).json({ error: 'Protocol not found in dependency graph' });
+systemicRouter.post(
+  '/simulate-cascade',
+  asyncHandler(async (req: Request, res: Response) => {
+    try {
+      const { failedProtocol, failureType } = simulateSchema.parse(req.body);
+      const result = await simulateCascade(failedProtocol, failureType);
+      if (!result) {
+        return res.status(404).json({ error: 'Protocol not found in dependency graph' });
+      }
+      res.json(result);
+    } catch (e) {
+      if (e instanceof z.ZodError) {
+        return res.status(400).json({ error: e.errors });
+      }
+      res.status(500).json({ error: String(e) });
     }
-    res.json(result);
-  } catch (e) {
-    if (e instanceof z.ZodError) {
-      return res.status(400).json({ error: e.errors });
-    }
-    res.status(500).json({ error: String(e) });
-  }
-});
+  }),
+);
 
 /**
  * @swagger
@@ -158,18 +174,21 @@ systemicRouter.post('/simulate-cascade', async (req: Request, res: Response) => 
  *       200:
  *         description: Complete dependency graph with typed edges
  */
-systemicRouter.get('/dependency-graph', async (_req: Request, res: Response) => {
-  try {
-    const graph = await buildSystemDependencyGraph();
-    res.json({
-      protocols: Array.from(graph.protocols.values()),
-      edges: graph.edges,
-      metadata: graph.metadata,
-    });
-  } catch (e) {
-    res.status(500).json({ error: String(e) });
-  }
-});
+systemicRouter.get(
+  '/dependency-graph',
+  asyncHandler(async (_req: Request, res: Response) => {
+    try {
+      const graph = await buildSystemDependencyGraph();
+      res.json({
+        protocols: Array.from(graph.protocols.values()),
+        edges: graph.edges,
+        metadata: graph.metadata,
+      });
+    } catch (e) {
+      res.status(500).json({ error: String(e) });
+    }
+  }),
+);
 
 /**
  * @swagger
@@ -181,16 +200,19 @@ systemicRouter.get('/dependency-graph', async (_req: Request, res: Response) => 
  *       200:
  *         description: Current systemic risk index value
  */
-systemicRouter.get('/monitor/risk-index', async (_req: Request, res: Response) => {
-  try {
-    res.json({
-      currentRiskIndex: getCurrentRiskIndex(),
-      timestamp: new Date().toISOString(),
-    });
-  } catch (e) {
-    res.status(500).json({ error: String(e) });
-  }
-});
+systemicRouter.get(
+  '/monitor/risk-index',
+  asyncHandler(async (_req: Request, res: Response) => {
+    try {
+      res.json({
+        currentRiskIndex: getCurrentRiskIndex(),
+        timestamp: new Date().toISOString(),
+      });
+    } catch (e) {
+      res.status(500).json({ error: String(e) });
+    }
+  }),
+);
 
 /**
  * @swagger
@@ -208,14 +230,17 @@ systemicRouter.get('/monitor/risk-index', async (_req: Request, res: Response) =
  *       200:
  *         description: Recent alerts
  */
-systemicRouter.get('/monitor/alerts', async (req: Request, res: Response) => {
-  try {
-    const limit = Math.min(Math.max(parseInt(req.query.limit as string) || 20, 1), 100);
-    res.json({ alerts: getAlerts(limit), count: limit });
-  } catch (e) {
-    res.status(500).json({ error: String(e) });
-  }
-});
+systemicRouter.get(
+  '/monitor/alerts',
+  asyncHandler(async (req: Request, res: Response) => {
+    try {
+      const limit = Math.min(Math.max(parseInt(req.query.limit as string) || 20, 1), 100);
+      res.json({ alerts: getAlerts(limit), count: limit });
+    } catch (e) {
+      res.status(500).json({ error: String(e) });
+    }
+  }),
+);
 
 /**
  * @swagger
@@ -233,12 +258,15 @@ systemicRouter.get('/monitor/alerts', async (req: Request, res: Response) => {
  *       200:
  *         description: Historical risk index data points
  */
-systemicRouter.get('/monitor/history', async (req: Request, res: Response) => {
-  try {
-    const since = req.query.since ? new Date(req.query.since as string) : undefined;
-    const history = getRiskIndexHistory(since);
-    res.json({ data: history, count: history.length });
-  } catch (e) {
-    res.status(500).json({ error: String(e) });
-  }
-});
+systemicRouter.get(
+  '/monitor/history',
+  asyncHandler(async (req: Request, res: Response) => {
+    try {
+      const since = req.query.since ? new Date(req.query.since as string) : undefined;
+      const history = getRiskIndexHistory(since);
+      res.json({ data: history, count: history.length });
+    } catch (e) {
+      res.status(500).json({ error: String(e) });
+    }
+  }),
+);

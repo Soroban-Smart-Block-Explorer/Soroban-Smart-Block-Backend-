@@ -62,8 +62,14 @@ describe('event-sourced reserve tracking', () => {
     expect(next.reserveA).toBe(0n);
   });
   it('adds and removes liquidity', () => {
-    expect(applyLiquidity({ reserveA: 100n, reserveB: 200n }, 10n, 20n)).toEqual({ reserveA: 110n, reserveB: 220n });
-    expect(applyLiquidity({ reserveA: 100n, reserveB: 200n }, -10n, -20n)).toEqual({ reserveA: 90n, reserveB: 180n });
+    expect(applyLiquidity({ reserveA: 100n, reserveB: 200n }, 10n, 20n)).toEqual({
+      reserveA: 110n,
+      reserveB: 220n,
+    });
+    expect(applyLiquidity({ reserveA: 100n, reserveB: 200n }, -10n, -20n)).toEqual({
+      reserveA: 90n,
+      reserveB: 180n,
+    });
   });
 });
 
@@ -176,7 +182,15 @@ describe('token pricing from pools', () => {
   it('implies a token price from a stablecoin pool', () => {
     // 1000 XLM : 120 USDC → XLM = $0.12
     const prices = deriveTokenPrices([
-      { poolAddress: 'P', tokenA: 'XLM', tokenB: 'USDC', symbolA: 'XLM', symbolB: 'USDC', reserveAHuman: 1000, reserveBHuman: 120 },
+      {
+        poolAddress: 'P',
+        tokenA: 'XLM',
+        tokenB: 'USDC',
+        symbolA: 'XLM',
+        symbolB: 'USDC',
+        reserveAHuman: 1000,
+        reserveBHuman: 120,
+      },
     ]);
     expect(prices.get('USDC')?.priceUsd).toBe(1);
     expect(prices.get('XLM')?.priceUsd).toBeCloseTo(0.12, 9);
@@ -184,8 +198,24 @@ describe('token pricing from pools', () => {
   });
   it('propagates pricing transitively across hops', () => {
     const prices = deriveTokenPrices([
-      { poolAddress: 'P1', tokenA: 'XLM', tokenB: 'USDC', symbolA: 'XLM', symbolB: 'USDC', reserveAHuman: 1000, reserveBHuman: 100 }, // XLM=$0.10
-      { poolAddress: 'P2', tokenA: 'ABC', tokenB: 'XLM', symbolA: 'ABC', symbolB: 'XLM', reserveAHuman: 50, reserveBHuman: 1000 }, // ABC priced via XLM
+      {
+        poolAddress: 'P1',
+        tokenA: 'XLM',
+        tokenB: 'USDC',
+        symbolA: 'XLM',
+        symbolB: 'USDC',
+        reserveAHuman: 1000,
+        reserveBHuman: 100,
+      }, // XLM=$0.10
+      {
+        poolAddress: 'P2',
+        tokenA: 'ABC',
+        tokenB: 'XLM',
+        symbolA: 'ABC',
+        symbolB: 'XLM',
+        reserveAHuman: 50,
+        reserveBHuman: 1000,
+      }, // ABC priced via XLM
     ]);
     expect(prices.get('XLM')?.priceUsd).toBeCloseTo(0.1, 9);
     // ABC: 1000 XLM * $0.10 / 50 = $2.00
@@ -230,6 +260,8 @@ describe('arbitrage detection', () => {
   });
 
   it('requires at least two pools per pair', () => {
-    expect(findArbitrageOpportunities([{ ...base, poolAddress: 'solo', reserveBHuman: 1000 }])).toHaveLength(0);
+    expect(
+      findArbitrageOpportunities([{ ...base, poolAddress: 'solo', reserveBHuman: 1000 }]),
+    ).toHaveLength(0);
   });
 });

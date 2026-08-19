@@ -2,6 +2,7 @@ import crypto from 'crypto';
 import { prismaRead, prismaWrite } from '../db';
 import { processResponseBody } from './redaction';
 import { assertSafeUrl, safePost, SsrfBlockedError } from './ssrf-guard';
+import { logger } from '../logger';
 
 // Maximum delivery attempts before a delivery is marked permanently failed
 export const MAX_ATTEMPTS = 5;
@@ -32,8 +33,8 @@ export function getDispatchMetrics(): { queueDepth: number; lastDeliveryLatencyM
 
 /**
  * Run `fn` over every item in `items` with at most `concurrency` tasks
- * executing in parallel. Excess items wait in a queue. Errors are swallowed
- * per item so that one failure doesn't abort remaining deliveries.
+ * executing in parallel. Excess items wait in a queue. Errors are collected
+ * and aggregated so that one failure does not abort remaining deliveries.
  */
 async function runWithConcurrency<T>(
   items: T[],
@@ -44,6 +45,7 @@ async function runWithConcurrency<T>(
 
   const queue = [...items];
   _queueDepth += queue.length;
+  const errors: Array<{ item: T; error: unknown }> = [];
 
   await new Promise<void>((resolve) => {
     let active = 0;
@@ -56,14 +58,30 @@ async function runWithConcurrency<T>(
         _queueDepth--;
         active++;
         fn(item)
-          .catch(() => {
-            /* individual delivery errors are handled inside fn */
+          .catch((error) => {
+            errors.push({ item, error });
           })
           .finally(() => {
             active--;
             settled++;
-            if (settled === total) resolve();
-            else next();
+            if (settled === total) {
+              if (errors.length > 0) {
+                logger.error('[webhooks] Some deliveries failed during fan-out', {
+                  total,
+                  failed: errors.length,
+                  errors: errors.map((e) => ({
+                    item:
+                      typeof e.item === 'object' && e.item !== null && 'id' in e.item
+                        ? (e.item as Record<string, unknown>).id
+                        : String(e.item),
+                    error: e.error instanceof Error ? e.error.message : String(e.error),
+                  })),
+                });
+              }
+              resolve();
+            } else {
+              next();
+            }
           });
       }
     }
@@ -80,34 +98,58 @@ export interface WebhookPayload {
   eventType: string;
   topicSymbol?: string | null;
   decoded: unknown;
-  ledger: number;
+  ledgerSequence: number;
   ledgerCloseTime: Date;
   transactionHash: string;
 }
 
+// Maximum number of webhook subscriptions fetched per page when fanning out (#724)
+export const DISPATCH_PAGE_SIZE = parseInt(process.env.WEBHOOK_DISPATCH_PAGE_SIZE ?? '500', 10);
+
 /**
  * Fan-out a single event to all matching active webhook subscriptions.
+ * Uses cursor-based pagination to handle tables with >1 000 rows safely (#724).
  * Each delivery is persisted and dispatched immediately (attempt 1).
  * Concurrency is bounded by DISPATCH_CONCURRENCY (#483).
  */
 export async function dispatchWebhooks(event: WebhookPayload): Promise<void> {
-  const subs = await prismaRead.webhookSubscription.findMany({
-    where: {
-      active: true,
-      ...(event.contractAddress && {
-        OR: [{ contractAddress: null }, { contractAddress: event.contractAddress }],
-      }),
-    },
-    select: {
-      id: true,
-      url: true,
-      secret: true,
-      eventType: true,
-      topicSymbol: true,
-      storeResponseBody: true,
-      responseRetentionDays: true,
-    },
-  });
+  // Collect all matching subscriptions via cursor-based pagination (#724)
+  const allSubs: Awaited<ReturnType<typeof prismaRead.webhookSubscription.findMany>> = [];
+  let cursor: string | undefined;
+  let hasMore = true;
+
+  while (hasMore) {
+    const page = await prismaRead.webhookSubscription.findMany({
+      where: {
+        active: true,
+        ...(event.contractAddress && {
+          OR: [{ contractAddress: null }, { contractAddress: event.contractAddress }],
+        }),
+      },
+      select: {
+        id: true,
+        url: true,
+        secret: true,
+        eventType: true,
+        topicSymbol: true,
+        storeResponseBody: true,
+        responseRetentionDays: true,
+      },
+      take: DISPATCH_PAGE_SIZE,
+      ...(cursor ? { skip: 1, cursor: { id: cursor } } : {}),
+      orderBy: { id: 'asc' },
+    });
+
+    allSubs.push(...page);
+
+    if (page.length < DISPATCH_PAGE_SIZE) {
+      hasMore = false;
+    } else {
+      cursor = page[page.length - 1].id;
+    }
+  }
+
+  const subs = allSubs;
 
   const matching = subs.filter((s) => {
     if (s.eventType && s.eventType !== event.eventType) return false;
@@ -242,7 +284,7 @@ async function deliverOnce(
       eventType: ev.eventType,
       topicSymbol: ev.topicSymbol,
       decoded: ev.decoded,
-      ledger: ev.ledgerSequence,
+      ledgerSequence: ev.ledgerSequence,
       ledgerCloseTime: ev.ledgerCloseTime,
       transactionHash: ev.transactionHash,
     };

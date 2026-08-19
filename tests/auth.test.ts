@@ -7,13 +7,18 @@ vi.mock('../src/cache', () => ({
   cacheGet: async (key: string) => {
     const entry = store.get(key);
     if (!entry) return null;
-    if (entry.expiresAt && entry.expiresAt < Date.now()) { store.delete(key); return null; }
+    if (entry.expiresAt && entry.expiresAt < Date.now()) {
+      store.delete(key);
+      return null;
+    }
     return entry.value;
   },
   cacheSet: async (key: string, value: unknown, ttl?: number) => {
     store.set(key, { value, expiresAt: ttl ? Date.now() + ttl * 1000 : null });
   },
-  cacheDelete: async (key: string) => { store.delete(key); },
+  cacheDelete: async (key: string) => {
+    store.delete(key);
+  },
 }));
 
 // Mock prisma
@@ -143,7 +148,12 @@ describe('Token issuance', () => {
 
   it('rejects tampered token', async () => {
     const { token } = await issueTokens({
-      sub: 'GABC', userId: 'u1', role: 'user', tier: 'free', sessionId: 's1', appId: 'app',
+      sub: 'GABC',
+      userId: 'u1',
+      role: 'user',
+      tier: 'free',
+      sessionId: 's1',
+      appId: 'app',
     });
     const parts = token.split('.');
     parts[1] = Buffer.from(JSON.stringify({ sub: 'HACKER', role: 'admin' })).toString('base64url');

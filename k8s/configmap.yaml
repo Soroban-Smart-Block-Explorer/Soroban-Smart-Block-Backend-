@@ -1,0 +1,69 @@
+---
+# ConfigMap — non-sensitive environment configuration for the API and Indexer pods.
+# Sensitive values (DATABASE_URL, API keys, secrets) belong in Secrets (see secrets.yaml).
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: soroban-explorer-config
+  namespace: soroban
+  labels:
+    app.kubernetes.io/name: soroban-explorer
+    app.kubernetes.io/component: config
+data:
+  # Application
+  NODE_ENV: "production"
+  PORT: "3000"
+  LOG_LEVEL: "info"
+
+  # Stellar network — selects the active profile in src/profiles.ts. Override
+  # STELLAR_NETWORK (and layer the matching *_ overlay ConfigMap) per environment.
+  STELLAR_NETWORK: "testnet"
+  TESTNET_RPC_URL: "https://soroban-testnet.stellar.org"
+  TESTNET_RPC_WS_URL: "wss://soroban-testnet.stellar.org"
+  TESTNET_HORIZON_URL: "https://horizon-testnet.stellar.org"
+  TESTNET_PASSPHRASE: "Test SDF Network ; September 2015"
+  TESTNET_API_SUBDOMAIN: "testnet-api.example.com"
+  TESTNET_CACHE_URL: "memory://"
+
+  # Indexer
+  INDEXER_START_LEDGER: "0"
+  INDEXER_POLL_INTERVAL_MS: "5000"
+  INDEXER_BATCH_SIZE: "100"
+
+  # Proxy trust (number of trusted reverse proxies in front of the service)
+  TRUST_PROXY: "1"
+
+  # CORS — set to your frontend domain in production
+  # CORS_ALLOWED_ORIGINS: "https://explorer.example.com"
+
+  # Feature flags — set to 'true' to enable each optional service
+  ENABLE_PRIVACY_WS: "false"
+  ENABLE_COMPOSABILITY_WS: "false"
+  ENABLE_ARBITRAGE_WS: "false"
+  ENABLE_POOL_MONITOR: "false"
+  ENABLE_ARBITRAGE_SCANNER: "false"
+  ENABLE_FEE_AGGREGATOR: "false"
+
+  # Shutdown
+  SHUTDOWN_TIMEOUT_MS: "30000"
+  STATE_DUMP_PATH: "/tmp/state"
+
+---
+# ConfigMap — mainnet overlay (apply on top of the base config for mainnet deployments)
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: soroban-explorer-config-mainnet
+  namespace: soroban
+  labels:
+    app.kubernetes.io/name: soroban-explorer
+    app.kubernetes.io/component: config
+    environment: mainnet
+data:
+  STELLAR_NETWORK: "mainnet"
+  MAINNET_RPC_URL: "https://mainnet.stellar.validationcloud.io/v1/REPLACE_WITH_API_KEY"
+  MAINNET_RPC_WS_URL: "wss://mainnet.stellar.validationcloud.io/v1/REPLACE_WITH_API_KEY"
+  MAINNET_HORIZON_URL: "https://horizon.stellar.org"
+  MAINNET_PASSPHRASE: "Public Global Stellar Network ; September 2015"
+  MAINNET_API_SUBDOMAIN: "api.example.com"
+  MAINNET_CACHE_URL: "memory://"

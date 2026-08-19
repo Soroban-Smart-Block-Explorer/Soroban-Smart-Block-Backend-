@@ -5,6 +5,7 @@ import { validateAddressParam } from '../middleware/sanitize';
 import { rpc } from '../indexer/rpc';
 import { config } from '../config';
 import { asyncHandler } from '../middleware/asyncHandler';
+import { logger } from '../logger';
 
 /**
  * @swagger
@@ -319,7 +320,7 @@ tokenRouter.get(
         decimals: token.tokenDecimals,
       });
     } catch (err) {
-      console.error('[token-balance] Simulation error:', err);
+      logger.error('[token-balance] Simulation error:', err);
       return res.status(502).json({
         error: 'RPC request failed',
         detail: String(err),

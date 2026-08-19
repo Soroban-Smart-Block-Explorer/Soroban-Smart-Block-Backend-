@@ -40,7 +40,8 @@ export interface CallGraph {
 
 // ── Reentrancy Detection Types ───────────────────────────────────────────────
 
-export type ReentrancyType = 'SIMPLE' | 'CROSS_CONTRACT' | 'MULTI_STEP' | 'READ_ONLY' | 'CROSS_FUNCTION' | 'DESTRUCTIVE';
+export type ReentrancyType =
+  'SIMPLE' | 'CROSS_CONTRACT' | 'MULTI_STEP' | 'READ_ONLY' | 'CROSS_FUNCTION' | 'DESTRUCTIVE';
 
 export const ReentrancyTypes = {
   SIMPLE: 'SIMPLE' as const,
@@ -84,7 +85,9 @@ export interface DetectionPattern {
   description: string;
   severity: ReentrancySeverity;
   /** Returns confidence 0-1 and the detected loop path if found */
-  detect: (graph: CallGraph) => { confidence: number; loopPath: ReentrancyFinding['loopPath'] } | null;
+  detect: (
+    graph: CallGraph,
+  ) => { confidence: number; loopPath: ReentrancyFinding['loopPath'] } | null;
 }
 
 // ── Risk Scoring Types ──────────────────────────────────────────────────────
