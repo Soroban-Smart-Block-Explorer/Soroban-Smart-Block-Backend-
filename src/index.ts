@@ -82,15 +82,7 @@ const SHUTDOWN_TIMEOUT_MS = parseInt(process.env.SHUTDOWN_TIMEOUT_MS ?? '30000')
 // /tmp is already mounted as a tmpfs in the Compose security profile.
 const STATE_DUMP_PATH = process.env.STATE_DUMP_PATH ?? '/tmp/state';
 
-// Feature flags — set env var to 'true' to enable each optional service.
-const ENABLE_PRIVACY_WS = process.env.ENABLE_PRIVACY_WS === 'true';
-const ENABLE_COMPOSABILITY_WS = process.env.ENABLE_COMPOSABILITY_WS === 'true';
-const ENABLE_ARBITRAGE_WS = process.env.ENABLE_ARBITRAGE_WS === 'true';
-const ENABLE_POOL_MONITOR = process.env.ENABLE_POOL_MONITOR === 'true';
-const ENABLE_ARBITRAGE_SCANNER = process.env.ENABLE_ARBITRAGE_SCANNER === 'true';
-const ENABLE_FEE_AGGREGATOR = process.env.ENABLE_FEE_AGGREGATOR === 'true';
-
-// Tracks which optional services are disabled, for /readyz reporting.
+// Names of optional services that are disabled, reported by /ready.
 const disabledServices: string[] = [];
 
 const app = express();
@@ -718,7 +710,7 @@ async function main() {
 
   await feedOrchestrator.initialize(httpServer);
 
-  httpServer.listen(config.port, () => {
+  server.httpServer.listen(config.port, () => {
     logger.info('Soroban Explorer API started', { port: config.port });
   });
 }
