@@ -43,6 +43,8 @@ import { sessionCookieAuth, COOKIE_CONFIG } from './middleware/cookieAuth';
 import { billingRouter } from './services/stripe-billing';
 import { logger } from './logger';
 import { feedOrchestrator } from './feed/orchestrator';
+import { eventBus } from './events/eventBus';
+import { startGraphqlEventBridge } from './graphql/subscriptions';
 import { startAuditPipeline } from './indexer/audit-pipeline';
 import { startAuditScheduler } from './indexer/audit-scheduler';
 import { startContinuousAuditMonitor } from './indexer/audit-monitor';
@@ -493,6 +495,9 @@ async function gracefulShutdown(signal: string): Promise<void> {
     cacheBackendStatus.set(0);
     logger.info('[shutdown] Cache connection closed');
 
+    await eventBus.close();
+    logger.info('[shutdown] Event bus closed');
+
     await prismaRead.$disconnect();
     await prisma.$disconnect();
     await prismaBackfill.$disconnect();
@@ -546,6 +551,9 @@ async function main() {
   await cacheConnect();
   if (isCacheReady()) markReady('cache');
   cacheBackendStatus.set(cacheBackendType() === 'redis' ? 1 : 0);
+
+  await eventBus.connect();
+  startGraphqlEventBridge();
 
   await prisma.$connect();
   dbConnectionStatus.set(1);
