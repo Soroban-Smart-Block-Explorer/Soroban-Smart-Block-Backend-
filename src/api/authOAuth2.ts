@@ -4,6 +4,7 @@ import { prismaWrite as prisma } from '../db';
 import { requireAuth } from '../auth/middleware';
 import { issueTokens, generateSessionId, REFRESH_TOKEN_TTL } from '../auth/tokens';
 import { asyncHandler } from '../middleware/asyncHandler';
+import { uuidv7 } from '../utils/uuidv7';
 
 export const authOAuth2Router = Router();
 
@@ -22,6 +23,7 @@ authOAuth2Router.post(
 
     const app = await prisma.oAuthApp.create({
       data: {
+        id: uuidv7(),
         clientId,
         clientSecret: createHash('sha256').update(clientSecret).digest('hex'),
         name,
@@ -91,6 +93,7 @@ authOAuth2Router.get(
     const code = randomBytes(24).toString('hex');
     await prisma.oAuthCode.create({
       data: {
+        id: uuidv7(),
         code,
         clientId: client_id,
         userId: req.user!.id,
