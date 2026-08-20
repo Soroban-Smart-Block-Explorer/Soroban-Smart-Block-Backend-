@@ -6,6 +6,7 @@ import http from 'http';
 import { requireAuth, requireRole } from '../auth/middleware';
 import { asyncHandler } from '../middleware/asyncHandler';
 import { logger } from '../logger';
+import { uuidv7 } from '../utils/uuidv7';
 
 export const alertConfigRouter = Router();
 
@@ -34,6 +35,7 @@ alertConfigRouter.post(
       const data = createAlertSchema.parse(req.body);
       const alert = await prismaWrite.alertConfiguration.create({
         data: {
+          id: uuidv7(),
           userId: data.userId,
           name: data.name,
           contractAddress: data.contractAddress,

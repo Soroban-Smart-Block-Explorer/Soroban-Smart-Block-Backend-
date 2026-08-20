@@ -912,7 +912,7 @@ model RecoveryAnalysis {
 }
 
 model AlertConfiguration {
-  id String @map("id") @id @default(cuid())
+  id String @map("id") @id
   userId String @map("user_id")
   contractAddress String? @map("contract_address") @db.VarChar(56)
   name String? @map("name") @db.VarChar(255)
