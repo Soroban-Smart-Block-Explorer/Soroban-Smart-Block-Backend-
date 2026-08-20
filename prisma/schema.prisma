@@ -2468,7 +2468,6 @@ model ExportJob {
   fileUrl String? @map("file_url")
   filters Json? @map("filters")
   errorMsg String? @map("error_msg")
-  errorMessage String? @map("error_message")
   rowCount Int? @map("row_count")
   completedAt DateTime? @map("completed_at")
   totalRows Int? @map("total_rows")
