@@ -16,6 +16,7 @@ import { getJwks, rotateKeys } from '../auth/keys';
 import { getFeatures, featureList } from '../auth/rbac';
 import { requireAuth, requireRole } from '../auth/middleware';
 import { asyncHandler } from '../middleware/asyncHandler';
+import { uuidv7 } from '../utils/uuidv7';
 
 export const authRouter = Router();
 
@@ -95,7 +96,7 @@ authRouter.post(
     let user = await prisma.walletUser.findUnique({ where: { address } });
     if (!user) {
       user = await prisma.walletUser.create({
-        data: { address, role: 'user', tier: 'free' },
+        data: { id: uuidv7(), address, role: 'user', tier: 'free' },
       });
     } else {
       await prisma.walletUser.update({ where: { id: user.id }, data: { lastLogin: new Date() } });

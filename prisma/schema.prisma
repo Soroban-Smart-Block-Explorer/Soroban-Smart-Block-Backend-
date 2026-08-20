@@ -4597,7 +4597,7 @@ model BridgeVolume {
 // ── Auth models ───────────────────────────────────────────────────────────────
 
 model WalletUser {
-  id          String    @id @default(cuid())
+  id          String    @id
   address     String    @unique
   role        String    @default("user")
   tier        String    @default("free")
@@ -4675,7 +4675,7 @@ model AuthWebhook {
 }
 
 model MultiSigWallet {
-  id            String   @id @default(cuid())
+  id            String   @id
   walletAddress String   @unique
   signers       Json
   threshold     Int
