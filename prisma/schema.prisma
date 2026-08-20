@@ -2179,7 +2179,7 @@ model ProtocolEconomicsSnapshot {
 // =========================================================================
 
 model FeatureDefinition {
-  id String @map("id") @id @default(cuid())
+  id String @map("id") @id
   name String @map("name") @unique
   description String? @map("description")
   category String? @map("category")
@@ -2194,7 +2194,7 @@ model FeatureDefinition {
 }
 
 model FeatureValue {
-  id String @map("id") @id @default(cuid())
+  id String @map("id") @id
   featureId String @map("feature_id")
   value Float @map("value")
   timestamp DateTime @map("timestamp")
