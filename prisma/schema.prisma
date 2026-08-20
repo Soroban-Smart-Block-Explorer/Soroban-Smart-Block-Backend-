@@ -24,7 +24,7 @@ model Ledger {
 }
 
 model WasmUpgradeHistory {
-  id String @map("id") @id @default(cuid())
+  id String @map("id") @id
   contractAddress String @map("contract_address")
   previousHash String? @map("previous_hash")
   newHash String @map("new_hash")
@@ -59,7 +59,7 @@ model WasmUpgradeHistory {
 }
 
 model Transaction {
-  id String @map("id") @id @default(cuid())
+  id String @map("id") @id
   hash String @map("hash") @unique
   ledgerSequence Int @map("ledger_sequence")
   ledgerCloseTime DateTime @map("ledger_close_time")
@@ -574,7 +574,7 @@ model ApiKey {
 }
 
 model SmartWallet {
-  id String @map("id") @id @default(cuid())
+  id String @map("id") @id
   address String @map("address") @unique
   walletType String @map("wallet_type")
   signerCount Int? @map("signer_count")
@@ -621,7 +621,7 @@ model SponsoredTransaction {
 }
 
 model AuthDecomposition {
-  id String @map("id") @id @default(cuid())
+  id String @map("id") @id
   transactionHash String @map("transaction_hash") @unique
   walletAddress String? @map("wallet_address")
   authTree Json @map("auth_tree")
@@ -643,7 +643,7 @@ model AuthDecomposition {
 // ---------------------------------------------------------------------------
 
 model SanctionsList {
-  id String @map("id") @id @default(cuid())
+  id String @map("id") @id
   source String @map("source") // "ofac_sdn" | "ofac_cap" | "eu" | "un" | "uk_ofsi" | "custom"
   sourceUrl String? @map("source_url")
   listVersion String @map("list_version") // version/date of the list
@@ -754,7 +754,7 @@ model ContractResourceMetric {
 }
 
 model TranslationKey {
-  id String @map("id") @id @default(cuid())
+  id String @map("id") @id
   key String @map("key") @unique
   defaultText String @map("default_text")
   context String? @map("context")
@@ -768,7 +768,7 @@ model TranslationKey {
 }
 
 model Translation {
-  id String @map("id") @id @default(cuid())
+  id String @map("id") @id
   keyId String @map("key_id")
   language String @map("language")
   translatedText String @map("translated_text")
@@ -786,7 +786,7 @@ model Translation {
 }
 
 model FeedChannel {
-  id String @map("id") @id @default(cuid())
+  id String @map("id") @id
   name String @map("name") @unique
   description String? @map("description")
   category String? @map("category")
@@ -814,7 +814,7 @@ model FeedMessage {
 }
 
 model FeedSubscription {
-  id String @map("id") @id @default(cuid())
+  id String @map("id") @id
   channelName String @map("channel_name")
   deliveryType String @map("delivery_type")
   deliveryConfig Json? @map("delivery_config")
@@ -912,7 +912,7 @@ model RecoveryAnalysis {
 }
 
 model AlertConfiguration {
-  id String @map("id") @id @default(cuid())
+  id String @map("id") @id
   userId String @map("user_id")
   contractAddress String? @map("contract_address") @db.VarChar(56)
   name String? @map("name") @db.VarChar(255)
@@ -2179,7 +2179,7 @@ model ProtocolEconomicsSnapshot {
 // =========================================================================
 
 model FeatureDefinition {
-  id String @map("id") @id @default(cuid())
+  id String @map("id") @id
   name String @map("name") @unique
   description String? @map("description")
   category String? @map("category")
@@ -2194,7 +2194,7 @@ model FeatureDefinition {
 }
 
 model FeatureValue {
-  id String @map("id") @id @default(cuid())
+  id String @map("id") @id
   featureId String @map("feature_id")
   value Float @map("value")
   timestamp DateTime @map("timestamp")
@@ -2287,7 +2287,7 @@ model Attestation {
 }
 
 model AuditLog {
-  id String @map("id") @id @default(cuid())
+  id String @map("id") @id
   actor String @map("actor")
   action String @map("action")
   target String @map("target")
@@ -2537,7 +2537,7 @@ model FuzzRun {
 }
 
 model GasAnalyticsSnapshot {
-  id String @map("id") @id @default(cuid())
+  id String @map("id") @id
   bucket String @map("bucket")
   bucketStart DateTime @map("bucket_start")
   bucketEnd DateTime @map("bucket_end")
@@ -2570,7 +2570,7 @@ model GasGolfingTip {
 // values (i128-safe), matching the indexer's addIntegerStrings arithmetic.
 
 model GovernanceContract {
-  id String @map("id") @id @default(cuid())
+  id String @map("id") @id
   contractAddress String @map("contract_address") @unique
   governanceType String @map("governance_type")
   votingToken String? @map("voting_token")
@@ -2677,7 +2677,7 @@ model GovernanceMultisigSigner {
 }
 
 model GovernanceProposal {
-  id String @map("id") @id @default(cuid())
+  id String @map("id") @id
   contractAddress String @map("contract_address")
   proposalId String @map("proposal_id") // on-chain proposal id (natural key with contractAddress)
   proposer String @map("proposer")
@@ -2715,7 +2715,7 @@ model GovernanceProposal {
 }
 
 model GovernanceVote {
-  id String @map("id") @id @default(cuid())
+  id String @map("id") @id
   contractAddress String @map("contract_address")
   proposalId String @map("proposal_id") // on-chain proposal id (FK to proposal's natural key)
   voter String @map("voter")
@@ -2941,7 +2941,7 @@ model PoolSnapshot {
 }
 
 model PoolSwap {
-  id String @map("id") @id @default(cuid())
+  id String @map("id") @id
   poolAddress String @map("pool_address")
   tokenIn String @map("token_in")
   amountIn String? @map("amount_in")
@@ -3042,7 +3042,7 @@ model PrivacyTransaction {
 }
 
 model ReentrancyAlert {
-  id String @map("id") @id @default(cuid())
+  id String @map("id") @id
   transactionHash String @map("transaction_hash") @unique
   contractAddress String @map("contract_address")
   severity String? @map("severity")
@@ -3052,7 +3052,7 @@ model ReentrancyAlert {
 }
 
 model RegisteredDapp {
-  id String @map("id") @id @default(cuid())
+  id String @map("id") @id
   name String @map("name")
   apiKey String @map("api_key")
   createdAt DateTime @map("created_at") @default(now())
@@ -3346,7 +3346,7 @@ model ShieldedTransfer {
 }
 
 model SignatureInspection {
-  id String @map("id") @id @default(cuid())
+  id String @map("id") @id
   transactionHash String @map("transaction_hash") @unique
   ledgerSequence Int @map("ledger_sequence")
   curveType String? @map("curve_type")
@@ -3393,7 +3393,7 @@ model StateContention {
 }
 
 model ThreatAdvisory {
-  id String @map("id") @id @default(cuid())
+  id String @map("id") @id
   title String @map("title")
   description String? @map("description")
   severity String @map("severity")
@@ -3434,7 +3434,7 @@ model ThreatReview {
 }
 
 model TipSubscription {
-  id String @map("id") @id @default(cuid())
+  id String @map("id") @id
   channel String @map("channel")
   target String @map("target")
   active Boolean @map("active")
@@ -3447,7 +3447,7 @@ model TipSubscription {
 }
 
 model TipWebhook {
-  id String @map("id") @id @default(cuid())
+  id String @map("id") @id
   url String @map("url")
   events Json? @map("events")
   secret String? @map("secret")
@@ -3511,7 +3511,7 @@ model TokenPrice {
 }
 
 model TokenPriceHistory {
-  id String @map("id") @id @default(cuid())
+  id String @map("id") @id
   tokenAddress String @map("token_address")
   priceUsd Decimal @map("price_usd")
   priceXlm Decimal @map("price_xlm")
@@ -3584,7 +3584,7 @@ model VolumeAlert {
 }
 
 model VulnerabilitySource {
-  id String @map("id") @id @default(cuid())
+  id String @map("id") @id
   name String @map("name") @unique
   sourceType String @map("source_type")
   feedUrl String? @map("feed_url")
@@ -3596,7 +3596,7 @@ model VulnerabilitySource {
 }
 
 model WebhookDelivery {
-  id String @map("id") @id @default(cuid())
+  id String @map("id") @id
   subscriptionId String @map("subscription_id")
   eventId String? @map("event_id")
   attempt Int? @map("attempt")
@@ -3620,7 +3620,7 @@ model WebhookDelivery {
 }
 
 model WebhookSubscription {
-  id String @map("id") @id @default(cuid())
+  id String @map("id") @id
   apiKeyId String @map("api_key_id")
   url String @map("url")
   secret String @map("secret")
@@ -4142,7 +4142,7 @@ model DataRetrieval {
 }
 
 model SlaOffer {
-  id          String       @id @default(cuid())
+  id          String       @id
   nodeId      String
   node        ArchivalNode @relation(fields: [nodeId], references: [id])
   tier        String
@@ -4213,7 +4213,7 @@ model ArchivalAppeal {
 // =========================================================================
 
 model NftCollection {
-  id String @map("id") @id @default(cuid())
+  id String @map("id") @id
   contractAddress String @map("contract_address") @unique
   name String? @map("name")
   symbol String? @map("symbol")
@@ -4594,7 +4594,7 @@ model BridgeVolume {
 // ── Auth models ───────────────────────────────────────────────────────────────
 
 model WalletUser {
-  id          String    @id @default(cuid())
+  id          String    @id
   address     String    @unique
   role        String    @default("user")
   tier        String    @default("free")
@@ -4672,7 +4672,7 @@ model AuthWebhook {
 }
 
 model MultiSigWallet {
-  id            String   @id @default(cuid())
+  id            String   @id
   walletAddress String   @unique
   signers       Json
   threshold     Int
@@ -4684,7 +4684,7 @@ model MultiSigWallet {
 }
 
 model OAuthApp {
-  id           String   @id @default(cuid())
+  id           String   @id
   clientId     String   @unique
   clientSecret String
   name         String
@@ -4699,7 +4699,7 @@ model OAuthApp {
 }
 
 model OAuthCode {
-  id          String   @id @default(cuid())
+  id          String   @id
   code        String   @unique
   clientId    String
   userId      String

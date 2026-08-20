@@ -21,6 +21,7 @@ import { buildTrustGraph, findTrustPath, weightedEndorsements } from '../reputat
 import { calculateDelegatedVotingPower } from '../reputation/governance';
 import { createArbitrationCase, resolveArbitrationCase } from '../reputation/arbitration';
 import { ChainReputationData, EndorsementInput, LinkedIdentityInput } from '../reputation/types';
+import { uuidv7 } from '../utils/uuidv7';
 
 /**
  * @swagger
@@ -2224,7 +2225,7 @@ reputationRouter.post(
     const apiKey = `rep-sdk-${rawKey}`;
     const keyHash = createHash('sha256').update(apiKey).digest('hex');
     const dapp = await prismaWrite.registeredDapp.create({
-      data: { name, apiKey: keyHash },
+      data: { id: uuidv7(), name, apiKey: keyHash },
     });
 
     return res.json({ ...dapp, apiKey });

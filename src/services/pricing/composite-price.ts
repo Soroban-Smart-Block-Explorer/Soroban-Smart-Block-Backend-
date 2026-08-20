@@ -3,6 +3,7 @@ import { discoverDexPrice } from './dex-price-source';
 import { discoverExternalPrice } from './external-api-source';
 import { getStablecoinInfo } from './stablecoin-peg';
 import { cacheGet, cacheSet } from '../../cache';
+import { uuidv7 } from '../../utils/uuidv7';
 
 export interface CompositePrice {
   priceUsd: number;
@@ -171,6 +172,7 @@ async function persistPrice(
   if (shouldRecord) {
     await prismaWrite.tokenPriceHistory.create({
       data: {
+        id: uuidv7(),
         tokenAddress,
         priceUsd: price.priceUsd,
         priceXlm: price.priceXlm,

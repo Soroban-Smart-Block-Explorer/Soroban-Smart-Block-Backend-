@@ -1,4 +1,5 @@
 import { prismaWrite as prisma } from '../db';
+import { uuidv7 } from '../utils/uuidv7';
 
 export class FeatureStore {
   constructor() {}
@@ -67,6 +68,7 @@ export class FeatureStore {
       features.map(async (feature) => {
         const def = await this.getOrCreateFeatureDef(feature.name, feature.description);
         return {
+          id: uuidv7(),
           featureId: def.id,
           timestamp: closeTime,
           value: feature.value,
@@ -82,7 +84,7 @@ export class FeatureStore {
     let def = await prisma.featureDefinition.findUnique({ where: { name } });
     if (!def) {
       def = await prisma.featureDefinition.create({
-        data: { name, description, category: 'onchain' },
+        data: { id: uuidv7(), name, description, category: 'onchain' },
       });
     }
     return def;

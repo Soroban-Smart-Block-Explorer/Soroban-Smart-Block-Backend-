@@ -1,0 +1,145 @@
+# ADR-005: CUID vs UUIDv7 for Primary Keys
+
+## Status
+Phase 3 in progress (phased rollout, pending maintainer feedback per phase)
+
+Refs #734
+
+## Context
+194 of the 249 models in `prisma/schema.prisma` use `String @id @default(cuid())`.
+CUID (25 chars) is not time-sortable, so several high-write, append-only tables
+already compensate with composite indexes that pair a monotonic column with
+`id` purely to get a stable secondary sort order, for example:
+
+- `Transaction`: `@@index([ledgerSequence, id])`, `@@index([ledgerCloseTime, id])`
+- `Event`: `@@index([contractAddress, ledgerSequence, id])`, `@@index([ledgerSequence, id])`
+
+These indexes work, but they exist to route around a property IDs would have
+for free if they were time-sortable. UUIDv7 embeds a millisecond timestamp in
+its first 48 bits, so records insert roughly in index order, keeping the
+primary key's B-tree append-mostly (less page splits/fragmentation than CUID
+or UUIDv4, which insert at random points in the key space) and making
+`ORDER BY id` a reasonable proxy for insertion order without an extra column.
+
+## Constraints found during evaluation
+
+- **Prisma version.** `@prisma/client` is pinned at `^5.10.0`. Native
+  `@default(uuid(7))` generation was only added in Prisma ORM 6.6. Adopting it
+  as-is would mean a major-version Prisma bump, which is a dependency change
+  I won't make unilaterally in an external PR, per this repo's contribution
+  norms it needs a maintainer decision first.
+- **Postgres version.** The `db`/`db-testnet` services run `apache/age`
+  (Postgres 16-based). Postgres's own built-in `uuidv7()` function ships in
+  Postgres 18. Not available here without an image bump.
+- **No `pg_uuidv7` extension** is currently installed, so `dbgenerated()`
+  can't call a v7 generator at the database layer today either.
+
+Net: there is no zero-dependency, zero-infra-change path to native UUIDv7
+generation on this stack right now. The realistic options are:
+
+| Option | Where IDs are generated | New dependency/infra? |
+|---|---|---|
+| Bump `@prisma/client`/`prisma` to 6.6+, use `@default(uuid(7))` | Prisma query engine | Major version bump (maintainer call) |
+| Add `pg_uuidv7` Postgres extension, use `dbgenerated("uuid_generate_v7()")` | Postgres | New extension + migration (maintainer call) |
+| Generate in application code (small self-contained helper, no package) at write time | Node process | None |
+| Bump Postgres image to 18+, use built-in `uuidv7()` | Postgres | Image/infra bump (maintainer call) |
+
+Application-level generation is the only path that needs no dependency or
+infra approval, so it's what phase 2 below implements. It also has a
+migration-friendly upside: it works identically for reads/writes throughout
+the transition, whichever storage-layer approach (if any) the maintainer
+ultimately wants for phase 3+.
+
+## Decision (proposed, phased)
+
+**Phase 1 (done): evaluation only.** No schema changes. This document,
+plus a first pass at classifying which of the 194 `cuid()` models are
+actually high-volume/append-heavy versus low-volume config/reference tables.
+
+**Phase 2 (in progress): migrate the clearest high-volume candidates**
+to app-generated UUIDv7 ids (`id` field keeps `String @id`, drops
+`@default(cuid())`; every create call site now passes `id: uuidv7()`
+explicitly):
+
+- `Transaction`
+- `AuditLog`, `WebhookDelivery`, `TokenPriceHistory`, `PoolSwap`
+
+Two corrections from the phase 1 draft of this list:
+
+- `PoolPrice` was listed as a candidate by mistake; it already uses
+  `BigInt @id @default(autoincrement())`, not `cuid()`, so it needs no
+  change and isn't part of this migration.
+- `Event` is **deferred out of phase 2**. Its `id` isn't actually
+  cuid()-generated at runtime: `src/indexer/indexer.ts` sets it explicitly
+  to a deterministic string, `` `${transactionHash}-${positionKey}` ``, and
+  upserts on `where: { id: eventId }` to dedupe events within a transaction.
+  That value is also read back and passed on as a foreign key
+  (`SessionAuthorization.eventId`) elsewhere in the same file. Swapping it
+  for a random UUIDv7 would silently break that dedup/FK mechanism; doing
+  this properly means adding a real unique constraint (e.g. on
+  `(transactionHash, positionKey)`) as a prerequisite, which is a schema
+  decision worth the maintainer's input rather than something to fold
+  silently into this batch.
+
+Migration: `prisma/migrations/20260819000000_transaction_uuidv7_id/`,
+`20260819000001_audit_webhook_uuidv7_ids/`, and
+`20260819000002_price_history_pool_swap_uuidv7_ids/` drop the column
+default for these five tables' `id` columns. They're hand-written rather
+than generated, so please verify against a real migration diff/CI before
+merging. Existing rows keep their CUID values; only new inserts get
+UUIDv7 ids.
+
+**Phase 3+ (in progress, chunked): remaining tables.** The other ~188
+`cuid()` models (187 plus `Event` once its dedup-key question is resolved),
+in reviewable batches, skipping models where a natural/composite key is
+more appropriate than a surrogate one at all (e.g. `Ledger` already uses
+`sequence Int @id`, not a CUID).
+
+Chunk 1 (`prisma/migrations/20260819000003_wasm_gas_reentrancy_signature_uuidv7_ids/`):
+`WasmUpgradeHistory`, `GasAnalyticsSnapshot`, `ReentrancyAlert`,
+`SignatureInspection`. All four are append-mostly, indexer-written records
+with no id-as-dedup-key landmine like `Event`'s (their upserts key off
+`transactionHash`/`bucket_bucketStart`/etc, never `id`).
+
+Chunk 2 (larger, `prisma/migrations/20260819000004_*` through
+`20260819000018_*`, one migration/commit per table family): 25 models
+checked and migrated the same way, all confirmed free of the `Event`
+landmine before touching them:
+
+`FeatureDefinition`, `FeatureValue`, `TranslationKey`, `Translation`,
+`SlaOffer`, `AlertConfiguration`, `OAuthApp`, `OAuthCode`,
+`WebhookSubscription`, `SanctionsList`, `ThreatAdvisory`,
+`VulnerabilitySource`, `RegisteredDapp`, `TipSubscription`, `TipWebhook`,
+`FeedChannel`, `FeedSubscription`, `GovernanceContract`,
+`GovernanceProposal`, `GovernanceVote`, `NftCollection`, `MultiSigWallet`,
+`SmartWallet`, `WalletUser`, `AuthDecomposition`.
+
+While reviewing chunk 2's call sites, also found and fixed a gap from
+phase 2: a nested `transactions: { create: {...} } }` write under
+`ledger.create()` in `tests/db-integration.test.ts` needed an explicit
+`id: uuidv7()` too, since Transaction's `@default(cuid())` was already
+dropped and nested relation writes don't show up in a
+`.transaction.create(`-style grep. Fixed as a standalone commit; worth
+double-checking other already-migrated models for the same nested-write
+blind spot in a future pass.
+
+~160 `cuid()` models remain (plus `Event`).
+
+Each phase is a separate PR/commit set gated on feedback from the previous
+one; this ADR's Status line and the phase notes above will be kept current
+as phases land or get revised.
+
+## Consequences
+- Read/range queries on high-volume tables can eventually drop the
+  time-column-plus-id composite indexes in favor of an id-only index once
+  IDs themselves sort by insertion time, simplifying schema and lowering
+  index-maintenance cost.
+- New primary keys grow up to 36 chars instead of 25 (CUID) for migrated
+  models; storage/index size per row increases proportionally on those
+  tables.
+- Existing rows keep their CUIDs unless backfilled; a real data migration
+  (not just a schema default change) is required per table taken on in
+  phase 2/3, and needs its own rollout plan (dual-write window, backfill,
+  cutover) since these are live, high-volume tables.
+- Any FK columns referencing a migrated table's `id` need to move in the
+  same migration to stay type-consistent.

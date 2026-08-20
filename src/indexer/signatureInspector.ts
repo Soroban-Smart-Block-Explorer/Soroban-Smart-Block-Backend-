@@ -1,4 +1,5 @@
 import { prismaWrite as prisma } from '../db';
+import { uuidv7 } from '../utils/uuidv7';
 
 // secp256r1 (P-256) OID prefix in DER-encoded SubjectPublicKeyInfo
 // 0x04 = uncompressed point prefix; preceded by the SPKI header for P-256
@@ -77,6 +78,7 @@ export async function inspectSignature(
     where: { transactionHash: txHash },
     update: { curveType, isPasskey, pubKeyX, pubKeyY, label },
     create: {
+      id: uuidv7(),
       transactionHash: txHash,
       ledgerSequence,
       curveType,

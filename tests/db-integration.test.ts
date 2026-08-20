@@ -1,5 +1,6 @@
 import { PrismaClient } from '@prisma/client';
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
+import { uuidv7 } from '../src/utils/uuidv7';
 
 const TEST_DB_URL = process.env.TEST_DATABASE_URL ?? process.env.DATABASE_URL;
 
@@ -152,6 +153,7 @@ describeIf('PostgreSQL integration – migration & query compatibility', () => {
         txCount: 1,
         transactions: {
           create: {
+            id: uuidv7(),
             hash: txHash,
             ledgerCloseTime: now,
             sourceAccount: 'GA' + Math.random().toString(36).slice(2, 10),
@@ -296,6 +298,7 @@ describeIf('PostgreSQL integration – migration & query compatibility', () => {
       txHashes.push(th);
       await prisma.transaction.create({
         data: {
+          id: uuidv7(),
           hash: th,
           ledgerSequence: seq,
           ledgerCloseTime: now,
@@ -330,6 +333,7 @@ describeIf('PostgreSQL integration – migration & query compatibility', () => {
     });
     await prisma.transaction.create({
       data: {
+        id: uuidv7(),
         hash: txHash,
         ledgerSequence: seq,
         ledgerCloseTime: now,
@@ -396,6 +400,7 @@ describeIf('PostgreSQL integration – migration & query compatibility', () => {
 
     await prisma.wasmUpgradeHistory.create({
       data: {
+        id: uuidv7(),
         contractAddress: addr,
         newHash: 'abc123',
         ledgerSequence: 1,
@@ -430,6 +435,7 @@ describeIf('PostgreSQL integration – migration & query compatibility', () => {
       });
       await tx.transaction.create({
         data: {
+          id: uuidv7(),
           hash: txHash,
           ledgerSequence: seq,
           ledgerCloseTime: now,
@@ -492,7 +498,7 @@ describeIf('PostgreSQL integration – migration & query compatibility', () => {
   it('reads enum values on GovernanceContract tables', async () => {
     const addr = `CA-gov-enum-${Math.random().toString(36).slice(2, 6)}`;
     await prisma.governanceContract.create({
-      data: { contractAddress: addr, governanceType: 'token_based' },
+      data: { id: uuidv7(), contractAddress: addr, governanceType: 'token_based' },
     });
 
     const found = await prisma.governanceContract.findUnique({

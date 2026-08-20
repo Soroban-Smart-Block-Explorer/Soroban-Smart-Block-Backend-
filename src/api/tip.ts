@@ -17,6 +17,7 @@ import {
   getTopAffectedContracts,
   getStatusSummary,
 } from '../tip/analytics';
+import { uuidv7 } from '../utils/uuidv7';
 
 const db = new PrismaClient();
 
@@ -712,7 +713,11 @@ tipRouter.post(
     const sub = await db.tipSubscription.upsert({
       where: { channel_target: { channel: parsed.data.channel, target: parsed.data.target } },
       update: { active: true, filters: (parsed.data.filters ?? null) as Prisma.InputJsonValue },
-      create: { ...parsed.data, filters: (parsed.data.filters ?? null) as Prisma.InputJsonValue },
+      create: {
+        id: uuidv7(),
+        ...parsed.data,
+        filters: (parsed.data.filters ?? null) as Prisma.InputJsonValue,
+      },
     });
     res.status(201).json(sub);
   }),
@@ -842,7 +847,7 @@ tipRouter.post(
     const wh = await db.tipWebhook.upsert({
       where: { url: parsed.data.url },
       update: { ...parsed.data },
-      create: { ...parsed.data },
+      create: { id: uuidv7(), ...parsed.data },
     });
     res.status(201).json({ id: wh.id, url: wh.url });
   }),

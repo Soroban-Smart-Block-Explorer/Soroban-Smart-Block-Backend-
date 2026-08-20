@@ -4,6 +4,7 @@ import { getMlopsService } from './mlops';
 import { FraudAlert, FraudSeverity } from '../types/fraud';
 import { invalidateFreezeCache } from '../indexer/freeze-scanner';
 import { logger } from '../logger';
+import { uuidv7 } from '../utils/uuidv7';
 
 export class FraudAlertSystem {
   private featureStore = getFraudFeatureStore();
@@ -174,6 +175,7 @@ export class FraudAlertSystem {
       // Log audit
       await prismaWrite.auditLog.create({
         data: {
+          id: uuidv7(),
           actor: 'fraud_detection_engine',
           action: 'CREATE_FREEZE',
           target: address,
