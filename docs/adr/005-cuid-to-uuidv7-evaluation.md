@@ -101,6 +101,30 @@ Chunk 1 (`prisma/migrations/20260819000003_wasm_gas_reentrancy_signature_uuidv7_
 with no id-as-dedup-key landmine like `Event`'s (their upserts key off
 `transactionHash`/`bucket_bucketStart`/etc, never `id`).
 
+Chunk 2 (larger, `prisma/migrations/20260819000004_*` through
+`20260819000018_*`, one migration/commit per table family): 25 models
+checked and migrated the same way, all confirmed free of the `Event`
+landmine before touching them:
+
+`FeatureDefinition`, `FeatureValue`, `TranslationKey`, `Translation`,
+`SlaOffer`, `AlertConfiguration`, `OAuthApp`, `OAuthCode`,
+`WebhookSubscription`, `SanctionsList`, `ThreatAdvisory`,
+`VulnerabilitySource`, `RegisteredDapp`, `TipSubscription`, `TipWebhook`,
+`FeedChannel`, `FeedSubscription`, `GovernanceContract`,
+`GovernanceProposal`, `GovernanceVote`, `NftCollection`, `MultiSigWallet`,
+`SmartWallet`, `WalletUser`, `AuthDecomposition`.
+
+While reviewing chunk 2's call sites, also found and fixed a gap from
+phase 2: a nested `transactions: { create: {...} } }` write under
+`ledger.create()` in `tests/db-integration.test.ts` needed an explicit
+`id: uuidv7()` too, since Transaction's `@default(cuid())` was already
+dropped and nested relation writes don't show up in a
+`.transaction.create(`-style grep. Fixed as a standalone commit; worth
+double-checking other already-migrated models for the same nested-write
+blind spot in a future pass.
+
+~160 `cuid()` models remain (plus `Event`).
+
 Each phase is a separate PR/commit set gated on feedback from the previous
 one; this ADR's Status line and the phase notes above will be kept current
 as phases land or get revised.
