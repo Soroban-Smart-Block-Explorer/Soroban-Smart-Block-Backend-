@@ -3396,7 +3396,7 @@ model StateContention {
 }
 
 model ThreatAdvisory {
-  id String @map("id") @id @default(cuid())
+  id String @map("id") @id
   title String @map("title")
   description String? @map("description")
   severity String @map("severity")
@@ -3587,7 +3587,7 @@ model VolumeAlert {
 }
 
 model VulnerabilitySource {
-  id String @map("id") @id @default(cuid())
+  id String @map("id") @id
   name String @map("name") @unique
   sourceType String @map("source_type")
   feedUrl String? @map("feed_url")

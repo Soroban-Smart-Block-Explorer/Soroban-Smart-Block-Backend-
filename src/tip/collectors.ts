@@ -5,6 +5,7 @@
 import axios from 'axios';
 import { prismaRead as prisma } from '../db';
 import { PrismaClient } from '@prisma/client';
+import { uuidv7 } from '../utils/uuidv7';
 
 const db = new PrismaClient();
 
@@ -18,7 +19,7 @@ export async function fetchCves(
   const src = await db.vulnerabilitySource.upsert({
     where: { name: 'NVD_CVE' },
     update: {},
-    create: { name: 'NVD_CVE', sourceType: 'cve', feedUrl: NVD_BASE },
+    create: { id: uuidv7(), name: 'NVD_CVE', sourceType: 'cve', feedUrl: NVD_BASE },
   });
 
   const resp = await axios.get(NVD_BASE, {
@@ -41,6 +42,7 @@ export async function fetchCves(
       where: { cveId },
       update: { cvssScore: cvss, severity, updatedAt: new Date() },
       create: {
+        id: uuidv7(),
         title: cveId,
         description: desc,
         severity,
@@ -73,7 +75,7 @@ export async function fetchGhsa(token?: string): Promise<number> {
   const src = await db.vulnerabilitySource.upsert({
     where: { name: 'GHSA' },
     update: {},
-    create: { name: 'GHSA', sourceType: 'ghsa', feedUrl: GHSA_GQL },
+    create: { id: uuidv7(), name: 'GHSA', sourceType: 'ghsa', feedUrl: GHSA_GQL },
   });
 
   const query = `{ securityAdvisories(first: 50, classifications: [GENERAL]) {
@@ -95,6 +97,7 @@ export async function fetchGhsa(token?: string): Promise<number> {
       where: { ghsaId: node.ghsaId },
       update: { updatedAt: new Date() },
       create: {
+        id: uuidv7(),
         title: node.ghsaId,
         description: node.summary ?? '',
         severity: (node.severity ?? 'UNKNOWN').toLowerCase(),
@@ -128,7 +131,7 @@ export async function ingestOnChainAlerts(): Promise<number> {
   const src = await db.vulnerabilitySource.upsert({
     where: { name: 'ON_CHAIN' },
     update: {},
-    create: { name: 'ON_CHAIN', sourceType: 'onchain' },
+    create: { id: uuidv7(), name: 'ON_CHAIN', sourceType: 'onchain' },
   });
 
   // Flash-loan alerts
@@ -147,6 +150,7 @@ export async function ingestOnChainAlerts(): Promise<number> {
 
     await db.threatAdvisory.create({
       data: {
+        id: uuidv7(),
         title,
         description: `On-chain flash-loan pattern detected in tx ${tx.hash}`,
         severity: 'high',
@@ -188,11 +192,12 @@ export async function submitManual(data: ManualSubmission): Promise<string> {
   const src = await db.vulnerabilitySource.upsert({
     where: { name: 'COMMUNITY' },
     update: {},
-    create: { name: 'COMMUNITY', sourceType: 'manual' },
+    create: { id: uuidv7(), name: 'COMMUNITY', sourceType: 'manual' },
   });
 
   const advisory = await db.threatAdvisory.create({
     data: {
+      id: uuidv7(),
       title: data.title,
       description: data.description,
       severity: normaliseSeverity(data.severity),
