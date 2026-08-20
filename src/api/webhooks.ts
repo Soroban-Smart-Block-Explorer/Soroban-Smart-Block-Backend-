@@ -5,6 +5,7 @@ import { prismaWrite as prisma, prismaRead } from '../db';
 import { asyncHandler } from '../middleware/asyncHandler';
 import { apiKeyAuth, requireApiKey } from '../middleware/apiKeyAuth';
 import { assertSafeUrl, SsrfBlockedError } from '../webhooks/ssrf-guard';
+import { uuidv7 } from '../utils/uuidv7';
 
 export const webhooksRouter = Router();
 
@@ -92,6 +93,7 @@ webhooksRouter.post(
 
     const sub = await prisma.webhookSubscription.create({
       data: {
+        id: uuidv7(),
         apiKeyId: req.apiKey!.id,
         url: parsed.data.url,
         secret,

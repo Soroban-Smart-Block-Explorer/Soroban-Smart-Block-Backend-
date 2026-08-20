@@ -3623,7 +3623,7 @@ model WebhookDelivery {
 }
 
 model WebhookSubscription {
-  id String @map("id") @id @default(cuid())
+  id String @map("id") @id
   apiKeyId String @map("api_key_id")
   url String @map("url")
   secret String @map("secret")
