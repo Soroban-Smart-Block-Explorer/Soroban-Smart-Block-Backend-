@@ -12,6 +12,7 @@
 import { prismaRead, prismaWrite } from '../db';
 import { logger } from '../logger';
 import { fetchCollectionMetadataFromChain } from './nft-metadata-fetcher';
+import { uuidv7 } from '../utils/uuidv7';
 
 const DISCOVERY_INTERVAL_MS = 60 * 60 * 1000; // 1 hour
 const NFT_EVENT_PATTERNS = ['transfer', 'mint', 'burn', 'approve', 'set_metadata', 'token_uri'];
@@ -106,6 +107,7 @@ async function registerCollection(contractAddress: string): Promise<void> {
 
   await prismaWrite.nftCollection.create({
     data: {
+      id: uuidv7(),
       contractAddress,
       name: chainMeta?.name ?? null,
       symbol: chainMeta?.symbol ?? null,
