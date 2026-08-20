@@ -1,7 +1,7 @@
 import { Router, Request, Response } from 'express';
-import { prismaRead as prisma } from '../db';
 import { z } from 'zod';
 import { asyncHandler } from '../middleware/asyncHandler';
+import { transactionService } from '../services/transaction.service';
 
 /**
  * @swagger
@@ -11,21 +11,6 @@ import { asyncHandler } from '../middleware/asyncHandler';
  */
 
 export const transactionRouter = Router();
-
-const TX_SELECT = {
-  hash: true,
-  ledgerSequence: true,
-  ledgerCloseTime: true,
-  sourceAccount: true,
-  contractAddress: true,
-  functionName: true,
-  functionArgs: true,
-  status: true,
-  humanReadable: true,
-  feeCharged: true,
-  sorobanResources: true,
-  failureReason: true,
-};
 
 const listSchema = z.object({
   // cursor-based (preferred for large datasets) — cursor = ledger number
@@ -131,51 +116,8 @@ transactionRouter.get(
   '/',
   asyncHandler(async (req: Request, res: Response) => {
     const q = listSchema.parse(req.query);
-
-    const where: any = {
-      ...(q.contract && { contractAddress: q.contract }),
-      ...(q.account && { sourceAccount: q.account }),
-      ...(q.status && { status: q.status }),
-      ...((q.ledgerMin !== undefined || q.ledgerMax !== undefined) && {
-        ledgerSequence: {
-          ...(q.ledgerMin !== undefined && { gte: q.ledgerMin }),
-          ...(q.ledgerMax !== undefined && { lte: q.ledgerMax }),
-        },
-      }),
-    };
-
-    if (q.cursor !== undefined) {
-      // Cursor-based: return rows with ledger < cursor (descending)
-      where.ledgerSequence = { ...where.ledgerSequence, lt: q.cursor };
-
-      const rows = await prisma.transaction.findMany({
-        where,
-        orderBy: [{ ledgerSequence: 'desc' }, { id: 'desc' }],
-        take: q.limit + 1,
-        select: TX_SELECT,
-      });
-
-      const hasNext = rows.length > q.limit;
-      const data = hasNext ? rows.slice(0, q.limit) : rows;
-      const nextCursor = hasNext ? (data[data.length - 1] as any).ledgerSequence : null;
-
-      return res.json({ data, nextCursor, hasNext });
-    }
-
-    // Offset-based fallback
-    const skip = (q.page - 1) * q.limit;
-    const [data, total] = await Promise.all([
-      prisma.transaction.findMany({
-        where,
-        orderBy: [{ ledgerSequence: 'desc' }, { id: 'desc' }],
-        skip,
-        take: q.limit,
-        select: TX_SELECT,
-      }),
-      prisma.transaction.count({ where }),
-    ]);
-
-    res.json({ data, total, page: q.page, limit: q.limit, pages: Math.ceil(total / q.limit) });
+    const result = await transactionService.listTransactions(q);
+    res.json(result);
   }),
 );
 
@@ -239,13 +181,7 @@ transactionRouter.get(
 transactionRouter.get(
   '/:hash',
   asyncHandler(async (req: Request, res: Response) => {
-    const tx = await prisma.transaction.findUnique({
-      where: { hash: req.params.hash },
-      select: {
-        ...TX_SELECT,
-        events: true,
-      },
-    });
+    const tx = await transactionService.getTransactionByHash(req.params.hash);
     if (!tx) return res.status(404).json({ error: 'Transaction not found' });
 
     res.json(tx);
