@@ -754,7 +754,7 @@ model ContractResourceMetric {
 }
 
 model TranslationKey {
-  id String @map("id") @id @default(cuid())
+  id String @map("id") @id
   key String @map("key") @unique
   defaultText String @map("default_text")
   context String? @map("context")
@@ -768,7 +768,7 @@ model TranslationKey {
 }
 
 model Translation {
-  id String @map("id") @id @default(cuid())
+  id String @map("id") @id
   keyId String @map("key_id")
   language String @map("language")
   translatedText String @map("translated_text")
