@@ -643,7 +643,7 @@ model AuthDecomposition {
 // ---------------------------------------------------------------------------
 
 model SanctionsList {
-  id String @map("id") @id @default(cuid())
+  id String @map("id") @id
   source String @map("source") // "ofac_sdn" | "ofac_cap" | "eu" | "un" | "uk_ofsi" | "custom"
   sourceUrl String? @map("source_url")
   listVersion String @map("list_version") // version/date of the list

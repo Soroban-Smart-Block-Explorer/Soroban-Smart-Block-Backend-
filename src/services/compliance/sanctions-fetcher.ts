@@ -2,6 +2,7 @@ import axios from 'axios';
 import { prismaWrite, prismaRead } from '../../db';
 import { logger } from '../../logger';
 import { recordAudit } from './audit';
+import { uuidv7 } from '../../utils/uuidv7';
 
 const OFAC_SDN_URL = 'https://www.treasury.gov/ofac/downloads/sdn.xml';
 const OFAC_SDN_CSV_URL = 'https://www.treasury.gov/ofac/downloads/sdn.csv';
@@ -209,6 +210,7 @@ export async function fetchSanctionsList(source: SanctionsSource): Promise<Fetch
       const batch = entries.slice(i, i + batchSize);
       await prismaWrite.sanctionsList.createMany({
         data: batch.map((e) => ({
+          id: uuidv7(),
           source: e.source,
           sourceUrl: e.sourceUrl,
           listVersion: e.listVersion,
@@ -283,6 +285,7 @@ export async function importCustomList(
       const batch = data.slice(i, i + batchSize);
       await prismaWrite.sanctionsList.createMany({
         data: batch.map((e) => ({
+          id: uuidv7(),
           source: 'custom',
           listName,
           listVersion: result.listVersion,
