@@ -3437,7 +3437,7 @@ model ThreatReview {
 }
 
 model TipSubscription {
-  id String @map("id") @id @default(cuid())
+  id String @map("id") @id
   channel String @map("channel")
   target String @map("target")
   active Boolean @map("active")
@@ -3450,7 +3450,7 @@ model TipSubscription {
 }
 
 model TipWebhook {
-  id String @map("id") @id @default(cuid())
+  id String @map("id") @id
   url String @map("url")
   events Json? @map("events")
   secret String? @map("secret")
