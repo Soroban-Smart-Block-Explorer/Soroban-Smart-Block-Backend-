@@ -786,7 +786,7 @@ model Translation {
 }
 
 model FeedChannel {
-  id String @map("id") @id @default(cuid())
+  id String @map("id") @id
   name String @map("name") @unique
   description String? @map("description")
   category String? @map("category")
@@ -814,7 +814,7 @@ model FeedMessage {
 }
 
 model FeedSubscription {
-  id String @map("id") @id @default(cuid())
+  id String @map("id") @id
   channelName String @map("channel_name")
   deliveryType String @map("delivery_type")
   deliveryConfig Json? @map("delivery_config")
