@@ -2204,7 +2204,6 @@ model FeatureValue {
   feature FeatureDefinition @relation(fields: [featureId], references: [id])
 
   @@index([featureId, timestamp])
-  @@index([featureId, timestamp, id])
   @@map("_feature_values")
 }
 
