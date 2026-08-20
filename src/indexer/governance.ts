@@ -1,5 +1,6 @@
 import { prismaWrite as prisma } from '../db';
 import { LedgerEvent } from './rpc';
+import { uuidv7 } from '../utils/uuidv7';
 
 const GOVERNANCE_EVENT_TOPICS = new Set([
   'proposal_created',
@@ -193,7 +194,7 @@ export async function processGovernanceEvent(
   await prisma.governanceContract.upsert({
     where: { contractAddress },
     update: { updatedAt: new Date() },
-    create: { contractAddress, governanceType: 'token_based' },
+    create: { id: uuidv7(), contractAddress, governanceType: 'token_based' },
   });
 
   const symbol = normalizeEventSymbol(eventType, topicSymbol, decoded) ?? 'proposal';
@@ -222,6 +223,7 @@ export async function processGovernanceEvent(
       },
       update: updateData,
       create: {
+        id: uuidv7(),
         contractAddress,
         proposalId: proposalFields.proposalId,
         proposer: proposalFields.proposer,
@@ -262,6 +264,7 @@ export async function processGovernanceEvent(
     if (!existingVote) {
       await prisma.governanceVote.create({
         data: {
+          id: uuidv7(),
           contractAddress,
           proposalId,
           voter: voteFields.voter,
@@ -277,6 +280,7 @@ export async function processGovernanceEvent(
         where: { contractAddress_proposalId: { contractAddress, proposalId } },
         update: {},
         create: {
+          id: uuidv7(),
           contractAddress,
           proposalId,
           proposer: voteFields.voter,

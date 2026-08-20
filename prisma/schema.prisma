@@ -2573,7 +2573,7 @@ model GasGolfingTip {
 // values (i128-safe), matching the indexer's addIntegerStrings arithmetic.
 
 model GovernanceContract {
-  id String @map("id") @id @default(cuid())
+  id String @map("id") @id
   contractAddress String @map("contract_address") @unique
   governanceType String @map("governance_type")
   votingToken String? @map("voting_token")
@@ -2680,7 +2680,7 @@ model GovernanceMultisigSigner {
 }
 
 model GovernanceProposal {
-  id String @map("id") @id @default(cuid())
+  id String @map("id") @id
   contractAddress String @map("contract_address")
   proposalId String @map("proposal_id") // on-chain proposal id (natural key with contractAddress)
   proposer String @map("proposer")
@@ -2718,7 +2718,7 @@ model GovernanceProposal {
 }
 
 model GovernanceVote {
-  id String @map("id") @id @default(cuid())
+  id String @map("id") @id
   contractAddress String @map("contract_address")
   proposalId String @map("proposal_id") // on-chain proposal id (FK to proposal's natural key)
   voter String @map("voter")
