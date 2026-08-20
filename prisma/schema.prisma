@@ -3055,7 +3055,7 @@ model ReentrancyAlert {
 }
 
 model RegisteredDapp {
-  id String @map("id") @id @default(cuid())
+  id String @map("id") @id
   name String @map("name")
   apiKey String @map("api_key")
   createdAt DateTime @map("created_at") @default(now())
