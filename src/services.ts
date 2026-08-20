@@ -30,6 +30,8 @@ import { startAuditExpiryChecker } from './indexer/audit-expiry-checker';
 import { startAuditDigestScheduler } from './indexer/audit-digest-scheduler';
 import { startPriceUpdater } from './services/pricing';
 import { feedOrchestrator } from './feed/orchestrator';
+import { eventBus } from './events/eventBus';
+import { startGraphqlEventBridge } from './graphql/subscriptions';
 
 export async function initializeServices(
   httpServer: Server,
@@ -40,6 +42,9 @@ export async function initializeServices(
   await cacheConnect();
   if (isCacheReady()) markReady('cache');
   cacheBackendStatus.set(cacheBackendType() === 'redis' ? 1 : 0);
+
+  await eventBus.connect();
+  startGraphqlEventBridge();
 
   await prisma.$connect();
   dbConnectionStatus.set(1);
