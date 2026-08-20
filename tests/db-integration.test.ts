@@ -498,7 +498,7 @@ describeIf('PostgreSQL integration – migration & query compatibility', () => {
   it('reads enum values on GovernanceContract tables', async () => {
     const addr = `CA-gov-enum-${Math.random().toString(36).slice(2, 6)}`;
     await prisma.governanceContract.create({
-      data: { contractAddress: addr, governanceType: 'token_based' },
+      data: { id: uuidv7(), contractAddress: addr, governanceType: 'token_based' },
     });
 
     const found = await prisma.governanceContract.findUnique({
