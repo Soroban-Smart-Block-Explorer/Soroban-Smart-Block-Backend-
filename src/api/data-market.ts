@@ -48,6 +48,7 @@ import { Prisma } from '@prisma/client';
 import { z, ZodError } from 'zod';
 import { prismaRead, prismaWrite } from '../db';
 import { asyncHandler } from '../middleware/asyncHandler';
+import { uuidv7 } from '../utils/uuidv7';
 
 export const dataMarketRouter = Router();
 
@@ -848,6 +849,7 @@ dataMarketRouter.post(
     const uptime = body.tier === 'gold' ? 0.9999 : body.tier === 'silver' ? 0.999 : 0.99;
     const sla = await prismaWrite.slaOffer.create({
       data: {
+        id: uuidv7(),
         nodeId: node.id,
         tier: body.tier,
         uptime,

@@ -4145,7 +4145,7 @@ model DataRetrieval {
 }
 
 model SlaOffer {
-  id          String       @id @default(cuid())
+  id          String       @id
   nodeId      String
   node        ArchivalNode @relation(fields: [nodeId], references: [id])
   tier        String
