@@ -574,7 +574,7 @@ model ApiKey {
 }
 
 model SmartWallet {
-  id String @map("id") @id @default(cuid())
+  id String @map("id") @id
   address String @map("address") @unique
   walletType String @map("wallet_type")
   signerCount Int? @map("signer_count")
@@ -621,7 +621,7 @@ model SponsoredTransaction {
 }
 
 model AuthDecomposition {
-  id String @map("id") @id @default(cuid())
+  id String @map("id") @id
   transactionHash String @map("transaction_hash") @unique
   walletAddress String? @map("wallet_address")
   authTree Json @map("auth_tree")
