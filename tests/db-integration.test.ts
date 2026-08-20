@@ -153,6 +153,7 @@ describeIf('PostgreSQL integration – migration & query compatibility', () => {
         txCount: 1,
         transactions: {
           create: {
+            id: uuidv7(),
             hash: txHash,
             ledgerCloseTime: now,
             sourceAccount: 'GA' + Math.random().toString(36).slice(2, 10),
