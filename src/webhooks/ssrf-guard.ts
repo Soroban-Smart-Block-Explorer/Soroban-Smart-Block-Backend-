@@ -26,8 +26,19 @@ import dns from 'dns';
 import net from 'net';
 import { promisify } from 'util';
 
-const resolve4 = promisify(dns.resolve4);
-const resolve6 = promisify(dns.resolve6);
+const resolve4 = (hostname: string): Promise<string[]> => {
+  if (dns.promises && typeof dns.promises.resolve4 === 'function') {
+    return dns.promises.resolve4(hostname);
+  }
+  return promisify(dns.resolve4)(hostname);
+};
+
+const resolve6 = (hostname: string): Promise<string[]> => {
+  if (dns.promises && typeof dns.promises.resolve6 === 'function') {
+    return dns.promises.resolve6(hostname);
+  }
+  return promisify(dns.resolve6)(hostname);
+};
 
 // ---------------------------------------------------------------------------
 // DNS pinning cache to prevent rebinding attacks
@@ -141,8 +152,9 @@ function isBlockedIpv6(ip: string): boolean {
 
 /** Returns true if the given IP string (v4 or v6) should be blocked. */
 export function isBlockedIp(ip: string): boolean {
-  if (net.isIPv4(ip)) return isBlockedIpv4(ip);
-  if (net.isIPv6(ip)) return isBlockedIpv6(ip);
+  const clean = ip.replace(/^\[|\]$/g, '');
+  if (net.isIPv4(clean)) return isBlockedIpv4(clean);
+  if (net.isIPv6(clean)) return isBlockedIpv6(clean);
   return false; // not a recognised IP format — let DNS resolution handle it
 }
 
@@ -164,12 +176,13 @@ function isHttpAllowed(): boolean {
  * blocked range. Caches results to prevent DNS rebinding attacks.
  */
 async function assertHostnameResolvesToPublicIp(hostname: string): Promise<string[]> {
+  const clean = hostname.replace(/^\[|\]$/g, '');
   // Short-circuit for bare IPs — no DNS lookup needed
-  if (net.isIPv4(hostname) || net.isIPv6(hostname)) {
-    if (isBlockedIp(hostname)) {
+  if (net.isIPv4(clean) || net.isIPv6(clean)) {
+    if (isBlockedIp(clean)) {
       throw new SsrfBlockedError(`IP address ${hostname} is in a blocked range`);
     }
-    return [hostname];
+    return [clean];
   }
 
   // Reject raw hostnames that look like internal names
@@ -286,10 +299,10 @@ function createPinnedLookup(hostname: string, pinnedIps: string[]): LookupFuncti
  */
 export function buildSafeAxios(
   timeoutMs: number,
-  hostname: string,
-  pinnedIps: string[],
+  hostname?: string,
+  pinnedIps?: string[],
 ): AxiosInstance {
-  const lookup = createPinnedLookup(hostname, pinnedIps);
+  const lookup = hostname && pinnedIps ? createPinnedLookup(hostname, pinnedIps) : undefined;
 
   return axios.create({
     timeout: timeoutMs,
@@ -298,11 +311,11 @@ export function buildSafeAxios(
     // Dedicated agents with pinned DNS lookup
     httpAgent: new HttpAgent({
       keepAlive: false,
-      lookup: lookup as any, // Node's types are slightly different but compatible
+      ...(lookup ? { lookup: lookup as any } : {}),
     }),
     httpsAgent: new HttpsAgent({
       keepAlive: false,
-      lookup: lookup as any,
+      ...(lookup ? { lookup: lookup as any } : {}),
     }),
   });
 }
@@ -323,15 +336,59 @@ export async function safePost(
   timeoutMs: number,
 ): Promise<{ status: number; data: unknown }> {
   const MAX_REDIRECTS = 5;
-  const client = buildSafeAxios(timeoutMs);
-
   let currentUrl = url;
 
   for (let hop = 0; hop <= MAX_REDIRECTS; hop++) {
     // Re-validate URL and DNS on every hop (catches redirect-based bypasses)
-    await assertSafeUrl(currentUrl);
+    const pinnedIps = await assertSafeUrl(currentUrl);
+    const hostname = new URL(currentUrl).hostname;
+    const client = buildSafeAxios(timeoutMs, hostname, pinnedIps);
 
     const response = await client.post(currentUrl, body, { headers });
+
+    if (response.status >= 300 && response.status < 400) {
+      const location = response.headers['location'];
+      if (!location) {
+        throw new SsrfBlockedError('Redirect response missing Location header');
+      }
+      // Resolve relative redirects
+      currentUrl = new URL(location, currentUrl).toString();
+      continue;
+    }
+
+    return { status: response.status, data: response.data };
+  }
+
+  throw new SsrfBlockedError(`Exceeded maximum redirect limit (${MAX_REDIRECTS})`);
+}
+
+/**
+ * GET `url` with SSRF protection on every hop.
+ *
+ * - Validates the initial URL before the first request.
+ * - On a 3xx response, validates the redirect target before following.
+ * - Maximum 5 redirects.
+ *
+ * Returns the final response.
+ */
+export async function safeGet<T = unknown>(
+  url: string,
+  timeoutMs: number,
+  options?: { headers?: Record<string, string>; responseType?: 'text' | 'json' },
+): Promise<{ status: number; data: T }> {
+  const MAX_REDIRECTS = 5;
+  let currentUrl = url;
+
+  for (let hop = 0; hop <= MAX_REDIRECTS; hop++) {
+    // Re-validate URL and DNS on every hop
+    const pinnedIps = await assertSafeUrl(currentUrl);
+    const hostname = new URL(currentUrl).hostname;
+    const client = buildSafeAxios(timeoutMs, hostname, pinnedIps);
+
+    const response = await client.get<T>(currentUrl, {
+      headers: options?.headers,
+      responseType: options?.responseType,
+    });
 
     if (response.status >= 300 && response.status < 400) {
       const location = response.headers['location'];

@@ -13,13 +13,24 @@ import { assertSafeUrl, isBlockedIp, SsrfBlockedError, safePost } from './ssrf-g
 import axios from 'axios';
 
 // Mock dns module
-vi.mock('dns', () => ({
-  default: {
-    resolve4: vi.fn(),
-    resolve6: vi.fn(),
-    lookup: vi.fn(),
-  },
-}));
+vi.mock('dns', () => {
+  const resolve4 = vi.fn();
+  const resolve6 = vi.fn();
+  const lookup = vi.fn();
+  const promises = { resolve4, resolve6, lookup };
+  return {
+    default: {
+      resolve4,
+      resolve6,
+      lookup,
+      promises,
+    },
+    promises,
+    resolve4,
+    resolve6,
+    lookup,
+  };
+});
 
 // Mock axios
 vi.mock('axios');
@@ -69,8 +80,8 @@ describe('SSRF Guard - DNS Rebinding Protection', () => {
   });
 
   test('blocks hostname that resolves to private IP', async () => {
-    const mockResolve4 = dns.resolve4 as ReturnType<typeof vi.fn>;
-    const mockResolve6 = dns.resolve6 as ReturnType<typeof vi.fn>;
+    const mockResolve4 = (dns.promises?.resolve4 ?? dns.resolve4) as ReturnType<typeof vi.fn>;
+    const mockResolve6 = (dns.promises?.resolve6 ?? dns.resolve6) as ReturnType<typeof vi.fn>;
 
     mockResolve4.mockResolvedValue(['10.0.0.1']);
     mockResolve6.mockRejectedValue(new Error('No AAAA records'));
@@ -81,8 +92,8 @@ describe('SSRF Guard - DNS Rebinding Protection', () => {
   });
 
   test('blocks hostname that resolves to AWS metadata IP', async () => {
-    const mockResolve4 = dns.resolve4 as ReturnType<typeof vi.fn>;
-    const mockResolve6 = dns.resolve6 as ReturnType<typeof vi.fn>;
+    const mockResolve4 = (dns.promises?.resolve4 ?? dns.resolve4) as ReturnType<typeof vi.fn>;
+    const mockResolve6 = (dns.promises?.resolve6 ?? dns.resolve6) as ReturnType<typeof vi.fn>;
 
     mockResolve4.mockResolvedValue(['169.254.169.254']);
     mockResolve6.mockRejectedValue(new Error('No AAAA records'));
@@ -91,8 +102,8 @@ describe('SSRF Guard - DNS Rebinding Protection', () => {
   });
 
   test('allows hostname that resolves to public IP', async () => {
-    const mockResolve4 = dns.resolve4 as ReturnType<typeof vi.fn>;
-    const mockResolve6 = dns.resolve6 as ReturnType<typeof vi.fn>;
+    const mockResolve4 = (dns.promises?.resolve4 ?? dns.resolve4) as ReturnType<typeof vi.fn>;
+    const mockResolve6 = (dns.promises?.resolve6 ?? dns.resolve6) as ReturnType<typeof vi.fn>;
 
     mockResolve4.mockResolvedValue(['8.8.8.8']);
     mockResolve6.mockRejectedValue(new Error('No AAAA records'));
@@ -102,8 +113,8 @@ describe('SSRF Guard - DNS Rebinding Protection', () => {
   });
 
   test('blocks if ANY resolved IP is private (prevents mixed-IP attacks)', async () => {
-    const mockResolve4 = dns.resolve4 as ReturnType<typeof vi.fn>;
-    const mockResolve6 = dns.resolve6 as ReturnType<typeof vi.fn>;
+    const mockResolve4 = (dns.promises?.resolve4 ?? dns.resolve4) as ReturnType<typeof vi.fn>;
+    const mockResolve6 = (dns.promises?.resolve6 ?? dns.resolve6) as ReturnType<typeof vi.fn>;
 
     // Attacker returns both public and private IPs, hoping we only check one
     mockResolve4.mockResolvedValue(['8.8.8.8', '10.0.0.1']);
@@ -113,8 +124,8 @@ describe('SSRF Guard - DNS Rebinding Protection', () => {
   });
 
   test('caches DNS results to prevent rebinding attacks', async () => {
-    const mockResolve4 = dns.resolve4 as ReturnType<typeof vi.fn>;
-    const mockResolve6 = dns.resolve6 as ReturnType<typeof vi.fn>;
+    const mockResolve4 = (dns.promises?.resolve4 ?? dns.resolve4) as ReturnType<typeof vi.fn>;
+    const mockResolve6 = (dns.promises?.resolve6 ?? dns.resolve6) as ReturnType<typeof vi.fn>;
 
     mockResolve4.mockResolvedValue(['8.8.8.8']);
     mockResolve6.mockRejectedValue(new Error('No AAAA records'));
@@ -160,8 +171,8 @@ describe('SSRF Guard - Redirect Protection', () => {
   });
 
   test('validates redirect target and blocks private IP', async () => {
-    const mockResolve4 = dns.resolve4 as ReturnType<typeof vi.fn>;
-    const mockResolve6 = dns.resolve6 as ReturnType<typeof vi.fn>;
+    const mockResolve4 = (dns.promises?.resolve4 ?? dns.resolve4) as ReturnType<typeof vi.fn>;
+    const mockResolve6 = (dns.promises?.resolve6 ?? dns.resolve6) as ReturnType<typeof vi.fn>;
     const mockAxiosCreate = axios.create as ReturnType<typeof vi.fn>;
 
     // Initial URL resolves to public IP
@@ -189,8 +200,8 @@ describe('SSRF Guard - Redirect Protection', () => {
   });
 
   test('successfully follows redirect to another public IP', async () => {
-    const mockResolve4 = dns.resolve4 as ReturnType<typeof vi.fn>;
-    const mockResolve6 = dns.resolve6 as ReturnType<typeof vi.fn>;
+    const mockResolve4 = (dns.promises?.resolve4 ?? dns.resolve4) as ReturnType<typeof vi.fn>;
+    const mockResolve6 = (dns.promises?.resolve6 ?? dns.resolve6) as ReturnType<typeof vi.fn>;
     const mockAxiosCreate = axios.create as ReturnType<typeof vi.fn>;
 
     // Both URLs resolve to public IPs
@@ -222,8 +233,8 @@ describe('SSRF Guard - Redirect Protection', () => {
   });
 
   test('blocks redirect to AWS metadata endpoint', async () => {
-    const mockResolve4 = dns.resolve4 as ReturnType<typeof vi.fn>;
-    const mockResolve6 = dns.resolve6 as ReturnType<typeof vi.fn>;
+    const mockResolve4 = (dns.promises?.resolve4 ?? dns.resolve4) as ReturnType<typeof vi.fn>;
+    const mockResolve6 = (dns.promises?.resolve6 ?? dns.resolve6) as ReturnType<typeof vi.fn>;
     const mockAxiosCreate = axios.create as ReturnType<typeof vi.fn>;
 
     mockResolve4.mockResolvedValueOnce(['8.8.8.8']);
@@ -245,8 +256,8 @@ describe('SSRF Guard - Redirect Protection', () => {
   });
 
   test('enforces maximum redirect limit', async () => {
-    const mockResolve4 = dns.resolve4 as ReturnType<typeof vi.fn>;
-    const mockResolve6 = dns.resolve6 as ReturnType<typeof vi.fn>;
+    const mockResolve4 = (dns.promises?.resolve4 ?? dns.resolve4) as ReturnType<typeof vi.fn>;
+    const mockResolve6 = (dns.promises?.resolve6 ?? dns.resolve6) as ReturnType<typeof vi.fn>;
     const mockAxiosCreate = axios.create as ReturnType<typeof vi.fn>;
 
     mockResolve4.mockResolvedValue(['8.8.8.8']);
@@ -272,8 +283,8 @@ describe('SSRF Guard - Redirect Protection', () => {
   });
 
   test('handles relative redirect URLs correctly', async () => {
-    const mockResolve4 = dns.resolve4 as ReturnType<typeof vi.fn>;
-    const mockResolve6 = dns.resolve6 as ReturnType<typeof vi.fn>;
+    const mockResolve4 = (dns.promises?.resolve4 ?? dns.resolve4) as ReturnType<typeof vi.fn>;
+    const mockResolve6 = (dns.promises?.resolve6 ?? dns.resolve6) as ReturnType<typeof vi.fn>;
     const mockAxiosCreate = axios.create as ReturnType<typeof vi.fn>;
 
     mockResolve4.mockResolvedValue(['8.8.8.8']);
@@ -303,8 +314,8 @@ describe('SSRF Guard - Redirect Protection', () => {
   });
 
   test('blocks redirect without Location header', async () => {
-    const mockResolve4 = dns.resolve4 as ReturnType<typeof vi.fn>;
-    const mockResolve6 = dns.resolve6 as ReturnType<typeof vi.fn>;
+    const mockResolve4 = (dns.promises?.resolve4 ?? dns.resolve4) as ReturnType<typeof vi.fn>;
+    const mockResolve6 = (dns.promises?.resolve6 ?? dns.resolve6) as ReturnType<typeof vi.fn>;
     const mockAxiosCreate = axios.create as ReturnType<typeof vi.fn>;
 
     mockResolve4.mockResolvedValue(['8.8.8.8']);
@@ -342,8 +353,8 @@ describe('SSRF Guard - Protocol Validation', () => {
   });
 
   test('allows HTTP in dev environment', async () => {
-    const mockResolve4 = dns.resolve4 as ReturnType<typeof vi.fn>;
-    const mockResolve6 = dns.resolve6 as ReturnType<typeof vi.fn>;
+    const mockResolve4 = (dns.promises?.resolve4 ?? dns.resolve4) as ReturnType<typeof vi.fn>;
+    const mockResolve6 = (dns.promises?.resolve6 ?? dns.resolve6) as ReturnType<typeof vi.fn>;
 
     process.env.NETWORK_PROFILE = 'devnet';
     mockResolve4.mockResolvedValue(['8.8.8.8']);
@@ -374,8 +385,8 @@ describe('SSRF Guard - Protocol Validation', () => {
 
 describe('SSRF Guard - DNS Pinning Integration', () => {
   test('creates separate pinned client for each redirect hop', async () => {
-    const mockResolve4 = dns.resolve4 as ReturnType<typeof vi.fn>;
-    const mockResolve6 = dns.resolve6 as ReturnType<typeof vi.fn>;
+    const mockResolve4 = (dns.promises?.resolve4 ?? dns.resolve4) as ReturnType<typeof vi.fn>;
+    const mockResolve6 = (dns.promises?.resolve6 ?? dns.resolve6) as ReturnType<typeof vi.fn>;
     const mockAxiosCreate = axios.create as ReturnType<typeof vi.fn>;
 
     // Simulate DNS rebinding attempt: same hostname returns different IPs
