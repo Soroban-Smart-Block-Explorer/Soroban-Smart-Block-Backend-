@@ -1439,8 +1439,8 @@ model MevEvent {
   flashLoanAlert Boolean? @map("flash_loan_alert")
   createdAt DateTime @map("created_at") @default(now())
 
-  victim   MevVictim?   @relation(fields: [victimAddress], references: [address], onUpdate: Cascade)
-  attacker MevAttacker? @relation(fields: [attackerAddress], references: [address], onUpdate: Cascade)
+  victim   MevVictim?   @relation(fields: [victimAddress], references: [address], onDelete: Cascade, onUpdate: Cascade)
+  attacker MevAttacker? @relation(fields: [attackerAddress], references: [address], onDelete: Cascade, onUpdate: Cascade)
 
   @@index([mevType])
   @@index([ledgerSeq])
@@ -1863,8 +1863,8 @@ model ArbitrageOpportunity {
   executionTxHash String? @map("execution_tx_hash") @db.VarChar(64)
   createdAt DateTime @map("created_at") @default(now())
 
-  buyPool    DexPool?             @relation(fields: [buyPoolId], references: [id], onUpdate: Cascade, name: "buyPool")
-  sellPool   DexPool?             @relation(fields: [sellPoolId], references: [id], onUpdate: Cascade, name: "sellPool")
+  buyPool    DexPool?             @relation(fields: [buyPoolId], references: [id], onDelete: Cascade, onUpdate: Cascade, name: "buyPool")
+  sellPool   DexPool?             @relation(fields: [sellPoolId], references: [id], onDelete: Cascade, onUpdate: Cascade, name: "sellPool")
   mevScore   MevOpportunityScore?
   executions ArbitrageExecution[]
 
