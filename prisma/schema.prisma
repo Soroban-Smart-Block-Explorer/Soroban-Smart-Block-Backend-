@@ -649,6 +649,7 @@ model SanctionsList {
   listVersion String @map("list_version") // version/date of the list
   listName String? @map("list_name")
   entityType String @map("entity_type") // "individual" | "entity" | "vessel" | "aircraft" | "unknown"
+  // On-chain address (if applicable). Nullable for non-crypto entities/individuals without a specific address; PostgreSQL permits multiple NULL values under standard UNIQUE constraints.
   address String? @map("address")
   addressPattern String? @map("address_pattern")
   name String? @map("name")
@@ -3545,6 +3546,7 @@ model PriceAlert {
 model VerifiableCredential {
   id String @map("id") @id @default(cuid())
   profileId String @map("profile_id")
+  // Unique credential identifier (W3C format or DID URI). Required and unique per credential instance.
   credentialId String @map("credential_id")
   context String? @map("context")
   type String? @map("type")
