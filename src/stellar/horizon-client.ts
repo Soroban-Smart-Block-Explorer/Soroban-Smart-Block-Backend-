@@ -1,5 +1,6 @@
 import axios from 'axios';
 import { config } from '../config';
+import { safeGet } from '../webhooks/ssrf-guard';
 
 const TIMEOUT = 10_000;
 
@@ -218,8 +219,15 @@ export async function fetchStellarToml(
   homeDomain: string,
 ): Promise<Record<string, unknown> | null> {
   try {
-    const url = `https://${homeDomain}/.well-known/stellar.toml`;
-    const resp = await axios.get<string>(url, { timeout: TIMEOUT, responseType: 'text' });
+    if (!homeDomain || typeof homeDomain !== 'string') return null;
+    const sanitizedDomain = homeDomain
+      .trim()
+      .replace(/^https?:\/\//i, '')
+      .replace(/\/.*$/, '');
+    if (!sanitizedDomain) return null;
+    const url = `https://${sanitizedDomain}/.well-known/stellar.toml`;
+    const resp = await safeGet<string>(url, TIMEOUT, { responseType: 'text' });
+    if (typeof resp.data !== 'string') return null;
     return parseToml(resp.data);
   } catch {
     return null;
