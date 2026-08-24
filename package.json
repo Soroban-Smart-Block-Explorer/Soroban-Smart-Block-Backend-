@@ -48,6 +48,7 @@
     "format:fix": "prettier --write 'src/**/*.ts' 'tests/**/*.ts'",
     "prepare": "husky",
     "validate-routes": "ts-node scripts/validate-routes.ts",
+    "validate-routes:ci": "ts-node scripts/validate-routes.ts --max-orphans 5",
     "audit:indexes": "ts-node scripts/audit-indexes.ts",
     "audit:cycles": "ts-node -P tsconfig.scripts.json scripts/detect-import-cycles.ts",
     "test:routes": "vitest run tests/orphaned-routers-integration.test.ts",
