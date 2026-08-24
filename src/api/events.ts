@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { asyncHandler } from '../middleware/asyncHandler';
 import { validateQuery, validateParams } from '../middleware/validation';
 import { paginationSchema, stellarAddress, safeLabel } from '../schemas/common';
+import { eventService } from '../services/event.service';
 
 /**
  * @swagger
@@ -111,35 +112,8 @@ eventRouter.get(
   validateQuery(eventListQuerySchema),
   asyncHandler(async (req: Request, res: Response) => {
     const query = (req as any).validatedQuery as z.infer<typeof eventListQuerySchema>;
-    const skip = (query.page - 1) * query.limit;
-
-    const where = {
-      ...(query.contract && { contractAddress: query.contract }),
-      ...(query.type && { eventType: query.type }),
-      ...(query.topic && { topicSymbol: query.topic }),
-    };
-
-    const [events, total] = await Promise.all([
-      prismaRead.event.findMany({
-        where,
-        orderBy: { ledgerSequence: 'desc' },
-        skip,
-        take: query.limit,
-        select: {
-          id: true,
-          transactionHash: true,
-          contractAddress: true,
-          eventType: true,
-          topicSymbol: true,
-          decoded: true,
-          ledgerSequence: true,
-          ledgerCloseTime: true,
-        },
-      }),
-      prismaRead.event.count({ where }),
-    ]);
-
-    res.json({ data: events, total, page: query.page, limit: query.limit });
+    const result = await eventService.listEvents(query);
+    res.json(result);
   }),
 );
 
@@ -178,7 +152,7 @@ eventRouter.get(
   validateParams(z.object({ id: z.string() })),
   asyncHandler(async (req: Request, res: Response) => {
     const params = (req as any).validatedParams as { id: string };
-    const event = await prisma.event.findUnique({ where: { id: params.id } });
+    const event = await eventService.getEventById(params.id);
     if (!event) return res.status(404).json({ error: 'Event not found' });
     res.json(event);
   }),
