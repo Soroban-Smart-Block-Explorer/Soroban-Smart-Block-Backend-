@@ -197,6 +197,12 @@ router.use('/arbitrage', arbitrageRouter);
 // Smart Contract Audit Trail & Certificate Platform
 router.use('/audit', auditRouter);
 
+// ── Analytics & Dashboards (#839) ─────────────────────────────────────────────
+import { analyticsRouter } from './analytics';
+import { dashboardRouter } from './dashboards';
+router.use('/analytics', requireApiKey, analyticsRouter);
+router.use('/dashboards', requireApiKey, dashboardRouter);
+
 // ── Multi-Layer Data Lakehouse (#551) ─────────────────────────────────────────
 // Stream + OLAP + cold-storage query gateway. Compute-heavy — key required.
 import { lakehouseRouter } from './lakehouse';
