@@ -177,11 +177,11 @@ router.use('/webhooks', webhooksRouter);
 // Treasury mounts before the base router so /governance/treasury/... wins
 // over the /governance/:wildcard-style proposal routes.
 import { governanceTreasuryRouter } from './governance-treasury';
+import { governanceRouter } from './governance';
 router.use('/governance/treasury', governanceTreasuryRouter);
 router.use('/governance', governanceRouter);
 router.use('/systemic', systemicRouter);
 router.use('/benchmarks', benchmarkRouter);
-router.use('/network', networkRouter);
 router.use('/emergency', emergencyBaseRouter);
 router.use('/stellar', stellarRouter);
 router.use('/privacy', privacyRouter);
@@ -192,7 +192,6 @@ router.use('/schedule', scheduleRouter);
 router.use('/feed', feedRouter);
 router.use('/feed/backfill', backfillRouter);
 router.use('/feed/sse', feedSSERouter);
-router.use('/market', marketRouter);
 // Arbitrage Intelligence Platform
 router.use('/arbitrage', arbitrageRouter);
 // Smart Contract Audit Trail & Certificate Platform

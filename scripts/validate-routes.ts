@@ -49,10 +49,8 @@ interface ValidationResult {
  * Status: pending-schema — awaiting Prisma migration before mounting.
  */
 const PENDING_SCHEMA_ROUTERS = new Set([
-  'abi.ts',
   'advanced-events.ts',
   'analytics.ts',
-  'archive.ts',
   'assets.ts',
   'auth.ts',
   'authMultisig.ts',
@@ -64,12 +62,6 @@ const PENDING_SCHEMA_ROUTERS = new Set([
   'checked-arithmetic.ts',
   'commodity-compliance.ts',
   'dtcc-settlement.ts',
-  'emergency-alerts.ts',
-  'emergency-analysis.ts',
-  'emergency-health.ts',
-  'emergency-incidents.ts',
-  'emergency-viz.ts',
-  'emergency.ts',
   'factory-tracker.ts',
   'fuzzing.ts',
   'graph.ts',
@@ -125,25 +117,36 @@ function discoverRouterFiles(): string[] {
 }
 
 /**
- * Parse router.ts to find all imported router files
+ * Find all router files reachable (transitively) from router.ts via relative
+ * imports. Routers composed inside other router files (e.g. audit.ts mounting
+ * audit-verify.ts at /audit/verify) are therefore correctly counted as
+ * mounted instead of being flagged as orphans.
  */
 function findMountedRouters(): Set<string> {
-  const content = fs.readFileSync(ROUTER_FILE, 'utf-8');
+  const seen = new Set<string>();
+  const queue: string[] = ['router.ts'];
 
-  // Match import statements: import { ... } from './filename' or import router from './filename'
-  const importRegex = /from\s+'\.\/([^']+)'/g;
-  const mounted = new Set<string>();
+  while (queue.length > 0) {
+    const current = queue.pop()!;
+    if (seen.has(current)) continue;
+    seen.add(current);
 
-  let match;
-  while ((match = importRegex.exec(content)) !== null) {
-    const importedFile = match[1];
-    // Normalize: strip path separators, add .ts extension if missing
-    const normalized = importedFile.includes('/') ? importedFile.split('/').pop()! : importedFile;
-    mounted.add(normalized + '.ts');
-    mounted.add(normalized);
+    const filePath = path.join(API_DIR, current);
+    if (!fs.existsSync(filePath)) continue;
+
+    const content = fs.readFileSync(filePath, 'utf-8');
+    // Match relative imports: './x', './x/y', '../x' (skip anything outside src/api/)
+    const importRegex = /from\s+['"](\.[^'"]+)['"]/g;
+    let match: RegExpExecArray | null;
+    while ((match = importRegex.exec(content)) !== null) {
+      const dir = path.posix.dirname(current);
+      const resolved = path.posix.normalize(path.posix.join(dir, match[1]));
+      if (resolved.startsWith('..') || resolved.startsWith('/')) continue;
+      queue.push(resolved.endsWith('.ts') ? resolved : `${resolved}.ts`);
+    }
   }
 
-  return mounted;
+  return seen;
 }
 
 /**
