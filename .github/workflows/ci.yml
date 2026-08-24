@@ -115,6 +115,13 @@ jobs:
       - name: Type-check (scripts)
         run: npm run typecheck:scripts
 
+      # Orphaned router validation — fails CI if more than 5 routers in
+      # src/api/ are neither mounted in router.ts nor allowlisted. The budget
+      # is enforced gradually: lower --max-orphans in package.json as orphans
+      # are mounted or deleted (tracked in docs/orphaned-routes-tracking.md).
+      - name: Validate orphaned routers (budget 5)
+        run: npm run validate-routes:ci
+
   test:
     name: Test
     runs-on: ubuntu-latest

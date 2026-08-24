@@ -9,6 +9,13 @@
  * Usage:
  *   npx ts-node scripts/validate-routes.ts
  *   npm run validate-routes
+ *   npm run validate-routes:ci            # enforce a budget of 5 orphaned routers
+ *   npx ts-node scripts/validate-routes.ts --max-orphans 5
+ *
+ * Flags:
+ *   --max-orphans N  Fail only when the number of orphaned routers exceeds N.
+ *                     Defaults to 0 (strict). CI uses a gradual budget so
+ *                     existing orphans can be cleaned up incrementally.
  */
 
 import * as fs from 'fs';
@@ -29,6 +36,7 @@ interface ValidationResult {
   routeConflicts: RouteConflict[];
   warnings: string[];
   passed: boolean;
+  maxOrphans: number;
 }
 
 /**
@@ -44,7 +52,6 @@ const PENDING_SCHEMA_ROUTERS = new Set([
   'abi.ts',
   'advanced-events.ts',
   'analytics.ts',
-  'arbitrage.ts',
   'archive.ts',
   'assets.ts',
   'auth.ts',
@@ -53,14 +60,9 @@ const PENDING_SCHEMA_ROUTERS = new Set([
   'authProfile.ts',
   'authSecurity.ts',
   'authWebhooks.ts',
-  'backfill.ts',
-  'benchmarks.ts',
   'bn254.ts',
   'checked-arithmetic.ts',
   'commodity-compliance.ts',
-  'composability.ts',
-  'dex-analytics.ts',
-  'dex.ts',
   'dtcc-settlement.ts',
   'emergency-alerts.ts',
   'emergency-analysis.ts',
@@ -69,32 +71,22 @@ const PENDING_SCHEMA_ROUTERS = new Set([
   'emergency-viz.ts',
   'emergency.ts',
   'factory-tracker.ts',
-  'feed.ts',
-  'feedSSE.ts',
   'fuzzing.ts',
   'graph.ts',
   'intelligence.ts',
-  'mev.ts',
   'oracle-audit.ts',
   'oracle-feeds.ts',
   'playground.ts',
-  'privacy.ts',
   'protocol-economics.ts',
   'protocol26-state-extension.ts',
-  'reentrancy.ts',
   'reputation.ts',
   'resource-audit.ts',
   'revenue.ts',
   'rwa-compliance.ts',
-  'sac-trustlines.ts',
-  'sandbox.ts',
-  'schedule.ts',
-  'search.ts',
   'settlement-batch.ts',
   'signers.ts',
   'storage-trap.ts',
   'storage.ts',
-  'systemic.ts',
   'tax.ts',
   'tip.ts',
   'treasury.ts',
@@ -214,8 +206,12 @@ function detectConflicts(prefixes: string[]): RouteConflict[] {
 
 /**
  * Main validation function
+ *
+ * @param maxOrphans Maximum tolerated number of orphaned routers before
+ *   validation fails. CI uses a non-zero budget to enforce gradual cleanup;
+ *   pass 0 (default) for strict mode.
  */
-export function validateRoutes(): ValidationResult {
+export function validateRoutes(maxOrphans = 0): ValidationResult {
   const discoveredFiles = discoverRouterFiles();
   const mountedSet = findMountedRouters();
   const prefixes = extractMountedPrefixes();
@@ -264,7 +260,7 @@ export function validateRoutes(): ValidationResult {
   }
 
   const passed =
-    orphanedRouters.length === 0 &&
+    orphanedRouters.length <= maxOrphans &&
     routeConflicts.filter((c) => c.conflictType === 'exact').length === 0;
 
   return {
@@ -274,6 +270,7 @@ export function validateRoutes(): ValidationResult {
     routeConflicts,
     warnings,
     passed,
+    maxOrphans,
   };
 }
 
@@ -281,7 +278,20 @@ export function validateRoutes(): ValidationResult {
  * CLI entrypoint
  */
 if (require.main === module) {
-  const result = validateRoutes();
+  // Parse --max-orphans N (CI enforcement budget, defaults to strict 0)
+  const budgetIndex = process.argv.indexOf('--max-orphans');
+  let maxOrphans = 0;
+  if (budgetIndex !== -1) {
+    const raw = process.argv[budgetIndex + 1];
+    const parsed = raw !== undefined ? parseInt(raw, 10) : NaN;
+    if (Number.isNaN(parsed) || parsed < 0) {
+      console.error(`Invalid --max-orphans value: "${raw}" (expected a non-negative integer)`);
+      process.exit(2);
+    }
+    maxOrphans = parsed;
+  }
+
+  const result = validateRoutes(maxOrphans);
 
   console.log('\n═══════════════════════════════════════════════════');
   console.log('  Soroban Router Registry Validation');
@@ -303,7 +313,7 @@ if (require.main === module) {
 
   if (result.orphanedRouters.length > 0) {
     console.log(
-      `\n❌ ORPHANED ROUTERS — not mounted and not allowlisted (${result.orphanedRouters.length}):`,
+      `\n❌ ORPHANED ROUTERS — not mounted and not allowlisted (${result.orphanedRouters.length}, budget: ${result.maxOrphans}):`,
     );
     for (const r of result.orphanedRouters) {
       console.log(`   • ${r}`);
@@ -330,10 +340,22 @@ if (require.main === module) {
 
   console.log('\n───────────────────────────────────────────────────');
   if (result.passed) {
-    console.log('✅ VALIDATION PASSED\n');
+    if (result.orphanedRouters.length > 0) {
+      console.log(
+        `✅ VALIDATION PASSED — ${result.orphanedRouters.length} orphaned router(s) within budget of ${result.maxOrphans}\n`,
+      );
+    } else {
+      console.log('✅ VALIDATION PASSED\n');
+    }
     process.exit(0);
   } else {
-    console.log('❌ VALIDATION FAILED — fix orphaned routers and conflicts\n');
+    if (result.orphanedRouters.length > result.maxOrphans) {
+      console.log(
+        `❌ VALIDATION FAILED — ${result.orphanedRouters.length} orphaned routers exceed budget of ${result.maxOrphans}. Mount or delete orphaned routers.\n`,
+      );
+    } else {
+      console.log('❌ VALIDATION FAILED — fix route conflicts\n');
+    }
     process.exit(1);
   }
 }
