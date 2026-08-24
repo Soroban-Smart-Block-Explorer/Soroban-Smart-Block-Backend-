@@ -22,7 +22,7 @@ import {
 } from './aa-classifier';
 import { inspectSignature } from './signatureInspector';
 import { inspectCustomAccount } from './customAccountInspector';
-import { broadcastEvent } from '../ws/eventBroadcaster';
+import { broadcastEvent } from '../ws/websocketServer';
 import { uuidv7 } from '../utils/uuidv7';
 
 // Per-process in-memory cache: wasmHash → indicators.

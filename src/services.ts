@@ -7,8 +7,6 @@
  * HTTP/WebSocket wiring lives in server.ts; this module only starts services.
  */
 
-import type { Server } from 'http';
-
 import { logger } from './logger';
 import { prismaWrite as prisma } from './db';
 import { cacheConnect, isCacheReady, cacheBackendType } from './cache';
@@ -33,10 +31,7 @@ import { feedOrchestrator } from './feed/orchestrator';
 import { eventBus } from './events/eventBus';
 import { startGraphqlEventBridge } from './graphql/subscriptions';
 
-export async function initializeServices(
-  httpServer: Server,
-  disabledServices: string[],
-): Promise<void> {
+export async function initializeServices(disabledServices: string[]): Promise<void> {
   await initRateLimitStore();
 
   await cacheConnect();
@@ -161,5 +156,5 @@ export async function initializeServices(
     logger.warn('Price updater failed to start', { error: String(err) });
   }
 
-  await feedOrchestrator.initialize(httpServer);
+  await feedOrchestrator.initialize();
 }

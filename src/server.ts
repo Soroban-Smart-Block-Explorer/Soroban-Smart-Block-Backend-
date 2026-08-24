@@ -10,7 +10,7 @@ import { createServer, Server } from 'http';
 import type { Express } from 'express';
 
 import { logger } from './logger';
-import { attachWebSocketServer } from './ws/eventBroadcaster';
+import { attachWebSocketServer } from './ws/websocketServer';
 import { attachPrivacyWebSocket as attachPrivacyWebSocketReal } from './ws/privacyBroadcaster';
 import { attachComposabilityWebSocket as attachComposabilityWebSocketImpl } from './ws/composabilityBroadcaster';
 import { attachArbitrageWebSocket as attachArbitrageWebSocketImpl } from './ws/arbitrageBroadcaster';
