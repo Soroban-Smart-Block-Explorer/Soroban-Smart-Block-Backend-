@@ -107,13 +107,16 @@ The codebase exhibits substantial test coverage gaps in security-critical and hi
 - ❌ `deliveryService.ts` (224 LOC) — Message delivery routing
 - ❌ `orchestrator.ts` (231 LOC) — Orchestration & metrics publishing
 - ❌ `streamingServer.ts` (189 LOC) — SSE/WebSocket setup
-- ❌ `websocketServer.ts` (184 LOC) — WebSocket connection handling
 - ❌ `publisher.ts` (65 LOC) — Sequence tracking & publishing
+
+> Note: the feed WebSocket server was merged into the unified
+> `src/ws/websocketServer.ts` (event streaming + channel feed). Untrusted
+> client input handling now lives there (see `handleFeedConnection`).
 
 **Criticality:** 🔴 **CRITICAL**
 - Real-time data delivery affects trader decision-making
 - Missing tests on `deliveryService` = missed events/crashes → data inconsistency
-- `websocketServer` handles untrusted client input — potential injection
+- `src/ws/websocketServer` handles untrusted client input — potential injection
 - `orchestrator` metrics affect monitoring — inaccurate metrics = blind ops
 
 **Risk:** Message loss, connection leaks, memory leaks under load, delivery failures

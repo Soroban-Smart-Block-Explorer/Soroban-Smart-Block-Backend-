@@ -13,7 +13,7 @@ import { config } from './config';
 import { prismaWrite as prisma, prismaRead, prismaBackfill } from './db';
 import { stopIndexerService } from './indexer/indexer';
 import { stopP2pNode } from './p2p';
-import { shutdownWebSocketServer } from './ws/eventBroadcaster';
+import { shutdownWebSocketServer } from './ws/websocketServer';
 import { stopBridgeWorker } from './bridge-tracker';
 import { feedOrchestrator } from './feed/orchestrator';
 import { stopPriceUpdater } from './services/pricing';
@@ -187,7 +187,7 @@ async function main() {
     });
   });
 
-  await initializeServices(server.httpServer, disabledServices);
+  await initializeServices(disabledServices);
 
   server.httpServer.listen(config.port, () => {
     logger.info('Soroban Explorer API started', { port: config.port });
