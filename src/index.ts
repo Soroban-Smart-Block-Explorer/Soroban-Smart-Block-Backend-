@@ -21,6 +21,7 @@ import { cacheClose } from './cache';
 import { dbConnectionStatus, cacheBackendStatus } from './metrics';
 import { eventBus } from './events/eventBus';
 import { logger } from './logger';
+import { featureFlags } from './feature-flags';
 
 let isShuttingDown = false;
 const SERVICE_START_TIME = Date.now();
@@ -172,6 +173,11 @@ async function main() {
 
   registerShutdownHandlers();
   await validateStateDumpPath();
+
+  // Warm the feature-flag cache (DB-backed toggles + schema availability) before
+  // the HTTP/WebSocket servers attach. Best-effort: on failure the flags fall
+  // back to env vars + registry defaults, so boot never blocks on the flag DB.
+  await featureFlags.bootstrap();
 
   const app = createApp({
     isShuttingDown: () => isShuttingDown,

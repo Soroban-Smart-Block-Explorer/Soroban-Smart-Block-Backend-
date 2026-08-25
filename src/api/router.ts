@@ -72,6 +72,7 @@ import { sacTrustlinesRouter } from './sac-trustlines';
 
 // ── Admin ─────────────────────────────────────────────────────────────────────
 import { adminErrorsRouter } from './admin/errors';
+import { featureFlagsAdminRouter } from './feature-flags';
 // ── CSV Exports ───────────────────────────────────────────────────────────────
 import { requireApiKey, requireKeyTier } from '../middleware/apiKeyAuth';
 import { compilerRouter } from './compiler-router';
@@ -151,6 +152,7 @@ router.use('/sac-trustlines', sacTrustlinesRouter);
 
 // ── Admin Dashboards ──────────────────────────────────────────────────────────
 router.use('/admin/errors', adminErrorsRouter);
+router.use('/admin/feature-flags', featureFlagsAdminRouter);
 // ── Bridge Tracker ─────────────────────────────────────────────────────────────
 import { bridgeTrackerRouter } from './bridge-tracker';
 router.use('/bridge-tracker', bridgeTrackerRouter);
