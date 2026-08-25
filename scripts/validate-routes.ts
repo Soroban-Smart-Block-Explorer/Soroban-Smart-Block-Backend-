@@ -50,7 +50,6 @@ interface ValidationResult {
  */
 const PENDING_SCHEMA_ROUTERS = new Set([
   'advanced-events.ts',
-  'analytics.ts',
   'assets.ts',
   'auth.ts',
   'authMultisig.ts',
@@ -69,7 +68,6 @@ const PENDING_SCHEMA_ROUTERS = new Set([
   'oracle-audit.ts',
   'oracle-feeds.ts',
   'playground.ts',
-  'protocol-economics.ts',
   'protocol26-state-extension.ts',
   'reputation.ts',
   'resource-audit.ts',
