@@ -9,7 +9,7 @@ import type { Socket } from 'net';
 import { createApp } from './app';
 import { createHttpServer } from './server';
 import { initializeServices } from './services';
-import { config } from './config';
+import { config, assertConfig } from './config';
 import { prismaWrite as prisma, prismaRead, prismaBackfill } from './db';
 import { stopIndexerService } from './indexer/indexer';
 import { stopP2pNode } from './p2p';
@@ -28,10 +28,10 @@ let wssRef: ReturnType<typeof createHttpServer>['wssRef'] | null = null;
 let serverRef: Server | null = null;
 const activeConnections = new Set<Socket>();
 
-const SHUTDOWN_TIMEOUT_MS = parseInt(process.env.SHUTDOWN_TIMEOUT_MS ?? '30000');
+const SHUTDOWN_TIMEOUT_MS = config.shutdownTimeoutMs;
 // Default to /tmp/state so the path is writable in read-only container filesystems.
 // /tmp is already mounted as a tmpfs in the Compose security profile.
-const STATE_DUMP_PATH = process.env.STATE_DUMP_PATH ?? '/tmp/state';
+const STATE_DUMP_PATH = config.stateDumpPath;
 
 // Names of optional services that are disabled, reported by /ready.
 const disabledServices: string[] = [];
@@ -168,6 +168,8 @@ async function validateStateDumpPath(): Promise<void> {
 }
 
 async function main() {
+  assertConfig();
+
   registerShutdownHandlers();
   await validateStateDumpPath();
 
