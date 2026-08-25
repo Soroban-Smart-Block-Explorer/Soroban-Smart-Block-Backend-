@@ -1,6 +1,5 @@
 import { Request, Response, NextFunction } from 'express';
-
-const ADMIN_API_KEY = process.env.ADMIN_API_KEY ?? '';
+import { config } from '../config';
 
 export function adminAuth(req: Request, res: Response, next: NextFunction) {
   const token = req.headers['x-admin-token'] as string | undefined;
@@ -9,11 +8,11 @@ export function adminAuth(req: Request, res: Response, next: NextFunction) {
     return res.status(401).json({ error: 'Unauthorized: admin token required' });
   }
 
-  if (!ADMIN_API_KEY) {
+  if (!config.adminApiKey) {
     return res.status(500).json({ error: 'Server misconfiguration: ADMIN_API_KEY not set' });
   }
 
-  if (token !== ADMIN_API_KEY) {
+  if (token !== config.adminApiKey) {
     return res.status(401).json({ error: 'Unauthorized: invalid admin token' });
   }
 

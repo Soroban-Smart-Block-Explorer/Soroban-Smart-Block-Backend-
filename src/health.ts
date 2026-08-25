@@ -6,6 +6,7 @@ import { getConnectedPeerCount, isP2pEnabled } from './p2p';
 import { measureReplicaLag } from './db/replicaGateway';
 import { getLatestLedger } from './indexer/rpc';
 import { getLastIndexedLedger } from './indexer/indexer';
+import { config } from './config';
 
 /**
  * Health check status for individual dependencies
@@ -180,7 +181,7 @@ async function checkRpcHealth(): Promise<DependencyHealth> {
 async function checkIndexerHealth(latestNetworkLedger: number | null): Promise<DependencyHealth> {
   const { healthy, failureReason } = getIndexerStatus();
 
-  if (process.env.DISABLE_INDEXER === 'true') {
+  if (config.disableIndexer) {
     return {
       status: 'healthy',
       message: 'Indexer disabled (DISABLE_INDEXER=true)',

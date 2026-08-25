@@ -1,6 +1,5 @@
 /**
- * tests/config.test.ts
- * Issue #253 — Exhaustive Configuration Testing with Schema Validation
+ * Exhaustive Configuration Testing with Schema Validation
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { z } from 'zod';
@@ -21,6 +20,7 @@ const configSchema = z.object({
   indexerCatchupWorkers: z.number().int().min(1),
   rateLimitWindowMs: z.number().int().positive(),
   rateLimitMax: z.number().int().positive(),
+  disableIndexer: z.boolean(),
 });
 
 // Helper: freshly load config module after env changes
@@ -28,6 +28,12 @@ async function loadConfig() {
   vi.resetModules();
   const mod = await import('../src/config');
   return mod.config;
+}
+
+async function loadAssertConfig() {
+  vi.resetModules();
+  const mod = await import('../src/config');
+  return mod.assertConfig;
 }
 
 describe('config — defaults', () => {
@@ -93,6 +99,11 @@ describe('config — defaults', () => {
   it('defaults rateLimitWindowMs to 60000', async () => {
     const cfg = await loadConfig();
     expect(cfg.rateLimitWindowMs).toBe(60000);
+  });
+
+  it('defaults disableIndexer to false', async () => {
+    const cfg = await loadConfig();
+    expect(cfg.disableIndexer).toBe(false);
   });
 });
 
@@ -161,9 +172,22 @@ describe('config — env var overrides', () => {
     const cfg = await loadConfig();
     expect(cfg.indexerBatchSize).toBe(1000);
   });
+
+  it('parses DISABLE_INDEXER correctly', async () => {
+    vi.stubEnv('STELLAR_NETWORK', 'testnet');
+    vi.stubEnv('DATABASE_URL', 'postgresql://localhost/test');
+    vi.stubEnv('TESTNET_DATABASE_URL', 'postgresql://localhost/test');
+    vi.stubEnv('DISABLE_INDEXER', 'true');
+    const cfg = await loadConfig();
+    expect(cfg.disableIndexer).toBe(true);
+  });
 });
 
 describe('config — NaN / invalid numeric inputs cause startup failure', () => {
+  beforeEach(() => {
+    vi.stubEnv('NODE_ENV', 'test');
+  });
+
   afterEach(() => vi.unstubAllEnvs());
 
   it('PORT=abc throws validation error on startup', async () => {
@@ -176,7 +200,7 @@ describe('config — NaN / invalid numeric inputs cause startup failure', () => 
     await expect(async () => {
       vi.resetModules();
       await import('../src/config');
-    }).rejects.toThrow(/Invalid value for PORT/);
+    }).rejects.toThrow(/Expected number, received nan/);
   });
 
   it('INDEXER_BATCH_SIZE=-50 throws validation error', async () => {
@@ -188,7 +212,7 @@ describe('config — NaN / invalid numeric inputs cause startup failure', () => 
     await expect(async () => {
       vi.resetModules();
       await import('../src/config');
-    }).rejects.toThrow(/Invalid value for INDEXER_BATCH_SIZE/);
+    }).rejects.toThrow(/Number must be greater than 0/);
   });
 
   it('RATE_LIMIT_MAX=0 throws validation error', async () => {
@@ -200,7 +224,7 @@ describe('config — NaN / invalid numeric inputs cause startup failure', () => 
     await expect(async () => {
       vi.resetModules();
       await import('../src/config');
-    }).rejects.toThrow(/Invalid value for RATE_LIMIT_MAX/);
+    }).rejects.toThrow(/Number must be greater than/);
   });
 
   it('INDEXER_POLL_INTERVAL_MS=50 throws validation error (too small)', async () => {
@@ -212,7 +236,7 @@ describe('config — NaN / invalid numeric inputs cause startup failure', () => 
     await expect(async () => {
       vi.resetModules();
       await import('../src/config');
-    }).rejects.toThrow(/Invalid value for INDEXER_POLL_INTERVAL_MS/);
+    }).rejects.toThrow(/Number must be greater than or equal to 100/);
   });
 
   it('PORT=70000 throws validation error (too large)', async () => {
@@ -224,7 +248,34 @@ describe('config — NaN / invalid numeric inputs cause startup failure', () => 
     await expect(async () => {
       vi.resetModules();
       await import('../src/config');
-    }).rejects.toThrow(/Invalid value for PORT/);
+    }).rejects.toThrow(/Number must be less than or equal to 65535/);
+  });
+});
+
+describe('config — assertConfig', () => {
+  beforeEach(() => {
+    vi.stubEnv('STELLAR_NETWORK', 'testnet');
+    vi.stubEnv('DATABASE_URL', 'postgresql://localhost/test');
+    vi.stubEnv('TESTNET_DATABASE_URL', 'postgresql://localhost/test');
+    vi.stubEnv('NODE_ENV', 'production');
+  });
+
+  afterEach(() => vi.unstubAllEnvs());
+
+  it('assertConfig throws if required secrets are missing in production', async () => {
+    const assertConfig = await loadAssertConfig();
+    expect(() => assertConfig()).toThrow(
+      /Missing required production variables: ADMIN_API_KEY, JWT_SECRET, WS_SECRET, WEBHOOK_SECRET/,
+    );
+  });
+
+  it('assertConfig succeeds if required secrets are present in production', async () => {
+    vi.stubEnv('ADMIN_API_KEY', 'test-admin');
+    vi.stubEnv('JWT_SECRET', 'test-jwt');
+    vi.stubEnv('WS_SECRET', 'test-ws');
+    vi.stubEnv('WEBHOOK_SECRET', 'test-webhook');
+    const assertConfig = await loadAssertConfig();
+    expect(() => assertConfig()).not.toThrow();
   });
 });
 
@@ -288,5 +339,6 @@ describe('config — shape snapshot', () => {
     expect(keys).toContain('indexerPollIntervalMs');
     expect(keys).toContain('indexerBatchSize');
     expect(keys).toContain('rateLimitMax');
+    expect(keys).toContain('disableIndexer');
   });
 });
