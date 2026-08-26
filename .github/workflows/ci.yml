@@ -8,6 +8,10 @@ on:
 
 permissions:
   contents: read
+  # `security-events: write` is required for CodeQL to upload SARIF results;
+  # without it the Security job's CodeQL steps fail with
+  # "Resource not accessible by integration".
+  security-events: write
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -179,3 +183,18 @@ jobs:
 
       - name: Run npm audit
         run: npm audit --audit-level=high || true
+
+      # CodeQL runs inside ci.yml's `security` job (not a dedicated workflow)
+      # so it matches the repository's code-scanning default-setup configuration
+      # (`ci.yml:security` + `javascript`). Analyzing via a different workflow
+      # makes the code-scanning check warn that configurations present on main
+      # were not found, so `languages` must stay exactly `javascript` (the
+      # JavaScript extractor covers TypeScript files too).
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v4
+        with:
+          languages: javascript
+          config-file: .github/codeql/codeql-config.yml
+
+      - name: Perform CodeQL Analysis
+        uses: github/codeql-action/analyze@v4
