@@ -23,13 +23,12 @@ import { findFlagDefinition } from '../feature-flags/registry';
 
 export const featureFlagsAdminRouter = Router();
 
-featureFlagsAdminRouter.use(requireAuth);
-featureFlagsAdminRouter.use(requireRole('admin'));
-
 // Explicit limiter for this auth-gated router. The global tieredRateLimit in
 // app.ts throttles every request at runtime, but CodeQL's
 // js/missing-rate-limiting query only recognizes a rate limiter applied
 // directly to the route handler, so apply express-rate-limit here as well.
+// It is registered before the auth middleware so that it also guards the
+// requireAuth/requireRole handlers themselves.
 featureFlagsAdminRouter.use(
   rateLimit({
     windowMs: config.rateLimitWindowMs,
@@ -41,6 +40,9 @@ featureFlagsAdminRouter.use(
     },
   }),
 );
+
+featureFlagsAdminRouter.use(requireAuth);
+featureFlagsAdminRouter.use(requireRole('admin'));
 
 const FLAG_SCOPE_TYPES = ['environment', 'developer'] as const;
 type FlagScopeType = (typeof FLAG_SCOPE_TYPES)[number];
