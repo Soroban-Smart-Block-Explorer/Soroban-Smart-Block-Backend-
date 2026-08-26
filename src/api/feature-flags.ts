@@ -8,13 +8,16 @@
  *   - per-environment and per-developer overrides (runtime, no redeploy)
  *
  * All endpoints require authentication + the admin role (see requireRole in
- * auth/middleware), matching the other admin routers (e.g. admin/errors).
+ * auth/middleware), matching the other admin routers (e.g. admin/errors), and
+ * are rate-limited per IP via express-rate-limit.
  */
 
 import { Router } from 'express';
 import { z } from 'zod';
+import rateLimit from 'express-rate-limit';
 import { requireAuth, requireRole } from '../auth/middleware';
 import { asyncHandler } from '../middleware/asyncHandler';
+import { config } from '../config';
 import { featureFlags } from '../feature-flags';
 import { findFlagDefinition } from '../feature-flags/registry';
 
@@ -22,6 +25,22 @@ export const featureFlagsAdminRouter = Router();
 
 featureFlagsAdminRouter.use(requireAuth);
 featureFlagsAdminRouter.use(requireRole('admin'));
+
+// Explicit limiter for this auth-gated router. The global tieredRateLimit in
+// app.ts throttles every request at runtime, but CodeQL's
+// js/missing-rate-limiting query only recognizes a rate limiter applied
+// directly to the route handler, so apply express-rate-limit here as well.
+featureFlagsAdminRouter.use(
+  rateLimit({
+    windowMs: config.rateLimitWindowMs,
+    max: config.rateLimitMax,
+    standardHeaders: true,
+    legacyHeaders: false,
+    handler: (_req, res) => {
+      res.status(429).json({ error: 'Rate limit exceeded' });
+    },
+  }),
+);
 
 const FLAG_SCOPE_TYPES = ['environment', 'developer'] as const;
 type FlagScopeType = (typeof FLAG_SCOPE_TYPES)[number];

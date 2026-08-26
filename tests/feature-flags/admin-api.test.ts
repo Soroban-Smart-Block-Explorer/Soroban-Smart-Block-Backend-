@@ -165,4 +165,30 @@ describe('feature flags admin API', () => {
     expect(res.body).toEqual({ ok: true });
     expect(mocks.clearOverride).toHaveBeenCalledWith('poolMonitor', 'developer', 'dev-1');
   });
+
+  it('rate limits requests beyond the configured max', async () => {
+    // The router reads rate-limit settings from config at import time, so
+    // re-import it with a low RATE_LIMIT_MAX to exercise the 429 path.
+    const prevMax = process.env.RATE_LIMIT_MAX;
+    process.env.RATE_LIMIT_MAX = '2';
+    vi.resetModules();
+    const { featureFlagsAdminRouter: limitedRouter } = await import('../../src/api/feature-flags');
+    const app = express();
+    app.use(express.json());
+    app.use('/api/v1/admin/feature-flags', limitedRouter);
+
+    const first = await request(app).get('/api/v1/admin/feature-flags');
+    expect(first.status).toBe(200);
+    const second = await request(app).get('/api/v1/admin/feature-flags');
+    expect(second.status).toBe(200);
+    const third = await request(app).get('/api/v1/admin/feature-flags');
+    expect(third.status).toBe(429);
+    expect(third.body.error).toBe('Rate limit exceeded');
+
+    if (prevMax === undefined) {
+      delete process.env.RATE_LIMIT_MAX;
+    } else {
+      process.env.RATE_LIMIT_MAX = prevMax;
+    }
+  });
 });
