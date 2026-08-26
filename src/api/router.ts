@@ -174,6 +174,13 @@ router.use('/abi-extract', abiExtractRouter);
 import { webhooksRouter } from './webhooks';
 router.use('/webhooks', webhooksRouter);
 
+// ── Storage & Storage Trap (#838) ─────────────────────────────────────────────
+// Contract persistent-storage inspection and storage-trap (footprint abuse) detection.
+import { storageRouter } from './storage';
+import { storageTrapRouter } from './storage-trap';
+router.use('/storage', storageRouter);
+router.use('/storage-trap', storageTrapRouter);
+
 // ── Governance & DAO Framework (#567) ─────────────────────────────────────────
 // Reads are public; writes are signature-authenticated inside the router.
 // Treasury mounts before the base router so /governance/treasury/... wins
