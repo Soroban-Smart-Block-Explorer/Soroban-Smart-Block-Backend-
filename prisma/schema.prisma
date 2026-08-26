@@ -5043,3 +5043,41 @@ model SearchIndexEntry {
   @@index([content])
   @@map("_search_index_entries")
 }
+
+// ── Feature Flags (gradual rollout, per-environment + per-developer toggles) ──
+// Backs the runtime feature-flag system in src/feature-flags. Each row is one
+// registered flag; overrides layer on top (developer > environment > env var
+// > rollout > default). Schema availability of required tables is checked
+// separately at runtime and is not stored here.
+model FeatureFlag {
+  id             String   @map("id") @id @default(cuid())
+  key            String   @map("key") @unique
+  description    String   @map("description") @default("")
+  defaultEnabled Boolean  @map("default_enabled") @default(false)
+  // Gradual rollout target (0-100). Applied to a stable per-account bucket
+  // when no explicit override or env var is set. 0 = off, 100 = fully on.
+  rolloutPercent Int      @map("rollout_percent") @default(0)
+  createdAt      DateTime @map("created_at") @default(now())
+  updatedAt      DateTime @map("updated_at") @updatedAt
+
+  overrides FeatureFlagOverride[]
+
+  @@map("_feature_flags")
+}
+
+model FeatureFlagOverride {
+  id         String   @map("id") @id @default(cuid())
+  flagKey    String   @map("flag_key")
+  // 'environment' (scopeValue = network name) or 'developer' (scopeValue = developerId)
+  scopeType  String   @map("scope_type")
+  scopeValue String   @map("scope_value")
+  enabled    Boolean  @map("enabled")
+  createdAt  DateTime @map("created_at") @default(now())
+  updatedAt  DateTime @map("updated_at") @updatedAt
+
+  flag FeatureFlag @relation(fields: [flagKey], references: [key], onDelete: Cascade)
+
+  @@unique([flagKey, scopeType, scopeValue])
+  @@index([flagKey, scopeType])
+  @@map("_feature_flag_overrides")
+}

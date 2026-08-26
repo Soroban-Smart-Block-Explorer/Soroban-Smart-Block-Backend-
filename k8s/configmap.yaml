@@ -36,7 +36,12 @@ data:
   # CORS — set to your frontend domain in production
   # CORS_ALLOWED_ORIGINS: "https://explorer.example.com"
 
-  # Feature flags — set to 'true' to enable each optional service
+  # Feature flags — per-environment bootstrap layer for the DB-backed flag
+  # system (see docs/FEATURE_FLAGS.md). 'true' forces the feature on in this
+  # environment; the DB default applies when unset. Runtime toggles (no
+  # redeploy) live in the _feature_flags / _feature_flag_overrides tables via
+  # /api/v1/admin/feature-flags (admin role). A feature whose required tables
+  # are missing reports "(schema unavailable)" in /ready and is not started.
   ENABLE_PRIVACY_WS: "false"
   ENABLE_COMPOSABILITY_WS: "false"
   ENABLE_ARBITRAGE_WS: "false"

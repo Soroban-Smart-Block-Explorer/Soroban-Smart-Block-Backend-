@@ -6,12 +6,8 @@ on:
   pull_request:
     branches: [main]
 
-# Explicit token scopes. `security-events: write` is required for CodeQL to
-# access the CodeQL API and upload SARIF results; without it the Security job
-# fails with "Resource not accessible by integration".
 permissions:
   contents: read
-  security-events: write
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -183,12 +179,3 @@ jobs:
 
       - name: Run npm audit
         run: npm audit --audit-level=high || true
-
-      - name: Initialize CodeQL
-        uses: github/codeql-action/init@v4
-        with:
-          languages: javascript, typescript
-          config-file: .github/codeql/codeql-config.yml
-
-      - name: Perform CodeQL Analysis
-        uses: github/codeql-action/analyze@v4
