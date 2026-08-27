@@ -209,3 +209,39 @@ router.use('/dashboards', requireApiKey, dashboardRouter);
 // Stream + OLAP + cold-storage query gateway. Compute-heavy — key required.
 import { lakehouseRouter } from './lakehouse';
 router.use('/lakehouse', requireApiKey, lakehouseRouter);
+
+// ── ABI & Advanced Events (#843) ───────────────────────────────────────────────
+// ABI management and advanced event filtering for Soroban contracts.
+import { abiRouter } from './abi';
+import { advancedEventsRouter } from './advanced-events';
+router.use('/abi', abiRouter);
+router.use('/events/advanced', advancedEventsRouter);
+
+// ── Factory Tracker & Upgrade Trace (#844) ────────────────────────────────────
+// Contract factory patterns and wasm upgrade history.
+import { factoryTrackerRouter } from './factory-tracker';
+import { upgradeTraceRouter } from './upgrade-trace';
+router.use('/factory-tracker', factoryTrackerRouter);
+router.use('/upgrade-trace', upgradeTraceRouter);
+
+// ── Auth Extension Routers (#845) ──────────────────────────────────────────────
+// Multi-sig auth, profile management, security settings, and auth webhooks.
+import { authMultisigRouter } from './authMultisig';
+import { authProfileRouter } from './authProfile';
+import { authSecurityRouter } from './authSecurity';
+import { authWebhooksRouter } from './authWebhooks';
+router.use('/auth/multisig', authMultisigRouter);
+router.use('/auth/profile', authProfileRouter);
+router.use('/auth/security', authSecurityRouter);
+router.use('/auth/webhooks', authWebhooksRouter);
+
+// ── Compliance Extension Routers (#846) ────────────────────────────────────────
+// Commodity, RWA, DTCC settlement, and settlement-batch compliance.
+import { commodityComplianceRouter } from './commodity-compliance';
+import { rwaComplianceRouter } from './rwa-compliance';
+import { dtccSettlementRouter } from './dtcc-settlement';
+import { settlementBatchRouter } from './settlement-batch';
+router.use('/compliance/commodity', commodityComplianceRouter);
+router.use('/compliance/rwa', rwaComplianceRouter);
+router.use('/compliance/dtcc-settlement', dtccSettlementRouter);
+router.use('/compliance/settlement-batch', settlementBatchRouter);
