@@ -213,35 +213,38 @@ router.use('/analytics/query', requireApiKey, analyticsQueryRouter);
 import { lakehouseRouter } from './lakehouse';
 router.use('/lakehouse', requireApiKey, lakehouseRouter);
 
-// ── Tooling Routers (#851) ────────────────────────────────────────────────────
-// SDK generation, arithmetic checking, pagination, revenue analytics, resource
-// audit, dependency propagation, and protocol-economics dashboards.
-import { sdksRouter, openApiSpecRouter } from './sdks';
-import { checkedArithmeticRouter } from './checked-arithmetic';
-import { virtualListRouter } from './virtualList';
-import { revenueRouter } from './revenue';
-import { resourceAuditRouter } from './resource-audit';
-import { propagationRouter } from './propagation';
-import { protocolEconomicsRouter } from './protocol-economics';
+// ── ABI & Advanced Events (#843) ───────────────────────────────────────────────
+// ABI management and advanced event filtering for Soroban contracts.
+import { abiRouter } from './abi';
+import { advancedEventsRouter } from './advanced-events';
+router.use('/abi', abiRouter);
+router.use('/events/advanced', advancedEventsRouter);
 
-// SDK and OpenAPI spec generation — compute-heavy; key required
-router.use('/sdk', requireApiKey, sdksRouter);
-router.use('/sdk/openapi', openApiSpecRouter);
+// ── Factory Tracker & Upgrade Trace (#844) ────────────────────────────────────
+// Contract factory patterns and wasm upgrade history.
+import { factoryTrackerRouter } from './factory-tracker';
+import { upgradeTraceRouter } from './upgrade-trace';
+router.use('/factory-tracker', factoryTrackerRouter);
+router.use('/upgrade-trace', upgradeTraceRouter);
 
-// Checked arithmetic (safe integer operations with overflow detection)
-router.use('/checked-arithmetic', requireApiKey, checkedArithmeticRouter);
+// ── Auth Extension Routers (#845) ──────────────────────────────────────────────
+// Multi-sig auth, profile management, security settings, and auth webhooks.
+import { authMultisigRouter } from './authMultisig';
+import { authProfileRouter } from './authProfile';
+import { authSecurityRouter } from './authSecurity';
+import { authWebhooksRouter } from './authWebhooks';
+router.use('/auth/multisig', authMultisigRouter);
+router.use('/auth/profile', authProfileRouter);
+router.use('/auth/security', authSecurityRouter);
+router.use('/auth/webhooks', authWebhooksRouter);
 
-// Virtual list pagination for large result sets
-router.use('/virtual-list', virtualListRouter);
-
-// Revenue analytics and settlement tracking
-router.use('/revenue', requireApiKey, revenueRouter);
-
-// Resource audit and allocation tracking
-router.use('/resources', requireApiKey, resourceAuditRouter);
-
-// Dependency propagation graph analysis
-router.use('/propagation', requireApiKey, propagationRouter);
-
-// Protocol economics dashboards and metrics
-router.use('/protocol-economics', requireApiKey, protocolEconomicsRouter);
+// ── Compliance Extension Routers (#846) ────────────────────────────────────────
+// Commodity, RWA, DTCC settlement, and settlement-batch compliance.
+import { commodityComplianceRouter } from './commodity-compliance';
+import { rwaComplianceRouter } from './rwa-compliance';
+import { dtccSettlementRouter } from './dtcc-settlement';
+import { settlementBatchRouter } from './settlement-batch';
+router.use('/compliance/commodity', commodityComplianceRouter);
+router.use('/compliance/rwa', rwaComplianceRouter);
+router.use('/compliance/dtcc-settlement', dtccSettlementRouter);
+router.use('/compliance/settlement-batch', settlementBatchRouter);
