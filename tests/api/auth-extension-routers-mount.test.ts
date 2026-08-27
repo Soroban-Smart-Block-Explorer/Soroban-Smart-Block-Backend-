@@ -21,8 +21,18 @@ vi.mock('../../src/auth/middleware', () => ({
 }));
 
 vi.mock('../../src/cache', () => ({
-  cacheGet: vi.fn(),
-  cacheSet: vi.fn(),
+  cacheGet: vi.fn().mockResolvedValue(null),
+  cacheSet: vi.fn().mockResolvedValue(undefined),
+}));
+
+vi.mock('../../src/auth/tokens', () => ({
+  issueTokens: vi.fn().mockResolvedValue({ accessToken: 'token', refreshToken: 'refresh' }),
+  generateSessionId: vi.fn().mockReturnValue('sess-123'),
+  REFRESH_TOKEN_TTL: 86400,
+}));
+
+vi.mock('../../src/utils/uuidv7', () => ({
+  uuidv7: vi.fn().mockReturnValue('uuid-123'),
 }));
 
 vi.mock('../../src/middleware/asyncHandler', () => ({

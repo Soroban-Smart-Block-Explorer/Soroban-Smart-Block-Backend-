@@ -17,6 +17,11 @@ vi.mock('../../src/db', () => ({
     settlementBatch: {
       findMany: vi.fn(),
     },
+    settlementBatchSummary: {
+      findMany: vi.fn().mockResolvedValue([]),
+      count: vi.fn().mockResolvedValue(0),
+      findUnique: vi.fn().mockResolvedValue(null),
+    },
   },
   prismaRead: {
     commodityCompliance: {
@@ -31,7 +36,16 @@ vi.mock('../../src/db', () => ({
     settlementBatch: {
       findMany: vi.fn(),
     },
+    settlementBatchSummary: {
+      findMany: vi.fn().mockResolvedValue([]),
+      count: vi.fn().mockResolvedValue(0),
+      findUnique: vi.fn().mockResolvedValue(null),
+    },
   },
+}));
+
+vi.mock('../../src/indexer/settlement-compactor', () => ({
+  runCompactor: vi.fn().mockResolvedValue(undefined),
 }));
 
 vi.mock('../../src/middleware/asyncHandler', () => ({

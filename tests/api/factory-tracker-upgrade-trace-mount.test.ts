@@ -121,10 +121,17 @@ describe('Upgrade Trace Router Mount (#844)', () => {
   });
 
   describe('GET /upgrade-trace/contracts/:contractId/diff', () => {
-    it('returns wasm diff information', async () => {
-      const res = await request(makeApp()).get('/upgrade-trace/contracts/CCCC/diff');
+    it('returns wasm diff information with from parameter', async () => {
+      const res = await request(makeApp()).get(
+        '/upgrade-trace/contracts/CCCC/diff?from=abc123def456',
+      );
       expect(res.status).toBe(200);
       expect(res.body.contractId).toBe('CCCC');
+    });
+
+    it('returns 400 when from parameter is missing', async () => {
+      const res = await request(makeApp()).get('/upgrade-trace/contracts/CCCC/diff');
+      expect(res.status).toBe(400);
     });
   });
 
@@ -142,7 +149,8 @@ describe('Upgrade Trace Router Mount (#844)', () => {
     it('returns upgrade statistics', async () => {
       const res = await request(makeApp()).get('/upgrade-trace/stats');
       expect(res.status).toBe(200);
-      expect(typeof res.body.totalUpgrades).toBe('number');
+      expect(typeof res.body.totalUpgradesIndexed).toBe('number');
+      expect(typeof res.body.totalContractsTracked).toBe('number');
     });
   });
 });
