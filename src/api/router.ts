@@ -212,3 +212,36 @@ router.use('/analytics/query', requireApiKey, analyticsQueryRouter);
 // Stream + OLAP + cold-storage query gateway. Compute-heavy — key required.
 import { lakehouseRouter } from './lakehouse';
 router.use('/lakehouse', requireApiKey, lakehouseRouter);
+
+// ── Tooling Routers (#851) ────────────────────────────────────────────────────
+// SDK generation, arithmetic checking, pagination, revenue analytics, resource
+// audit, dependency propagation, and protocol-economics dashboards.
+import { sdksRouter, openApiSpecRouter } from './sdks';
+import { checkedArithmeticRouter } from './checked-arithmetic';
+import { virtualListRouter } from './virtualList';
+import { revenueRouter } from './revenue';
+import { resourceAuditRouter } from './resource-audit';
+import { propagationRouter } from './propagation';
+import { protocolEconomicsRouter } from './protocol-economics';
+
+// SDK and OpenAPI spec generation — compute-heavy; key required
+router.use('/sdk', requireApiKey, sdksRouter);
+router.use('/sdk/openapi', openApiSpecRouter);
+
+// Checked arithmetic (safe integer operations with overflow detection)
+router.use('/checked-arithmetic', requireApiKey, checkedArithmeticRouter);
+
+// Virtual list pagination for large result sets
+router.use('/virtual-list', virtualListRouter);
+
+// Revenue analytics and settlement tracking
+router.use('/revenue', requireApiKey, revenueRouter);
+
+// Resource audit and allocation tracking
+router.use('/resources', requireApiKey, resourceAuditRouter);
+
+// Dependency propagation graph analysis
+router.use('/propagation', requireApiKey, propagationRouter);
+
+// Protocol economics dashboards and metrics
+router.use('/protocol-economics', requireApiKey, protocolEconomicsRouter);
