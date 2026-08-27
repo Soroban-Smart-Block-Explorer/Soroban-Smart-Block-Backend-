@@ -11,8 +11,11 @@ vi.mock('../../src/db', () => ({
     rwaCompliance: {
       findMany: vi.fn(),
     },
-    dtccSettlement: {
-      findMany: vi.fn(),
+    dtccSettlementBridge: {
+      create: vi.fn().mockResolvedValue({}),
+      findMany: vi.fn().mockResolvedValue([]),
+      count: vi.fn().mockResolvedValue(0),
+      findUnique: vi.fn().mockResolvedValue(null),
     },
     settlementBatch: {
       findMany: vi.fn(),
@@ -30,8 +33,10 @@ vi.mock('../../src/db', () => ({
     rwaCompliance: {
       findMany: vi.fn(),
     },
-    dtccSettlement: {
-      findMany: vi.fn(),
+    dtccSettlementBridge: {
+      findMany: vi.fn().mockResolvedValue([]),
+      count: vi.fn().mockResolvedValue(0),
+      findUnique: vi.fn().mockResolvedValue(null),
     },
     settlementBatch: {
       findMany: vi.fn(),
