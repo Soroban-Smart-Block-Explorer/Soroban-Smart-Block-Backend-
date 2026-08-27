@@ -202,8 +202,11 @@ router.use('/audit', auditRouter);
 // ── Analytics & Dashboards (#839) ─────────────────────────────────────────────
 import { analyticsRouter } from './analytics';
 import { dashboardRouter } from './dashboards';
+import { analyticsQueryRouter } from './analytics-query';
 router.use('/analytics', requireApiKey, analyticsRouter);
 router.use('/dashboards', requireApiKey, dashboardRouter);
+// Analytics query router — template-based warehouse queries against Iceberg
+router.use('/analytics/query', requireApiKey, analyticsQueryRouter);
 
 // ── Multi-Layer Data Lakehouse (#551) ─────────────────────────────────────────
 // Stream + OLAP + cold-storage query gateway. Compute-heavy — key required.
