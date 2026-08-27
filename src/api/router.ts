@@ -186,6 +186,13 @@ router.use('/storage-trap', storageTrapRouter);
 import { agentRouter } from './agents';
 router.use('/agents', requireApiKey, agentRouter);
 
+// ── Oracle Audit & Feeds (#841) ───────────────────────────────────────────────
+// Oracle audit history, feed health, and price integrity validation.
+import { oracleAuditRouter } from './oracle-audit';
+import { oracleFeedsRouter } from './oracle-feeds';
+router.use('/oracles/audit', oracleAuditRouter);
+router.use('/oracles/feeds', oracleFeedsRouter);
+
 // ── Governance & DAO Framework (#567) ─────────────────────────────────────────
 // Reads are public; writes are signature-authenticated inside the router.
 // Treasury mounts before the base router so /governance/treasury/... wins
