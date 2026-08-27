@@ -18,6 +18,7 @@ vi.mock('../../src/db', () => ({
 
 vi.mock('../../src/auth/middleware', () => ({
   requireAuth: (fn: Mock) => fn,
+  requireRole: (role: string) => (fn: Mock) => fn,
 }));
 
 vi.mock('../../src/cache', () => ({
