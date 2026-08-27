@@ -181,6 +181,11 @@ import { storageTrapRouter } from './storage-trap';
 router.use('/storage', storageRouter);
 router.use('/storage-trap', storageTrapRouter);
 
+// ── Autonomous Agents (#840) ──────────────────────────────────────────────────
+// Deploy, run, verify, communicate with, and monitor on-chain autonomous agents.
+import { agentRouter } from './agents';
+router.use('/agents', requireApiKey, agentRouter);
+
 // ── Governance & DAO Framework (#567) ─────────────────────────────────────────
 // Reads are public; writes are signature-authenticated inside the router.
 // Treasury mounts before the base router so /governance/treasury/... wins
