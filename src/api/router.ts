@@ -193,6 +193,13 @@ import { oracleFeedsRouter } from './oracle-feeds';
 router.use('/oracles/audit', oracleAuditRouter);
 router.use('/oracles/feeds', oracleFeedsRouter);
 
+// ── Archive & Assets (#842) ───────────────────────────────────────────────────
+// Archived data retrieval (S3/Parquet cold storage) and asset listings.
+import { archiveRouter } from './archive';
+import { assetsRouter } from './assets';
+router.use('/archive', archiveRouter);
+router.use('/assets', assetsRouter);
+
 // ── Governance & DAO Framework (#567) ─────────────────────────────────────────
 // Reads are public; writes are signature-authenticated inside the router.
 // Treasury mounts before the base router so /governance/treasury/... wins
