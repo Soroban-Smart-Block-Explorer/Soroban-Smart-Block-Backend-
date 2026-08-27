@@ -174,6 +174,32 @@ router.use('/abi-extract', abiExtractRouter);
 import { webhooksRouter } from './webhooks';
 router.use('/webhooks', webhooksRouter);
 
+// ── Storage & Storage Trap (#838) ─────────────────────────────────────────────
+// Contract persistent-storage inspection and storage-trap (footprint abuse) detection.
+import { storageRouter } from './storage';
+import { storageTrapRouter } from './storage-trap';
+router.use('/storage', storageRouter);
+router.use('/storage-trap', storageTrapRouter);
+
+// ── Autonomous Agents (#840) ──────────────────────────────────────────────────
+// Deploy, run, verify, communicate with, and monitor on-chain autonomous agents.
+import { agentRouter } from './agents';
+router.use('/agents', requireApiKey, agentRouter);
+
+// ── Oracle Audit & Feeds (#841) ───────────────────────────────────────────────
+// Oracle audit history, feed health, and price integrity validation.
+import { oracleAuditRouter } from './oracle-audit';
+import { oracleFeedsRouter } from './oracle-feeds';
+router.use('/oracles/audit', oracleAuditRouter);
+router.use('/oracles/feeds', oracleFeedsRouter);
+
+// ── Archive & Assets (#842) ───────────────────────────────────────────────────
+// Archived data retrieval (S3/Parquet cold storage) and asset listings.
+import { archiveRouter } from './archive';
+import { assetsRouter } from './assets';
+router.use('/archive', archiveRouter);
+router.use('/assets', assetsRouter);
+
 // ── Governance & DAO Framework (#567) ─────────────────────────────────────────
 // Reads are public; writes are signature-authenticated inside the router.
 // Treasury mounts before the base router so /governance/treasury/... wins
