@@ -25,6 +25,7 @@
 
 import WebSocket, { WebSocketServer } from 'ws';
 import { IncomingMessage, Server } from 'http';
+import crypto from 'crypto';
 import { prismaWrite as prisma } from '../db';
 import { eventBus, EventNames } from '../events/eventBus';
 import { ChannelManager } from '../feed/channelManager';
@@ -81,7 +82,12 @@ async function validateApiKey(key: string): Promise<boolean> {
   if (WS_API_KEY && key === WS_API_KEY) return true;
 
   try {
-    const record = await prisma.apiKey.findUnique({ where: { key } });
+    // Issue #882: the ApiKey table now stores SHA-256(key) in key_hash, not
+    // the plaintext key.  Hash the incoming value before querying the DB so we
+    // never compare plaintext against the stored hash and so the raw secret
+    // never touches the DB query string.
+    const keyHash = crypto.createHash('sha256').update(key).digest('hex');
+    const record = await (prisma as any).apiKey.findUnique({ where: { keyHash } });
     return !!record?.active;
   } catch {
     return false;

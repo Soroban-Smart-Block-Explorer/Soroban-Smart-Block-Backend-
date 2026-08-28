@@ -1,6 +1,6 @@
 import WebSocket from 'ws';
 import { xdr } from '@stellar/stellar-sdk';
-import { prismaWrite as prisma } from '../db';
+import { prismaRead, prismaWrite, prismaWrite as prisma } from '../db';
 import { config } from '../config';
 import {
   fetchEvents,
@@ -416,7 +416,7 @@ export async function indexSingleLedger(ledgerSeq: number): Promise<void> {
 }
 
 // ---------------------------------------------------------------------------
-// Parallel catch-up
+// Parallel catch-up with per-batch checkpointing (issue #881)
 // ---------------------------------------------------------------------------
 
 /**
@@ -433,10 +433,121 @@ function chunkRange(from: number, to: number, n: number): Array<[number, number]
 }
 
 /**
+ * Persist a CatchUpCheckpoint row for a worker's chunk.
+ *
+ * Uses upsert so a crash-then-restart path finds the existing row and reads
+ * `lastCommittedLedger` to resume mid-batch instead of re-fetching from
+ * `rangeStart`.
+ */
+async function upsertCheckpoint(
+  rangeStart: number,
+  rangeEnd: number,
+  lastCommittedLedger: number | null,
+  completed: boolean,
+): Promise<void> {
+  const db = prismaWrite as any;
+  try {
+    await db.catchUpCheckpoint.upsert({
+      where: { rangeStart_rangeEnd: { rangeStart, rangeEnd } },
+      create: {
+        id: uuidv7(),
+        rangeStart,
+        rangeEnd,
+        lastCommittedLedger,
+        completed,
+      },
+      update: {
+        lastCommittedLedger,
+        completed,
+      },
+    });
+  } catch (err) {
+    // Best-effort: checkpoint failure must not abort the indexing work
+    logger.warn(`[catch-up] checkpoint upsert failed for ${rangeStart}-${rangeEnd}: ${err}`);
+  }
+}
+
+/**
+ * Look up the resume cursor for a chunk from a persisted checkpoint.
+ * Returns the last committed ledger + 1 (i.e. where to resume from), or
+ * `rangeStart` if no checkpoint exists yet.
+ */
+async function getChunkResumeCursor(rangeStart: number, rangeEnd: number): Promise<number> {
+  const db = prismaWrite as any;
+  try {
+    const row: { lastCommittedLedger: number | null; completed: boolean } | null =
+      await db.catchUpCheckpoint.findUnique({
+        where: { rangeStart_rangeEnd: { rangeStart, rangeEnd } },
+        select: { lastCommittedLedger: true, completed: true },
+      });
+    if (!row) return rangeStart;
+    if (row.completed) {
+      logger.info(`[catch-up] chunk ${rangeStart}-${rangeEnd} already completed — skipping`);
+      return rangeEnd + 1; // signals "nothing to do"
+    }
+    if (row.lastCommittedLedger !== null) {
+      const resume = row.lastCommittedLedger + 1;
+      if (resume <= rangeEnd) {
+        logger.info(
+          `[catch-up] resuming chunk ${rangeStart}-${rangeEnd} from ledger ${resume} ` +
+            `(last committed: ${row.lastCommittedLedger})`,
+        );
+        return resume;
+      }
+    }
+  } catch (err) {
+    logger.warn(`[catch-up] checkpoint read failed for ${rangeStart}-${rangeEnd}: ${err}`);
+  }
+  return rangeStart;
+}
+
+/**
+ * Process a single worker chunk [rangeStart, rangeEnd] with intra-chunk
+ * checkpointing every BATCH ledgers.
+ *
+ * After each BATCH-ledger sub-range completes, the progress is persisted to
+ * CatchUpCheckpoint.  On crash-restart `getChunkResumeCursor` picks up the
+ * last committed position so at most BATCH ledgers are re-processed.
+ */
+async function processChunkWithCheckpointing(rangeStart: number, rangeEnd: number): Promise<void> {
+  // Resume from last checkpoint rather than rangeStart
+  const resumeFrom = await getChunkResumeCursor(rangeStart, rangeEnd);
+  if (resumeFrom > rangeEnd) {
+    // Chunk already completed in a previous run
+    return;
+  }
+
+  // Write an initial "in-progress" checkpoint so a crash before the first
+  // sub-batch flush is also detectable (lastCommittedLedger = null means
+  // "started but nothing committed yet").
+  await upsertCheckpoint(
+    rangeStart,
+    rangeEnd,
+    resumeFrom > rangeStart ? resumeFrom - 1 : null,
+    false,
+  );
+
+  // Process in BATCH-sized sub-ranges, persisting progress after each one
+  for (let subStart = resumeFrom; subStart <= rangeEnd; subStart += BATCH) {
+    const subEnd = Math.min(subStart + BATCH - 1, rangeEnd);
+    await processLedgerRange(subStart, subEnd);
+    // Flush checkpoint after each successful sub-batch
+    await upsertCheckpoint(rangeStart, rangeEnd, subEnd, subEnd >= rangeEnd);
+    logger.debug(
+      `[catch-up] checkpoint flushed for chunk ${rangeStart}-${rangeEnd}: committed ${subEnd}`,
+    );
+  }
+}
+
+/**
  * Run parallel workers over [from, to], then advance IndexerState to `to`.
- * Workers process non-overlapping chunks concurrently; the state write is
- * serialised after all workers succeed so a partial failure leaves the
- * cursor unchanged and the whole round retries safely (upserts are idempotent).
+ * Workers process non-overlapping chunks concurrently, each with its own
+ * intra-chunk checkpoint.  The global cursor write is serialised after all
+ * workers succeed so a partial failure leaves the cursor unchanged and the
+ * whole round retries safely (upserts are idempotent).
+ *
+ * On restart after a crash, each worker resumes from its last persisted
+ * CatchUpCheckpoint rather than re-fetching from the chunk start.
  */
 async function catchUp(from: number, to: number): Promise<void> {
   const chunks = chunkRange(from, to, WORKERS);
@@ -444,7 +555,7 @@ async function catchUp(from: number, to: number): Promise<void> {
     `[catch-up] ${chunks.length} worker(s) covering ledgers ${from}–${to} ` +
       `(chunk size ~${chunks[0][1] - chunks[0][0] + 1})`,
   );
-  await Promise.all(chunks.map(([s, e]) => processLedgerRange(s, e)));
+  await Promise.all(chunks.map(([s, e]) => processChunkWithCheckpointing(s, e)));
   await setLastIndexedLedger(to);
   logger.info(`[catch-up] done — cursor advanced to ${to}`);
 }
