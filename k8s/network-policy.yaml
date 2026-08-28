@@ -1,0 +1,265 @@
+---
+# NetworkPolicy suite — default-deny baseline plus explicit allow rules (#904).
+#
+# Requires a CNI that enforces NetworkPolicy (Calico, Cilium, AKS/EKS with the
+# right add-on, etc.) — plain kubenet/bridge networking silently ignores these
+# objects, so verify enforcement on the target cluster before relying on them.
+#
+# Layout:
+#   1. default-deny-all       — baseline: no pod may send or receive traffic
+#                                unless a later rule explicitly allows it.
+#   2. allow-dns-egress        — every pod needs DNS to resolve anything else.
+#   3. allow-api-ingress       — ingress-controller / same-namespace -> API pods.
+#   4. allow-api-egress-data   — API pods -> Postgres + Redis.
+#   5. allow-indexer-egress-data    — indexer pods -> Postgres + Redis.
+#   6. allow-indexer-egress-stellar — indexer pods -> Stellar RPC/Horizon (internet).
+#   7. allow-metrics-scrape    — Prometheus namespace -> /metrics on any pod.
+#   8. allow-p2p-gossip        — API pods (p2p indexer network) <-> each other.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny-all
+  namespace: soroban
+  labels:
+    app.kubernetes.io/name: soroban-explorer
+    app.kubernetes.io/component: network-policy
+spec:
+  podSelector: {} # selects every pod in the namespace
+  policyTypes:
+    - Ingress
+    - Egress
+
+---
+# DNS is required for every other egress rule below to resolve hostnames
+# (Postgres/Redis service names, Stellar RPC/Horizon domains, etc.).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-dns-egress
+  namespace: soroban
+  labels:
+    app.kubernetes.io/name: soroban-explorer
+    app.kubernetes.io/component: network-policy
+spec:
+  podSelector: {}
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - namespaceSelector: {} # kube-dns/CoreDNS can live in kube-system or a custom ns
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+
+---
+# Ingress controller (and same-namespace callers, e.g. curl from a debug pod)
+# may reach the API's HTTP port. Nothing else in the cluster may initiate
+# traffic to API pods.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-api-ingress
+  namespace: soroban
+  labels:
+    app.kubernetes.io/name: soroban-explorer
+    app.kubernetes.io/component: network-policy
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/component: api
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              # Standard label the ingress-nginx Helm chart / most installs set
+              # on their own namespace. Adjust to match your ingress controller.
+              kubernetes.io/metadata.name: ingress-nginx
+        - podSelector: {} # same-namespace traffic (e.g. p2p health checks, debug tooling)
+      ports:
+        - protocol: TCP
+          port: 3000 # http (named "http" container port on soroban-api)
+
+---
+# API pods -> Postgres + Redis.
+# Postgres/Redis are referenced by hostname in k8s/secrets.yaml
+# (postgres-testnet, postgres-mainnet, redis, ...). If those run as
+# in-cluster Services labelled app: postgres / app: redis, the podSelector
+# rules below match them directly. If they are external managed services
+# (RDS, ElastiCache, Cloud SQL, etc.) reached via an internal load balancer,
+# replace the podSelector entries with an `ipBlock: {cidr: <db-subnet-cidr>}`
+# for the same ports instead.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-api-egress-data
+  namespace: soroban
+  labels:
+    app.kubernetes.io/name: soroban-explorer
+    app.kubernetes.io/component: network-policy
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/component: api
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - podSelector:
+            matchLabels:
+              app: postgres
+        - podSelector:
+            matchLabels:
+              app: redis
+      ports:
+        - protocol: TCP
+          port: 5432 # Postgres
+        - protocol: TCP
+          port: 6379 # Redis
+
+---
+# Indexer components (adaptive-indexer-deployment.yaml: ingester, decoder,
+# enrichment, predictor, control-plane — all carry tier: worker|control) also
+# read/write Postgres and Redis directly.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-indexer-egress-data
+  namespace: soroban
+  labels:
+    app.kubernetes.io/name: soroban-explorer
+    app.kubernetes.io/component: network-policy
+spec:
+  podSelector:
+    matchLabels:
+      app: adaptive-indexer
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - podSelector:
+            matchLabels:
+              app: postgres
+        - podSelector:
+            matchLabels:
+              app: redis
+      ports:
+        - protocol: TCP
+          port: 5432
+        - protocol: TCP
+          port: 6379
+
+---
+# Indexer pods poll the Stellar RPC / Horizon network over HTTPS (and
+# WSS on the same 443 port). These are public SaaS endpoints
+# (soroban-testnet.stellar.org, horizon.stellar.org, ...) whose IPs are not
+# stable, so plain NetworkPolicy can only scope this by port + "the public
+# internet, not RFC1918 space" — not by hostname. If the CNI supports FQDN
+# egress policies (Cilium CiliumNetworkPolicy `toFQDNs`, Calico
+# GlobalNetworkSet, etc.), prefer pinning this to the actual RPC/Horizon
+# hostnames from src/profiles.ts instead of the broader ipBlock below.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-indexer-egress-stellar
+  namespace: soroban
+  labels:
+    app.kubernetes.io/name: soroban-explorer
+    app.kubernetes.io/component: network-policy
+spec:
+  podSelector:
+    matchLabels:
+      app: adaptive-indexer
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except:
+              - 10.0.0.0/8
+              - 172.16.0.0/12
+              - 192.168.0.0/16
+              - 169.254.0.0/16 # link-local / cloud metadata endpoint
+      ports:
+        - protocol: TCP
+          port: 443
+
+---
+# Prometheus (in-cluster) is the only allowed scraper of /metrics. Public
+# ingress never reaches this port — see k8s/ingress.yaml, which intentionally
+# excludes /metrics from the routed paths, plus src/middleware/metricsAuth.ts
+# for the app-level IP/token guard defense in depth (#907).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-metrics-scrape
+  namespace: soroban
+  labels:
+    app.kubernetes.io/name: soroban-explorer
+    app.kubernetes.io/component: network-policy
+spec:
+  podSelector:
+    matchExpressions:
+      - key: app.kubernetes.io/name
+        operator: In
+        values:
+          - soroban-explorer
+      - key: app
+        operator: In
+        values:
+          - soroban-api
+          - soroban-api-mainnet
+          - adaptive-indexer
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              # Standard label set by the kube-prometheus-stack / Prometheus
+              # Operator namespace. Adjust to your monitoring namespace.
+              kubernetes.io/metadata.name: monitoring
+      ports:
+        - protocol: TCP
+          port: 3000 # API http/metrics port
+        - protocol: TCP
+          port: 9090 # indexer "metrics" container port (adaptive-indexer-deployment.yaml)
+
+---
+# P2P indexer gossip network (src/p2p.ts, GET /p2p/status) — API pods talk to
+# each other directly on the p2p port, bypassing the Service/Ingress.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-p2p-gossip
+  namespace: soroban
+  labels:
+    app.kubernetes.io/name: soroban-explorer
+    app.kubernetes.io/component: network-policy
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/component: api
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/component: api
+      ports:
+        - protocol: TCP
+          port: 4001
+  egress:
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/component: api
+      ports:
+        - protocol: TCP
+          port: 4001

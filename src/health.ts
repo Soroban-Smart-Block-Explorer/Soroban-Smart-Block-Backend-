@@ -7,6 +7,7 @@ import { measureReplicaLag } from './db/replicaGateway';
 import { getLatestLedger } from './indexer/rpc';
 import { getLastIndexedLedger } from './indexer/indexer';
 import { config } from './config';
+import { scheduler, type JobHealthSnapshot } from './scheduler/cron-scheduler';
 
 /**
  * Health check status for individual dependencies
@@ -230,13 +231,44 @@ async function checkIndexerHealth(latestNetworkLedger: number | null): Promise<D
 }
 
 /**
- * Check worker health (background jobs, price updater, etc.)
+ * Check worker health (#906) — background jobs registered with the central
+ * cron scheduler (src/scheduler/cron-scheduler.ts), plus interval-managed
+ * pipelines that report heartbeats into it directly (price updates, JWT key
+ * rotation, indexer gap reconciliation sweeps).
+ *
+ * - unhealthy: any job has hit config.workerMaxConsecutiveFailures in a row.
+ * - degraded:  any job with a known schedule has missed its expected window
+ *              by more than config.workerStaleIntervalMultiplier intervals.
+ * - healthy:   otherwise, including before any job has reported in yet
+ *              (nothing to be unhealthy about on a cold start).
  */
-function checkWorkerHealth(): DependencyHealth {
+export function checkWorkerHealth(): DependencyHealth {
+  const summary = scheduler.getHealthSummary(
+    config.workerStaleIntervalMultiplier,
+    config.workerMaxConsecutiveFailures,
+  );
+
+  const describe = (j: JobHealthSnapshot) => j.taskName;
+  const staleJobs = summary.jobs.filter((j) => j.stale).map(describe);
+  const failingJobs = summary.jobs
+    .filter((j) => j.consecutiveFailures >= config.workerMaxConsecutiveFailures)
+    .map(describe);
+
+  const message =
+    summary.status === 'unhealthy'
+      ? `Background job(s) failing repeatedly: ${failingJobs.join(', ')}`
+      : summary.status === 'degraded'
+        ? `Background job(s) have missed their scheduled window: ${staleJobs.join(', ')}`
+        : summary.jobs.length > 0
+          ? 'Workers operational'
+          : 'Workers operational (no job heartbeats reported yet)';
+
   return {
-    status: 'healthy',
-    message: 'Workers operational',
-    details: {},
+    status: summary.status,
+    message,
+    details: {
+      jobs: summary.jobs,
+    },
     lastChecked: new Date().toISOString(),
   };
 }

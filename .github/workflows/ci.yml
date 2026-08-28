@@ -167,6 +167,41 @@ jobs:
           TESTNET_DATABASE_URL: postgresql://test:test@localhost:5432/test
           STELLAR_NETWORK: testnet
 
+  k8s-lint:
+    name: K8s Manifest Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      # kubeconform validates every manifest in k8s/ against the upstream
+      # Kubernetes OpenAPI schemas (including PodDisruptionBudget and
+      # NetworkPolicy — #904) — catches typos, wrong apiVersions, and missing
+      # required fields before they ever reach a cluster.
+      - name: Install kubeconform
+        run: |
+          curl -sSL https://github.com/yannh/kubeconform/releases/latest/download/kubeconform-linux-amd64.tar.gz \
+            | tar xz -C /usr/local/bin kubeconform
+
+      - name: Validate k8s manifests (kubeconform)
+        run: |
+          kubeconform \
+            -strict \
+            -summary \
+            -ignore-missing-schemas \
+            -kubernetes-version 1.29.0 \
+            k8s/*.yaml
+
+      # Belt-and-braces: also do a client-side dry-run apply, which catches a
+      # narrower but useful class of issues (duplicate names, structurally
+      # invalid YAML documents) using the real kubectl parser.
+      - name: Install kubectl
+        uses: azure/setup-kubectl@v4
+        with:
+          version: v1.29.0
+
+      - name: Validate k8s manifests (kubectl dry-run)
+        run: kubectl apply --dry-run=client --validate=true -f k8s/ --recursive
+
   security:
     name: Security
     runs-on: ubuntu-latest
