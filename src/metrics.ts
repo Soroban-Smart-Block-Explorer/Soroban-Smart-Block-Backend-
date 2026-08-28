@@ -69,6 +69,28 @@ export const indexerErrors = new Counter({
   registers: [registry],
 });
 
+export const indexerPipelineStageDuration = new Histogram({
+  name: 'indexer_pipeline_stage_duration_seconds',
+  help: 'Latency duration of individual indexer pipeline stages',
+  labelNames: ['stage'],
+  buckets: [0.001, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10],
+  registers: [registry],
+});
+
+export const indexerPipelineStageLag = new Gauge({
+  name: 'indexer_pipeline_stage_lag_ledgers',
+  help: 'Ledger distance lag for each indexer pipeline stage',
+  labelNames: ['stage'],
+  registers: [registry],
+});
+
+export const indexerPipelineStageProcessedTotal = new Counter({
+  name: 'indexer_pipeline_stage_processed_total',
+  help: 'Total processed items/events per indexer pipeline stage',
+  labelNames: ['stage', 'status'],
+  registers: [registry],
+});
+
 // ── Database health ──────────────────────────────────────────────────────────
 export const dbQueryDuration = new Histogram({
   name: 'db_query_duration_seconds',
