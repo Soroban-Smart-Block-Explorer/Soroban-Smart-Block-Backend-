@@ -16,13 +16,13 @@
  * using the resolved decimal configuration.
  */
 
-import axios from 'axios';
 import { SorobanRpc, xdr, scValToNative, Address } from '@stellar/stellar-sdk';
 import { prismaRead } from '../db';
 import { config } from '../config';
 import { formatAmount } from './args-decoder';
 import { cacheGet, cacheSet, cacheDelete, cacheClear } from '../cache';
 import { logger } from '../logger';
+import { safeGet } from '../webhooks/ssrf-guard';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -177,12 +177,15 @@ async function fetchClassicAssetMetadata(
 
   try {
     const url = `${config.horizonUrl}/assets`;
-    const { data } = await axios.get<{
+    const response = await safeGet(
+      url,
+      { asset_code: assetCode, asset_issuer: assetIssuer, limit: 1 },
+      undefined,
+      6000,
+    );
+    const data = response.data as {
       _embedded: { records: HorizonAssetRecord[] };
-    }>(url, {
-      params: { asset_code: assetCode, asset_issuer: assetIssuer, limit: 1 },
-      timeout: 6000,
-    });
+    };
 
     const record = data?._embedded?.records?.[0];
     if (!record) return null;
