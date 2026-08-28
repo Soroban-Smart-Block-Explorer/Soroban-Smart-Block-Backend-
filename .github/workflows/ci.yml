@@ -123,6 +123,22 @@ jobs:
       - name: Validate orphaned routers (budget 15)
         run: npm run validate-routes:ci
 
+      # #903: Reject unpinned `:latest` image tags in compose manifests.
+      # All images must be pinned to an immutable tag so builds are reproducible
+      # and Dependabot can track upgrades.  This step fails the PR if any
+      # docker-compose*.yml file contains an `image: …:latest` reference.
+      - name: Reject unpinned :latest image tags in compose files
+        run: |
+          RESULT=$(grep -rn "image:.*:latest" --include='docker-compose*.yml' . || true)
+          if [ -n "$RESULT" ]; then
+            echo "ERROR: Unpinned ':latest' image tags found in compose files (#903)."
+            echo "Pin every image to an explicit, immutable tag (e.g. redis:7.2.4-alpine)."
+            echo ""
+            echo "$RESULT"
+            exit 1
+          fi
+          echo "OK: No unpinned :latest tags found in compose files."
+
   test:
     name: Test
     runs-on: ubuntu-latest

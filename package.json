@@ -11,7 +11,7 @@
     "dev:testnet": "STELLAR_NETWORK=testnet ts-node-dev --respawn --transpile-only src/index.ts",
     "dev:mainnet": "STELLAR_NETWORK=mainnet ts-node-dev --respawn --transpile-only src/index.ts",
     "dev:devnet": "STELLAR_NETWORK=devnet ts-node-dev --respawn --transpile-only src/index.ts",
-    "build": "tsc || echo 'Build completed with type errors'",
+    "build": "(tsc || echo 'Build completed with type errors') && tsc -p tsconfig.p2p.json",
     "build:strict": "tsc --noEmit",
     "start": "node dist/index.js",
     "start:testnet": "STELLAR_NETWORK=testnet node dist/index.js",
