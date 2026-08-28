@@ -9,6 +9,7 @@ import axios from 'axios';
 import { prismaRead as prisma } from '../db';
 import { config } from '../config';
 import { logger } from '../logger';
+import { triggerAutomatedGapRepair } from './repair';
 
 export interface ReconciliationReport {
   timestamp: string;
@@ -141,6 +142,14 @@ export async function runReconciliation(lookbackLedgers = 1000): Promise<Reconci
       `Found ${missingLedgerRanges.length} gap(s) covering ${totalMissing} missing ledgers ` +
         `in range ${lookbackStart}–${localLatestLedger}`,
     );
+
+    // Automatically trigger gap repair workflow
+    logger.info(`[reconciliation] Triggering automated repair for ${missingLedgerRanges.length} gap(s)...`);
+    try {
+      await triggerAutomatedGapRepair(missingLedgerRanges);
+    } catch (repairErr) {
+      logger.error('[reconciliation] Automated gap repair failed:', repairErr);
+    }
   }
 
   const healthy = discrepancies.length === 0;

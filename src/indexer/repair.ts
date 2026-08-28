@@ -116,6 +116,65 @@ async function backfill(sequences: number[]): Promise<void> {
   }
 }
 
+const MAX_REPAIR_ATTEMPTS = 3;
+
+/**
+ * Trigger immediate automated repair for detected ledger gaps, updating LedgerGap tracking records and SLA alerts.
+ */
+export async function triggerAutomatedGapRepair(
+  gapRanges: Array<[number, number]>,
+): Promise<void> {
+  if (gapRanges.length === 0) return;
+
+  logger.info(`[repair] 🛠️ Automated gap repair triggered for ${gapRanges.length} range(s)`);
+
+  for (const [start, end] of gapRanges) {
+    // Record or fetch LedgerGap entry
+    let gap = await prisma.ledgerGap.findFirst({
+      where: { startSequence: start, endSequence: end, resolved: false },
+    });
+
+    if (!gap) {
+      gap = await prisma.ledgerGap.create({
+        data: {
+          startSequence: start,
+          endSequence: end,
+          attemptCount: 1,
+          lastAttemptAt: new Date(),
+          resolved: false,
+        },
+      });
+    } else {
+      gap = await prisma.ledgerGap.update({
+        where: { id: gap.id },
+        data: {
+          attemptCount: { increment: 1 },
+          lastAttemptAt: new Date(),
+        },
+      });
+    }
+
+    try {
+      logger.info(`[repair] Executing automated repair run for ledgers ${start} → ${end} (Attempt #${gap.attemptCount})`);
+      await processLedgerRange(start, end);
+
+      await prisma.ledgerGap.update({
+        where: { id: gap.id },
+        data: { resolved: true },
+      });
+      logger.info(`[repair] ✅ Gap ${start}–${end} successfully repaired and resolved.`);
+    } catch (err) {
+      logger.error(`[repair] ❌ Failed to repair gap ${start}–${end} on attempt #${gap.attemptCount}:`, err);
+
+      if (gap.attemptCount >= MAX_REPAIR_ATTEMPTS) {
+        logger.error(
+          `🚨 [SLA BREACH ALERT] Ledger gap ${start}–${end} failed ${gap.attemptCount} repair attempts! Operator intervention required.`,
+        );
+      }
+    }
+  }
+}
+
 // ─── Sweep ────────────────────────────────────────────────────────────────────
 
 /**
