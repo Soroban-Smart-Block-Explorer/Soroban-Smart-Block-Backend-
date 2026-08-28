@@ -75,6 +75,7 @@ import { adminErrorsRouter } from './admin/errors';
 import { featureFlagsAdminRouter } from './feature-flags';
 // ── CSV Exports ───────────────────────────────────────────────────────────────
 import { requireApiKey, requireKeyTier } from '../middleware/apiKeyAuth';
+import { adminRateLimit, adminRateLimitsOverrideRateLimit } from '../middleware/adminRateLimit';
 import { compilerRouter } from './compiler-router';
 import { sandboxRouter } from './sandbox';
 
@@ -128,7 +129,12 @@ router.use('/token-prices', tokenPricesRouter);
 router.use('/market', marketRouter);
 router.use('/portfolio', portfolioRouter);
 router.use('/exports', exportsRouter);
-router.use('/admin/rate-limits', rateLimitAdminRouter);
+// ── Admin Rate Limiting (#889) ─────────────────────────────────────────────────
+// Apply a strict IP-keyed limiter to the entire /admin surface before any
+// sub-router has a chance to handle the request. The override store gets an
+// even tighter limit because mutations there directly affect API throttling.
+router.use('/admin', adminRateLimit);
+router.use('/admin/rate-limits', adminRateLimitsOverrideRateLimit, rateLimitAdminRouter);
 router.use('/market/alerts', alertsRouter);
 router.use('/oracles/intelligence', oracleIntelligenceRouter);
 
