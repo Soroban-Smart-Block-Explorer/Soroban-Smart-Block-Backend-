@@ -407,8 +407,15 @@ model PropagationAnalysis {
 
 model IndexerState {
   id String @map("id") @id @default("singleton")
+  network String @map("network") @default("mainnet")
   lastLedger Int @map("last_ledger") @default(0)
+  version Int @map("version") @default(0)
+  leaderId String? @map("leader_id")
+  leaderLeaseExpiresAt DateTime? @map("leader_lease_expires_at")
   updatedAt DateTime @map("updated_at") @updatedAt
+
+  @@unique([network, id])
+  @@index([network])
   @@map("_indexer_states")
 }
 
@@ -443,6 +450,8 @@ model LedgerGap {
   endSequence Int @map("end_sequence")
   detectedAt DateTime @map("detected_at") @default(now())
   resolved Boolean @map("resolved") @default(false)
+  attemptCount Int @map("attempt_count") @default(0)
+  lastAttemptAt DateTime? @map("last_attempt_at")
   @@map("_ledger_gaps")
 }
 
@@ -562,6 +571,23 @@ model FailedItem {
   @@index([itemType, dead])
   @@index([ledger])
   @@map("_failed_items")
+}
+
+model DeadLetterItem {
+  id String @map("id") @id @default(cuid())
+  itemType String @map("item_type")
+  itemId String @map("item_id")
+  ledger Int @map("ledger")
+  hash String? @map("hash")
+  errorMsg String @map("error_msg")
+  errorStack String? @map("error_stack")
+  retryCount Int @map("retry_count") @default(0)
+  payload Json? @map("payload")
+  createdAt DateTime @map("created_at") @default(now())
+
+  @@index([itemType])
+  @@index([ledger])
+  @@map("_dead_letter_items")
 }
 
 model ApiKey {

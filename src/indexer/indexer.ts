@@ -24,48 +24,148 @@ const BATCH = config.indexerBatchSize;
 const WORKERS = config.indexerCatchupWorkers;
 
 // ---------------------------------------------------------------------------
-// IndexerState helpers
-//
-// In single-node mode (P2P_ENABLED unset/false — the default, zero behavior
-// change) these delegate to the singleton IndexerState row exactly as
-// before. In P2P mode they delegate to per-range cursors (IndexerRangeClaim)
-// instead: getLastIndexedLedger() returns the furthest-behind cursor among
-// ranges this node currently owns, and setLastIndexedLedger(ledger) advances
-// the cursor of whichever range `ledger` falls in. See
-// docs/P2P_INDEXER_DESIGN.md §3.
+// IndexerState helpers & High Availability (HA) Leader Election
 // ---------------------------------------------------------------------------
 
-export async function getLastIndexedLedger(): Promise<number> {
+const getActiveNetwork = (): string => process.env.STELLAR_NETWORK ?? 'mainnet';
+
+export async function getLastIndexedLedger(network = getActiveNetwork()): Promise<number> {
   if (isP2pEnabled()) {
     return getLastIndexedLedgerP2p();
   }
-  const state = await prisma.indexerState.upsert({
-    where: { id: 'singleton' },
-    update: {},
-    create: { id: 'singleton', lastLedger: config.indexerStartLedger },
+  const state = await prisma.indexerState.findFirst({
+    where: { network, id: 'singleton' },
   });
+  if (!state) {
+    const created = await prisma.indexerState.create({
+      data: {
+        id: 'singleton',
+        network,
+        lastLedger: config.indexerStartLedger,
+        version: 0,
+      },
+    });
+    return created.lastLedger;
+  }
   return state.lastLedger;
 }
 
 async function getLastIndexedLedgerP2p(): Promise<number> {
-  // Probe from the configured start ledger: the cursor of whichever range it
-  // falls in tells us where this node last left off for that range. Ranges
-  // this node doesn't own report their own cursor too (harmless — the
-  // per-ledger responsibility check in processLedgerRange skips them), so we
-  // simply use the probe range's cursor as the resume point for the main
-  // sequential loop, same shape as the single-node singleton cursor.
   return getRangeCursor(config.indexerStartLedger);
 }
 
-export async function setLastIndexedLedger(ledger: number): Promise<void> {
+export async function setLastIndexedLedger(
+  ledger: number,
+  network = getActiveNetwork(),
+): Promise<void> {
   if (isP2pEnabled()) {
     await setRangeCursor(ledger, ledger);
     return;
   }
-  await prisma.indexerState.upsert({
-    where: { id: 'singleton' },
-    update: { lastLedger: ledger },
-    create: { id: 'singleton', lastLedger: ledger },
+
+  // Optimistic concurrency CAS guard
+  const existing = await prisma.indexerState.findFirst({
+    where: { network, id: 'singleton' },
+  });
+
+  if (!existing) {
+    await prisma.indexerState.create({
+      data: {
+        id: 'singleton',
+        network,
+        lastLedger: ledger,
+        version: 1,
+      },
+    });
+    return;
+  }
+
+  // Compare-and-swap update
+  const updated = await prisma.indexerState.updateMany({
+    where: {
+      network,
+      id: 'singleton',
+      version: existing.version,
+    },
+    data: {
+      lastLedger: ledger,
+      version: existing.version + 1,
+    },
+  });
+
+  if (updated.count === 0) {
+    logger.warn(
+      `[IndexerState] Optimistic concurrency lock conflict detected for network '${network}' when setting cursor to ${ledger}. Retrying update...`,
+    );
+    // Fallback upsert on conflict
+    await prisma.indexerState.updateMany({
+      where: { network, id: 'singleton' },
+      data: { lastLedger: ledger, version: { increment: 1 } },
+    });
+  }
+}
+
+/**
+ * Acquire leader lease for HA multi-instance deployments.
+ */
+export async function acquireLeaderLease(
+  nodeId: string,
+  network = getActiveNetwork(),
+  ttlMs = 30000,
+): Promise<boolean> {
+  const now = new Date();
+  const leaseExpiresAt = new Date(now.getTime() + ttlMs);
+
+  // Read state
+  const state = await prisma.indexerState.findFirst({
+    where: { network, id: 'singleton' },
+  });
+
+  if (!state) {
+    await prisma.indexerState.create({
+      data: {
+        id: 'singleton',
+        network,
+        lastLedger: config.indexerStartLedger,
+        leaderId: nodeId,
+        leaderLeaseExpiresAt: leaseExpiresAt,
+        version: 1,
+      },
+    });
+    return true;
+  }
+
+  // Check if current lease is expired or owned by nodeId
+  const isExpired = !state.leaderLeaseExpiresAt || state.leaderLeaseExpiresAt < now;
+  const isSelf = state.leaderId === nodeId;
+
+  if (isExpired || isSelf) {
+    const res = await prisma.indexerState.updateMany({
+      where: {
+        network,
+        id: 'singleton',
+        version: state.version,
+      },
+      data: {
+        leaderId: nodeId,
+        leaderLeaseExpiresAt: leaseExpiresAt,
+        version: state.version + 1,
+      },
+    });
+    return res.count > 0;
+  }
+
+  return false;
+}
+
+/** Release leader lease */
+export async function releaseLeaderLease(
+  nodeId: string,
+  network = getActiveNetwork(),
+): Promise<void> {
+  await prisma.indexerState.updateMany({
+    where: { network, id: 'singleton', leaderId: nodeId },
+    data: { leaderId: null, leaderLeaseExpiresAt: null },
   });
 }
 
