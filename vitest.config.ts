@@ -51,6 +51,9 @@ export default defineConfig({
       ],
       reporter: ['text', 'text-summary', 'lcov', 'html', 'json-summary'],
       reportsDirectory: './coverage',
+      // Issue #898: Coverage thresholds enforced in CI.
+      // These are the current verified baselines; tighten them as coverage grows.
+      // CI will fail automatically if any metric falls below these values.
       thresholds: {
         statements: 20,
         branches: 15,
