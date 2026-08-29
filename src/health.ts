@@ -133,6 +133,10 @@ async function checkCacheHealth(): Promise<DependencyHealth> {
   const ready = isCacheReady();
   const type = cacheBackendType();
   const redisConnected = await pingRedis().catch(() => false);
+  const isInMemoryFallback =
+    type === 'memory' &&
+    !!config.cacheUrl &&
+    !config.cacheUrl.startsWith('memory://');
 
   const status = type === 'redis' && !redisConnected ? 'unhealthy' : ready ? 'healthy' : 'degraded';
 
@@ -145,7 +149,11 @@ async function checkCacheHealth(): Promise<DependencyHealth> {
     details: {
       ready,
       type,
-      connected: type === 'redis' ? redisConnected : true,
+      // Issue #909: Explicit cacheBackend field so consumers (dashboards,
+      // health checks, and alert rules) can distinguish Redis from fallback.
+      cacheBackend: type === 'redis' || type === 'sentinel' ? 'redis' : 'in-memory',
+      inMemoryFallback: isInMemoryFallback,
+      connected: type === 'redis' || type === 'sentinel' ? redisConnected : true,
     },
     lastChecked: new Date().toISOString(),
   };

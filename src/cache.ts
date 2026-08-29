@@ -1,6 +1,8 @@
 import { config } from './config';
+import { config } from './config';
 import type { RedisClientType } from 'redis';
 import { logger } from './logger';
+import { cacheBackendStatus } from './metrics';
 
 const CACHE_URL = config.cacheUrl ?? 'memory://';
 const CACHE_MODE = config.cacheMode ?? 'standalone'; // 'standalone' or 'sentinel'
@@ -161,6 +163,7 @@ async function getRedisClient(): Promise<RedisClientType | null> {
           error: String(err),
         });
         redisAvailable = false;
+        cacheBackendStatus.set(0);
       });
 
       client.on('reconnecting', () => {
@@ -174,6 +177,7 @@ async function getRedisClient(): Promise<RedisClientType | null> {
         backend: 'sentinel',
         masterName: sentinelConfig.name,
       });
+      cacheBackendStatus.set(1);
       return redisClient;
     } else {
       // Standalone mode
@@ -181,19 +185,24 @@ async function getRedisClient(): Promise<RedisClientType | null> {
       client.on('error', (err: unknown) => {
         logger.error('[cache] Redis client error', { backend: 'redis', error: String(err) });
         redisAvailable = false;
+        cacheBackendStatus.set(0);
       });
       await client.connect();
       redisClient = client;
       redisAvailable = true;
       logger.info('[cache] Connected to Redis cache', { backend: 'redis' });
+      cacheBackendStatus.set(1);
       return redisClient;
     }
   } catch (err: unknown) {
     logger.warn('[cache] Could not connect to Redis, falling back to in-memory cache', {
       backend: CACHE_MODE,
       error: String(err),
+      cacheBackend: 'memory',
+      alert: 'CACHE_FALLBACK',
     });
     redisAvailable = false;
+    cacheBackendStatus.set(0);
     return null;
   }
 }
@@ -283,6 +292,17 @@ export function redactKey(key: string): string {
 export async function cacheConnect(): Promise<void> {
   performStaleCleanup();
   cleanupInterval = setInterval(performStaleCleanup, CLEANUP_INTERVAL_MS);
+
+  const isMemoryOnly = CACHE_URL === '' || CACHE_URL.startsWith('memory://');
+  if (isMemoryOnly) {
+    // Pure in-memory mode is intentional — metric reflects actual backend.
+    cacheBackendStatus.set(0);
+    logger.info('[cache] Operating in pure in-memory cache mode', {
+      backend: 'memory',
+      cacheBackend: 'memory',
+    });
+  }
+
   await getRedisClient();
   await setupPubSub();
 }
