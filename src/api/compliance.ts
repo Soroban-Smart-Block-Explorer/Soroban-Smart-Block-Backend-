@@ -3,8 +3,12 @@ import { z } from 'zod';
 import { asyncHandler } from '../middleware/asyncHandler';
 import { prismaRead } from '../db';
 import * as compliance from '../services/compliance';
+import { sensitiveReadLog } from '../middleware/sensitiveReadLog';
 
 export const complianceRouter = Router();
+
+// Audit every GET on the compliance router — these are sensitive screening reads (#890)
+complianceRouter.use(sensitiveReadLog('compliance_read', (req) => req.path));
 
 // ── GET / ─────────────────────────────────────────────────────────────────────
 

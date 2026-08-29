@@ -1586,6 +1586,8 @@ model DevApiKey {
   expiresAt DateTime? @map("expires_at")
   lastUsedAt DateTime? @map("last_used_at")
   status String @map("status") @default("active")
+  /// ID of the key that was rotated to produce this key, for audit-trail chaining (#888)
+  rotatedFromKeyId String? @map("rotated_from_key_id")
   createdAt DateTime @map("created_at") @default(now())
   updatedAt DateTime @map("updated_at") @updatedAt
 
@@ -1597,6 +1599,7 @@ model DevApiKey {
   @@index([keyHash])
   @@index([status])
   @@index([tier])
+  @@index([expiresAt])
   @@map("_dev_api_keies")
 }
 
@@ -2323,6 +2326,26 @@ model AuditLog {
   reason String? @map("reason")
   createdAt DateTime @map("created_at") @default(now())
   @@map("_audit_logs")
+}
+
+/// Audit trail for sensitive read-only operations (compliance screens, freeze queries,
+/// admin error views, webhook secret views). Intentionally never pruned. (#890)
+model SensitiveReadAudit {
+  id        String   @id @default(cuid()) @map("id")
+  actor     String   @map("actor")          // userId, apiKeyId, or "admin"
+  ip        String   @map("ip")
+  endpoint  String   @map("endpoint")
+  method    String   @map("method")         // always GET for reads
+  target    String   @map("target")         // resource identifier queried (address, id, etc.)
+  requestId String?  @map("request_id")
+  userAgent String?  @map("user_agent")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@index([actor])
+  @@index([endpoint])
+  @@index([target])
+  @@index([createdAt(sort: Desc)])
+  @@map("_sensitive_read_audits")
 }
 
 model BackfillRequest {

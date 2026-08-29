@@ -23,6 +23,7 @@
  * `src/ws/privacyBroadcaster.ts`.
  */
 
+import crypto from 'crypto';
 import WebSocket, { WebSocketServer } from 'ws';
 import { IncomingMessage, Server } from 'http';
 import { prismaWrite as prisma } from '../db';
@@ -78,11 +79,26 @@ function getConnectionCountForIp(ip: string): number {
 }
 
 async function validateApiKey(key: string): Promise<boolean> {
+  // Short-circuit for the static WS_API_KEY (service-to-service token)
   if (WS_API_KEY && key === WS_API_KEY) return true;
 
   try {
-    const record = await prisma.apiKey.findUnique({ where: { key } });
-    return !!record?.active;
+    // Use the DevApiKey table (same as the REST API path) so that expiry,
+    // revocation, and status checks are all applied consistently. (#888)
+    const record = await prisma.devApiKey.findFirst({
+      where: {
+        keyHash: crypto.createHash('sha256').update(key).digest('hex'),
+        status: 'active',
+      },
+      select: { id: true, expiresAt: true, revokedAt: true },
+    });
+
+    if (!record) return false;
+    // Reject if the key has been revoked or has passed its expiry date
+    if (record.revokedAt) return false;
+    if (record.expiresAt && record.expiresAt <= new Date()) return false;
+
+    return true;
   } catch {
     return false;
   }
