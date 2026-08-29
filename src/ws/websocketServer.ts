@@ -26,6 +26,7 @@
 import crypto from 'crypto';
 import WebSocket, { WebSocketServer } from 'ws';
 import { IncomingMessage, Server } from 'http';
+import crypto from 'crypto';
 import { prismaWrite as prisma } from '../db';
 import { eventBus, EventNames } from '../events/eventBus';
 import { ChannelManager } from '../feed/channelManager';

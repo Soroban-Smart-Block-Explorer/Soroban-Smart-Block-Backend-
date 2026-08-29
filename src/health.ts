@@ -6,6 +6,8 @@ import { getConnectedPeerCount, isP2pEnabled } from './p2p';
 import { measureReplicaLag } from './db/replicaGateway';
 import { getLatestLedger } from './indexer/rpc';
 import { getLastIndexedLedger } from './indexer/indexer';
+import { getStalenessStatus, isFeeAggregationStale } from './indexer/fee-aggregator';
+import { getGasAnalyticsStalenessStatus, isGasAnalyticsStale } from './indexer/gasAnalyticsEngine';
 import { config } from './config';
 
 /**
@@ -73,6 +75,10 @@ export interface ReadinessResponse {
   timestamp: string;
   dependencies: Record<string, boolean>;
   blockers?: string[];
+  analytics?: {
+    feeAggregation: ReturnType<typeof getStalenessStatus>;
+    gasAnalytics: ReturnType<typeof getGasAnalyticsStalenessStatus>;
+  };
 }
 
 /**
@@ -341,16 +347,34 @@ export function getReadinessStatus(): ReadinessResponse {
   const dependencies = getReadinessState();
   const ready = Object.values(dependencies).every(Boolean);
 
-  const blockers = ready
-    ? undefined
+  const blockers: string[] = ready
+    ? []
     : Object.entries(dependencies)
         .filter(([, status]) => !status)
         .map(([name]) => name);
 
+  // Issue #879: surface staleness of analytics aggregation jobs so operators
+  // can detect frozen dashboards before users do.
+  const feeAggregation = getStalenessStatus();
+  const gasAnalytics = getGasAnalyticsStalenessStatus();
+
+  if (isFeeAggregationStale()) {
+    blockers.push('fee_aggregation_stale');
+  }
+  if (isGasAnalyticsStale()) {
+    blockers.push('gas_analytics_stale');
+  }
+
+  const overallReady = ready && !isFeeAggregationStale() && !isGasAnalyticsStale();
+
   return {
-    status: ready ? 'ready' : 'not_ready',
+    status: overallReady ? 'ready' : 'not_ready',
     timestamp: new Date().toISOString(),
     dependencies,
-    ...(blockers && blockers.length > 0 && { blockers }),
+    ...(blockers.length > 0 && { blockers }),
+    analytics: {
+      feeAggregation,
+      gasAnalytics,
+    },
   };
 }
