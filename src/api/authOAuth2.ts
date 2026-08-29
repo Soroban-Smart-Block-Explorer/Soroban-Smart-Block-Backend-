@@ -5,8 +5,10 @@ import { requireAuth } from '../auth/middleware';
 import { issueTokens, generateSessionId, REFRESH_TOKEN_TTL } from '../auth/tokens';
 import { asyncHandler } from '../middleware/asyncHandler';
 import { uuidv7 } from '../utils/uuidv7';
+import { authRateLimit, checkAccountLockout, recordAccountFailure, clearAccountLockout } from '../auth/bruteForce';
 
 export const authOAuth2Router = Router();
+authOAuth2Router.use(authRateLimit);
 
 // App registration
 authOAuth2Router.post(
@@ -116,15 +118,31 @@ authOAuth2Router.post(
     if (grant_type !== 'authorization_code')
       return res.status(400).json({ error: 'unsupported_grant_type' });
 
+    if (client_id) {
+      const lock = await checkAccountLockout(client_id);
+      if (lock.isLocked) {
+        res.setHeader('Retry-After', String(lock.retryAfterSec));
+        return res.status(429).json({ error: 'Client temporarily locked due to failed authentication attempts' });
+      }
+    }
+
     const app = await prisma.oAuthApp.findFirst({
       where: { clientId: client_id, isActive: true },
     });
-    if (!app) return res.status(401).json({ error: 'invalid_client' });
+    if (!app) {
+      if (client_id) await recordAccountFailure(client_id, req.ip);
+      return res.status(401).json({ error: 'invalid_client' });
+    }
 
     const secretHash = createHash('sha256')
       .update(client_secret ?? '')
       .digest('hex');
-    if (secretHash !== app.clientSecret) return res.status(401).json({ error: 'invalid_client' });
+    if (secretHash !== app.clientSecret) {
+      await recordAccountFailure(client_id, req.ip);
+      return res.status(401).json({ error: 'invalid_client' });
+    }
+
+    await clearAccountLockout(client_id);
 
     const authCode = await prisma.oAuthCode.findFirst({
       where: { code, clientId: client_id, used: false },

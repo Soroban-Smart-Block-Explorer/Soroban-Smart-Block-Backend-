@@ -79,15 +79,20 @@ import { requireApiKey, requireKeyTier } from '../middleware/apiKeyAuth';
 import { adminRateLimit, adminRateLimitsOverrideRateLimit } from '../middleware/adminRateLimit';
 import { compilerRouter } from './compiler-router';
 import { sandboxRouter } from './sandbox';
+import { adminAuth } from '../middleware/adminAuth';
 
 // ── MEV / Sandwich Detection (#290) ──────────────────────────────────────────
 
-// ── Freeze Management ─────────────────────────────────────────────────────────
+// ── Freeze Management (#834) ──────────────────────────────────────────────────
+import { freezeRouter } from './freeze';
 
 // ── Predictive Analytics ──────────────────────────────────────────────────────
 import { fraudRouter } from './fraud';
 
 export const router = Router();
+
+// ── Freeze Management ─────────────────────────────────────────────────────────
+router.use('/freeze', adminAuth, freezeRouter);
 
 // ── Core Stellar / Soroban ────────────────────────────────────────────────────
 router.use('/i18n', i18nRouter);
@@ -262,11 +267,15 @@ router.use('/factory-tracker', factoryTrackerRouter);
 router.use('/upgrade-trace', upgradeTraceRouter);
 
 // ── Auth Extension Routers (#845) ──────────────────────────────────────────────
-// Multi-sig auth, profile management, security settings, and auth webhooks.
+// Core auth, OAuth2, multi-sig auth, profile management, security settings, and auth webhooks.
+import { authRouter } from './auth';
+import { authOAuth2Router } from './authOAuth2';
 import { authMultisigRouter } from './authMultisig';
 import { authProfileRouter } from './authProfile';
 import { authSecurityRouter } from './authSecurity';
 import { authWebhooksRouter } from './authWebhooks';
+router.use('/auth', authRouter);
+router.use('/auth/oauth2', authOAuth2Router);
 router.use('/auth/multisig', authMultisigRouter);
 router.use('/auth/profile', authProfileRouter);
 router.use('/auth/security', authSecurityRouter);
