@@ -21,7 +21,7 @@
 import { Router, Request, Response } from 'express';
 import { z } from 'zod';
 import { prismaRead } from '../db';
-import { cacheGet, cacheSet } from '../cache';
+import { cacheGet, cacheSet, buildCacheKey } from '../cache';
 import { validateAddressParam } from '../middleware/sanitize';
 import {
   anchorCertificate,
@@ -231,7 +231,10 @@ contractAnchorRouter.get(
   asyncHandler(async (req: Request, res: Response) => {
     try {
       const { address } = req.params;
-      const cacheKey = `anchor:proof:${address}:${req.params.version}`;
+      // buildCacheKey escapes each segment independently (#894) so a
+      // ':'-bearing version string can't be mistaken for part of a
+      // different (address, version) pair's key.
+      const cacheKey = buildCacheKey('anchor:proof', address, req.params.version);
 
       const cached = await cacheGet(cacheKey);
       if (cached) return res.json(cached);

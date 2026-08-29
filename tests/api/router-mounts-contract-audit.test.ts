@@ -37,7 +37,11 @@ vi.mock('../../src/cache', () => ({
 }));
 
 vi.mock('../../src/middleware/sanitize', () => ({
-  validateAddressParam: (req: any, res: any, next: any) => next(),
+  // validateAddressParam is a factory — it takes a param name and returns
+  // the actual middleware — so the mock must match that shape or invoking
+  // it (e.g. `validateAddressParam('address')`) hands 'address' to the mock
+  // as `req` and calls a nonexistent `next`.
+  validateAddressParam: () => (req: any, res: any, next: any) => next(),
 }));
 
 vi.mock('../../src/lib/audit-pdf-report', () => ({
@@ -67,6 +71,8 @@ vi.mock('../../src/logger', () => ({
 // ── Imports (must come after vi.mock) ────────────────────────────────────────
 
 import { contractAuditRouter } from '../../src/api/contract-audit';
+import { loadAuditReportData } from '../../src/lib/audit-pdf-loader';
+import { generateAuditPdf } from '../../src/lib/audit-pdf-report';
 
 // ── App factory ──────────────────────────────────────────────────────────────
 
@@ -143,6 +149,16 @@ describe('Contract-audit routers mount (#848)', () => {
   });
 
   it('mounts /contracts/:address/audit/pdf — PDF report generation', async () => {
+    // The handler legitimately returns 404 when loadAuditReportData resolves
+    // falsy (no published certificate) — indistinguishable, at the HTTP
+    // status level, from an unmounted route. Give it data so this test
+    // verifies mounting, not that particular business-logic branch.
+    vi.mocked(loadAuditReportData).mockResolvedValue({
+      version: 1,
+      certificateHash: 'deadbeef',
+    } as any);
+    vi.mocked(generateAuditPdf).mockReturnValue(Buffer.from('pdf'));
+
     const res = await request(makeContractAuditApp()).get(
       '/contracts/CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF/audit/pdf',
     );

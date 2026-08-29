@@ -4,6 +4,7 @@ import { NextFunction, Request, Response } from 'express';
 import { config } from '../config';
 import { prismaRead } from '../db';
 import { logger } from '../logger';
+import { buildCacheKey } from '../cache';
 import { TIER_CONFIG } from '../auth/rbac';
 import {
   checkTokenBucket,
@@ -158,11 +159,16 @@ function applyAdaptiveThrottle(
 function getRequestBucketKey(req: Request, tier: TierName, userIdentifier?: string): string {
   const endpoint = req.path || req.originalUrl || '/';
   const keySource = userIdentifier ?? req.ip ?? 'unknown';
-  return `${tier}:${keySource}:${endpoint}`;
+  // keySource (an API-key identifier or client IP/header value) and endpoint
+  // are both attacker-influenced; buildCacheKey escapes each segment
+  // independently (#894) so one client can't forge a bucket key that
+  // collides with a different client's or a different endpoint's bucket.
+  return buildCacheKey(tier, keySource, endpoint);
 }
 
 async function getUserOverride(identifier: string, endpoint: string): Promise<TierConfig | null> {
-  const cacheKey = `override:${identifier}:${endpoint}`;
+  // See getRequestBucketKey above — same segment-collision concern (#894).
+  const cacheKey = buildCacheKey('override', identifier, endpoint);
   const cached = overrideCache.get(cacheKey);
   if (cached && cached.expiresAt > Date.now()) return cached.config;
 

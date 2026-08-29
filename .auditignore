@@ -1,0 +1,35 @@
+{
+  "//": "Tracked, dated exceptions for `npm audit --audit-level=high` (#897). Every entry here must name the exact package, cite the advisory, explain why it cannot be fixed by a normal dependency bump, and carry a reviewBy date. scripts/audit-check.js fails the build on ANY high/critical finding whose package is not listed here, and fails outright if a listed exception's reviewBy date has passed — so this file cannot be used to silently suppress a new vulnerability, only to document one that is already understood and being tracked. See docs/audit-exceptions-tracking.md.",
+  "exceptions": [
+    {
+      "package": "@libp2p/kad-dht",
+      "advisories": ["GHSA-32mq-hpph-xfvr"],
+      "reason": "Unvalidated PUT_VALUE records allow unbounded disk exhaustion on DHT server nodes. The fix requires @libp2p/kad-dht@16.4.4, which depends on @libp2p/interface@^3.3.0 — a major bump that every other @libp2p/*/@chainsafe/libp2p-* package in this project (10+ packages, all pinned to the v2 interface via the top-level `overrides` field) would also need to move to in lockstep. That is a dedicated P2P-stack migration, not a dependency patch; tracked separately, not in scope for this CI/security-hygiene fix. Mitigating factor: P2P is opt-in (P2P_ENABLED) and DHT records are bounded by existing storage quotas at the application layer.",
+      "reviewBy": "2026-11-30"
+    },
+    {
+      "package": "vitest",
+      "advisories": ["GHSA-5xrq-8626-4rwp"],
+      "reason": "Arbitrary file read/execute when the Vitest UI server is listening. The fix requires vitest@4.1.11, a major version bump from the currently pinned 1.x line with breaking config/reporter/coverage changes across the whole test toolchain. Mitigating factor: the Vitest UI server (`vitest --ui`, the vulnerable surface) is a local-only developer tool, never started in CI or any deployed environment (`test`/`test:full` both use `vitest run`, non-interactive). Tracked for a dedicated vitest v4 migration.",
+      "reviewBy": "2026-11-30"
+    },
+    {
+      "package": "@vitest/coverage-v8",
+      "advisories": ["GHSA-5xrq-8626-4rwp"],
+      "reason": "Transitively vulnerable via vitest (see the `vitest` entry above) — same fix (vitest@4.1.11), same tracked migration.",
+      "reviewBy": "2026-11-30"
+    },
+    {
+      "package": "@vitest/ui",
+      "advisories": ["GHSA-5xrq-8626-4rwp"],
+      "reason": "The package providing the vulnerable UI server itself. Only invoked locally via `npm run test:ui`, never in CI or production. Same fix (vitest@4.1.11), same tracked migration.",
+      "reviewBy": "2026-11-30"
+    },
+    {
+      "package": "vite",
+      "advisories": ["GHSA-4w7w-66w2-5vf9", "GHSA-v6wh-96g9-6wx3", "GHSA-fx2h-pf6j-xcff"],
+      "reason": "Transitive dependency of vitest@1.x (see the `vitest` entry above). Path-traversal/UNC-handling findings in Vite's dev server, which this project never runs (vite is used here only as vitest's internal test transform, not as an application dev server). Resolved by the same vitest@4.1.11 migration.",
+      "reviewBy": "2026-11-30"
+    }
+  ]
+}

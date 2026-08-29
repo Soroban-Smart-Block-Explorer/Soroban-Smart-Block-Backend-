@@ -114,8 +114,13 @@ jobs:
             exit 1
           fi
 
-      - name: Type-check (src)
-        run: npm run build:strict || echo 'Type errors found (pre-existing)'
+      # Type-error budget ratchet (#896) — fails CI when `tsc --noEmit`
+      # reports more errors than the checked-in budget, i.e. when a *new*
+      # type error is introduced. The large pre-existing backlog is paid
+      # down incrementally rather than blocking every PR; see
+      # scripts/typecheck-budget.ts.
+      - name: Type-check (src, budget 1374)
+        run: npm run typecheck:budget:ci
 
       - name: Type-check (scripts)
         run: npm run typecheck:scripts
@@ -181,8 +186,15 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Run tests
-        run: npm test
+      # Test-suite coverage guard (#895) — fails CI if the number of test
+      # files vitest would collect drops below the tracked floor, or if
+      # `test:full` stops being a plain `vitest run` (i.e. a hardcoded file
+      # subset sneaks back in). See scripts/verify-test-coverage.ts.
+      - name: Verify no test files are silently omitted
+        run: npm run test:guard
+
+      - name: Run full test suite
+        run: npm run test:full
         env:
           DATABASE_URL: postgresql://test:test@localhost:5432/test
           TESTNET_DATABASE_URL: postgresql://test:test@localhost:5432/test
@@ -243,8 +255,12 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      # npm audit with tracked, expiring exceptions (#897) — fails the build
+      # on any high/critical finding not explicitly documented in
+      # .auditignore. Matches the Dockerfile builder stage's policy. See
+      # scripts/audit-check.js and docs/audit-exceptions-tracking.md.
       - name: Run npm audit
-        run: npm audit --audit-level=high || true
+        run: npm run audit:ci
 
       # CodeQL runs inside ci.yml's `security` job (not a dedicated workflow)
       # so it matches the repository's code-scanning default-setup configuration

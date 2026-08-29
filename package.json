@@ -57,7 +57,11 @@
     "validate:prisma": "ts-node --transpile-only scripts/validate-prisma-references.ts",
     "migrate:impact": "ts-node --transpile-only scripts/validate-prisma-references.ts --diff",
     "typecheck:scripts": "tsc -p tsconfig.scripts.json --noEmit",
-    "test:full": "vitest run"
+    "test:full": "vitest run",
+    "test:guard": "ts-node scripts/verify-test-coverage.ts",
+    "audit:ci": "node scripts/audit-check.js",
+    "typecheck:budget": "ts-node scripts/typecheck-budget.ts",
+    "typecheck:budget:ci": "ts-node scripts/typecheck-budget.ts --max-errors 1374"
   },
   "overrides": {
     "@libp2p/interface": "2.11.0"
@@ -66,7 +70,7 @@
     "seed": "ts-node prisma/seed.ts"
   },
   "dependencies": {
-    "@aws-sdk/client-s3": "3.600.0",
+    "@aws-sdk/client-s3": "3.1121.0",
     "@chainsafe/libp2p-gossipsub": "14.1.2",
     "@chainsafe/libp2p-noise": "16.1.5",
     "@chainsafe/libp2p-yamux": "7.0.4",
