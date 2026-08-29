@@ -65,15 +65,32 @@ x-redis-resources: &redis-resources
     cpus: '0.05'
     memory: 32M
 
+# ─── Migration init-container defaults ─────────────────────────────────────────
+# All migrate-* services share this resource profile and restart policy.
+# They run once (restart: no) so compose tracks their exit code and
+# dependent application services only start after they succeed.
+x-migrate-resources: &migrate-resources
+  limits:
+    cpus: '0.25'
+    memory: 128M
+  reservations:
+    cpus: '0.05'
+    memory: 32M
+
 services:
 
   # ═══════════════════════════════════════════════════════════════════════════
   # REDIS  (optional – enables shared rate-limit store across API instances)
   # Uncomment this service and set REDIS_URL=redis://redis:6379 in each API
   # service's environment block to activate the Redis rate-limit store.
+  #
+  # Pinned to redis:7.2.4-alpine (#903).  Upgrade cadence: patch releases
+  # (7.2.x) are tracked automatically by Dependabot (docker ecosystem).
+  # Minor/major bumps require a manual review of the Redis 7→8 migration guide.
   # ═══════════════════════════════════════════════════════════════════════════
   redis:
-    image: redis:7-alpine
+    # renovate: datasource=docker depName=redis
+    image: redis:7.2.4-alpine
     restart: unless-stopped
     # No host-port mapping — Redis is reachable only on the internal Compose network.
     # Set REDIS_PASSWORD in the host environment to enable requirepass authentication.
@@ -106,8 +123,14 @@ services:
   # ═══════════════════════════════════════════════════════════════════════════
   # TESTNET
   # ═══════════════════════════════════════════════════════════════════════════
+
+  # db-testnet uses apache/age (PostgreSQL + graph extension).
+  # Pinned to release_PG16_1.6.0 (#903).  Upgrade cadence: patch/minor releases
+  # tracked by Dependabot (docker ecosystem).  Major version bumps (PG16→PG17)
+  # require a data migration plan and manual review.
   db-testnet:
-    image: apache/age:latest
+    # renovate: datasource=docker depName=apache/age
+    image: apache/age:release_PG16_1.6.0
     restart: unless-stopped
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-postgres}
@@ -119,6 +142,25 @@ services:
     deploy:
       resources: *db-resources
     logging: *logging
+
+  # ─── Testnet migration init-container (#901) ───────────────────────────────
+  # Runs `prisma migrate deploy` once against db-testnet and exits.
+  # api-testnet and indexer-testnet depend on this service completing
+  # successfully (condition: service_completed_successfully) before they start,
+  # eliminating the race condition that arose when every replica attempted the
+  # migration concurrently from its own startup command.
+  migrate-testnet:
+    <<: *app-build
+    restart: 'no'
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}@db-testnet:5432/soroban_testnet
+    depends_on:
+      db-testnet:
+        condition: service_healthy
+    deploy:
+      resources: *migrate-resources
+    logging: *logging
+    command: sh scripts/migrate.sh
 
   api-testnet:
     <<: [*app-build, *security]
@@ -138,6 +180,8 @@ services:
     depends_on:
       db-testnet:
         condition: service_healthy
+      migrate-testnet:
+        condition: service_completed_successfully
     healthcheck:
       test: ['CMD-SHELL', 'wget -qO- http://localhost:3000/health || exit 1']
       interval: 10s
@@ -147,7 +191,7 @@ services:
     deploy:
       resources: *api-resources
     logging: *logging
-    command: sh -c "npx prisma migrate deploy && node dist/index.js"
+    command: node dist/index.js
 
   indexer-testnet:
     <<: [*app-build, *security]
@@ -164,6 +208,8 @@ services:
     depends_on:
       db-testnet:
         condition: service_healthy
+      migrate-testnet:
+        condition: service_completed_successfully
       api-testnet:
         condition: service_healthy
     deploy:
@@ -175,7 +221,8 @@ services:
   # MAINNET
   # ═══════════════════════════════════════════════════════════════════════════
   db-mainnet:
-    image: apache/age:latest
+    # renovate: datasource=docker depName=apache/age
+    image: apache/age:release_PG16_1.6.0
     restart: unless-stopped
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-postgres}
@@ -187,6 +234,21 @@ services:
     deploy:
       resources: *db-resources
     logging: *logging
+    profiles: [mainnet]
+
+  # ─── Mainnet migration init-container (#901) ───────────────────────────────
+  migrate-mainnet:
+    <<: *app-build
+    restart: 'no'
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}@db-mainnet:5432/soroban_mainnet
+    depends_on:
+      db-mainnet:
+        condition: service_healthy
+    deploy:
+      resources: *migrate-resources
+    logging: *logging
+    command: sh scripts/migrate.sh
     profiles: [mainnet]
 
   api-mainnet:
@@ -207,6 +269,8 @@ services:
     depends_on:
       db-mainnet:
         condition: service_healthy
+      migrate-mainnet:
+        condition: service_completed_successfully
     healthcheck:
       test: ['CMD-SHELL', 'wget -qO- http://localhost:3001/health || exit 1']
       interval: 10s
@@ -216,7 +280,7 @@ services:
     deploy:
       resources: *api-resources
     logging: *logging
-    command: sh -c "npx prisma migrate deploy && node dist/index.js"
+    command: node dist/index.js
     profiles: [mainnet]
 
   indexer-mainnet:
@@ -234,6 +298,8 @@ services:
     depends_on:
       db-mainnet:
         condition: service_healthy
+      migrate-mainnet:
+        condition: service_completed_successfully
       api-mainnet:
         condition: service_healthy
     deploy:
@@ -246,7 +312,8 @@ services:
   # DEVNET  (local Stellar Quickstart)
   # ═══════════════════════════════════════════════════════════════════════════
   db-devnet:
-    image: apache/age:latest
+    # renovate: datasource=docker depName=apache/age
+    image: apache/age:release_PG16_1.6.0
     restart: unless-stopped
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-postgres}
@@ -258,6 +325,21 @@ services:
     deploy:
       resources: *db-resources
     logging: *logging
+    profiles: [devnet]
+
+  # ─── Devnet migration init-container (#901) ────────────────────────────────
+  migrate-devnet:
+    <<: *app-build
+    restart: 'no'
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}@db-devnet:5432/soroban_devnet
+    depends_on:
+      db-devnet:
+        condition: service_healthy
+    deploy:
+      resources: *migrate-resources
+    logging: *logging
+    command: sh scripts/migrate.sh
     profiles: [devnet]
 
   api-devnet:
@@ -278,6 +360,8 @@ services:
     depends_on:
       db-devnet:
         condition: service_healthy
+      migrate-devnet:
+        condition: service_completed_successfully
     healthcheck:
       test: ['CMD-SHELL', 'wget -qO- http://localhost:3002/health || exit 1']
       interval: 10s
@@ -287,7 +371,7 @@ services:
     deploy:
       resources: *api-resources
     logging: *logging
-    command: sh -c "npx prisma migrate deploy && node dist/index.js"
+    command: node dist/index.js
     profiles: [devnet]
 
   indexer-devnet:
@@ -305,6 +389,8 @@ services:
     depends_on:
       db-devnet:
         condition: service_healthy
+      migrate-devnet:
+        condition: service_completed_successfully
       api-devnet:
         condition: service_healthy
     deploy:
@@ -448,9 +534,13 @@ services:
     logging: *logging
     profiles: [analytics]
 
-  # Kafka UI — browse topics and Debezium connector status
+  # Kafka UI — browse topics and Debezium connector status.
+  # Pinned to provectuslabs/kafka-ui:v0.7.2 (#903).  Upgrade cadence: minor
+  # releases tracked by Dependabot (docker ecosystem).  Review the Kafka UI
+  # changelog before accepting major version bumps.
   kafka-ui:
-    image: provectuslabs/kafka-ui:latest
+    # renovate: datasource=docker depName=provectuslabs/kafka-ui
+    image: provectuslabs/kafka-ui:v0.7.2
     restart: unless-stopped
     depends_on:
       kafka:
@@ -501,6 +591,21 @@ services:
     logging: *logging
     profiles: [p2p]
 
+  # ─── P2P seed migration init-container (#901) ──────────────────────────────
+  migrate-testnet-p2p-seed:
+    <<: *app-build
+    restart: 'no'
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}@db-testnet-p2p-seed:5432/soroban_testnet_p2p_seed
+    depends_on:
+      db-testnet-p2p-seed:
+        condition: service_healthy
+    deploy:
+      resources: *migrate-resources
+    logging: *logging
+    command: sh scripts/migrate.sh
+    profiles: [p2p]
+
   # Each p2p-profile node runs the COMBINED api+indexer process
   # (dist/index.js, same as api-testnet/mainnet) rather than the headless
   # indexer-only entrypoint, so every node exposes /health, /p2p/status, and
@@ -531,6 +636,8 @@ services:
     depends_on:
       db-testnet-p2p-seed:
         condition: service_healthy
+      migrate-testnet-p2p-seed:
+        condition: service_completed_successfully
     healthcheck:
       test: ['CMD-SHELL', 'wget -qO- http://localhost:3010/health || exit 1']
       interval: 10s
@@ -540,7 +647,7 @@ services:
     deploy:
       resources: *indexer-resources
     logging: *logging
-    command: sh -c "npx prisma migrate deploy && node dist/index.js"
+    command: node dist/index.js
     profiles: [p2p]
 
   db-testnet-p2p-peer1:
@@ -556,6 +663,21 @@ services:
     deploy:
       resources: *db-resources
     logging: *logging
+    profiles: [p2p]
+
+  # ─── P2P peer1 migration init-container (#901) ─────────────────────────────
+  migrate-testnet-p2p-peer1:
+    <<: *app-build
+    restart: 'no'
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}@db-testnet-p2p-peer1:5432/soroban_testnet_p2p_peer1
+    depends_on:
+      db-testnet-p2p-peer1:
+        condition: service_healthy
+    deploy:
+      resources: *migrate-resources
+    logging: *logging
+    command: sh scripts/migrate.sh
     profiles: [p2p]
 
   indexer-testnet-p2p-peer1:
@@ -581,6 +703,8 @@ services:
     depends_on:
       db-testnet-p2p-peer1:
         condition: service_healthy
+      migrate-testnet-p2p-peer1:
+        condition: service_completed_successfully
       indexer-testnet-p2p-seed:
         condition: service_started
     healthcheck:
@@ -592,7 +716,7 @@ services:
     deploy:
       resources: *indexer-resources
     logging: *logging
-    command: sh -c "npx prisma migrate deploy && node dist/index.js"
+    command: node dist/index.js
     profiles: [p2p]
 
   db-testnet-p2p-peer2:
@@ -608,6 +732,21 @@ services:
     deploy:
       resources: *db-resources
     logging: *logging
+    profiles: [p2p]
+
+  # ─── P2P peer2 migration init-container (#901) ─────────────────────────────
+  migrate-testnet-p2p-peer2:
+    <<: *app-build
+    restart: 'no'
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}@db-testnet-p2p-peer2:5432/soroban_testnet_p2p_peer2
+    depends_on:
+      db-testnet-p2p-peer2:
+        condition: service_healthy
+    deploy:
+      resources: *migrate-resources
+    logging: *logging
+    command: sh scripts/migrate.sh
     profiles: [p2p]
 
   indexer-testnet-p2p-peer2:
@@ -633,6 +772,8 @@ services:
     depends_on:
       db-testnet-p2p-peer2:
         condition: service_healthy
+      migrate-testnet-p2p-peer2:
+        condition: service_completed_successfully
       indexer-testnet-p2p-seed:
         condition: service_started
     healthcheck:
@@ -644,7 +785,7 @@ services:
     deploy:
       resources: *indexer-resources
     logging: *logging
-    command: sh -c "npx prisma migrate deploy && node dist/index.js"
+    command: node dist/index.js
     profiles: [p2p]
 
 volumes:

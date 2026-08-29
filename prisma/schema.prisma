@@ -455,6 +455,35 @@ model LedgerGap {
   @@map("_ledger_gaps")
 }
 
+/**
+ * Persists per-batch progress for parallel catch-up workers (issue #881).
+ * Each row records one [rangeStart, rangeEnd] chunk assigned to a worker.
+ * On crash-restart the indexer resumes from `lastCommittedLedger` rather
+ * than re-fetching from `rangeStart`.
+ *
+ * Composite unique key: (rangeStart, rangeEnd) so concurrent workers
+ * targeting the same chunk upsert rather than create duplicate rows.
+ */
+model CatchUpCheckpoint {
+  id                  String   @map("id") @id @default(cuid())
+  /// First ledger of the worker's assigned chunk
+  rangeStart          Int      @map("range_start")
+  /// Last ledger of the worker's assigned chunk
+  rangeEnd            Int      @map("range_end")
+  /// Last ledger successfully committed within this chunk.
+  /// NULL means the chunk has not started yet.
+  lastCommittedLedger Int?     @map("last_committed_ledger")
+  /// Whether the entire chunk was processed without error
+  completed           Boolean  @map("completed") @default(false)
+  /// ISO timestamp of the last upsert
+  updatedAt           DateTime @map("updated_at") @updatedAt
+  createdAt           DateTime @map("created_at") @default(now())
+
+  @@unique([rangeStart, rangeEnd])
+  @@index([completed])
+  @@map("_catch_up_checkpoints")
+}
+
 model SacMapping {
   id String @map("id") @id @default(cuid())
   assetCode String @map("asset_code")
@@ -591,9 +620,11 @@ model DeadLetterItem {
 }
 
 model ApiKey {
-  id String @map("id") @id @default(cuid())
-  key String @map("key") @unique
-  active Boolean @map("active") @default(true)
+  id        String   @map("id") @id @default(cuid())
+  /// SHA-256 hex digest of the raw API key. The plaintext key is NEVER stored.
+  /// Replaces the old plaintext `key` column (issue #882).
+  keyHash   String   @map("key_hash") @unique
+  active    Boolean  @map("active") @default(true)
   createdAt DateTime @map("created_at") @default(now())
   lastUsedAt DateTime? @map("last_used_at")
   @@map("_api_keies")
@@ -1586,6 +1617,8 @@ model DevApiKey {
   expiresAt DateTime? @map("expires_at")
   lastUsedAt DateTime? @map("last_used_at")
   status String @map("status") @default("active")
+  /// ID of the key that was rotated to produce this key, for audit-trail chaining (#888)
+  rotatedFromKeyId String? @map("rotated_from_key_id")
   createdAt DateTime @map("created_at") @default(now())
   updatedAt DateTime @map("updated_at") @updatedAt
 
@@ -1597,6 +1630,7 @@ model DevApiKey {
   @@index([keyHash])
   @@index([status])
   @@index([tier])
+  @@index([expiresAt])
   @@map("_dev_api_keies")
 }
 
@@ -2323,6 +2357,26 @@ model AuditLog {
   reason String? @map("reason")
   createdAt DateTime @map("created_at") @default(now())
   @@map("_audit_logs")
+}
+
+/// Audit trail for sensitive read-only operations (compliance screens, freeze queries,
+/// admin error views, webhook secret views). Intentionally never pruned. (#890)
+model SensitiveReadAudit {
+  id        String   @id @default(cuid()) @map("id")
+  actor     String   @map("actor")          // userId, apiKeyId, or "admin"
+  ip        String   @map("ip")
+  endpoint  String   @map("endpoint")
+  method    String   @map("method")         // always GET for reads
+  target    String   @map("target")         // resource identifier queried (address, id, etc.)
+  requestId String?  @map("request_id")
+  userAgent String?  @map("user_agent")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@index([actor])
+  @@index([endpoint])
+  @@index([target])
+  @@index([createdAt(sort: Desc)])
+  @@map("_sensitive_read_audits")
 }
 
 model BackfillRequest {

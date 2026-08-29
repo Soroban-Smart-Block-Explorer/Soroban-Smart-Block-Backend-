@@ -3,6 +3,7 @@ import { logger } from '../../logger';
 import { computeCompositePrice } from './composite-price';
 import { updateStablecoinMonitoring, autoDetectStablecoin } from './stablecoin-peg';
 import { discoverExternalPrice } from './external-api-source';
+import { scheduler } from '../../scheduler/cron-scheduler';
 
 let isRunning = false;
 let activeInterval: ReturnType<typeof setInterval> | null = null;
@@ -38,8 +39,17 @@ export async function runActivePriceUpdate(): Promise<void> {
       SET "updatedAt" = NOW()
       WHERE "updatedAt" < NOW() - INTERVAL '5 minutes'
     `);
+
+    scheduler.recordHeartbeat('price-updater:active', 'success', {
+      taskName: 'Active Pair Price Update',
+      expectedIntervalMs: ACTIVE_PAIR_INTERVAL_MS,
+    });
   } catch (err) {
     logger.error('[PriceUpdater] Active update error:', { error: err });
+    scheduler.recordHeartbeat('price-updater:active', 'failure', {
+      taskName: 'Active Pair Price Update',
+      expectedIntervalMs: ACTIVE_PAIR_INTERVAL_MS,
+    });
   } finally {
     isRunning = false;
   }
@@ -57,8 +67,17 @@ export async function runSlowPriceUpdate(): Promise<void> {
       const batch = allTokens.slice(i, i + batchSize);
       await Promise.allSettled(batch.map((t) => computeCompositePrice(t.address, t.tokenSymbol)));
     }
+
+    scheduler.recordHeartbeat('price-updater:slow', 'success', {
+      taskName: 'Inactive Pair Price Update',
+      expectedIntervalMs: INACTIVE_PAIR_INTERVAL_MS,
+    });
   } catch (err) {
     logger.error('[PriceUpdater] Slow update error:', { error: err });
+    scheduler.recordHeartbeat('price-updater:slow', 'failure', {
+      taskName: 'Inactive Pair Price Update',
+      expectedIntervalMs: INACTIVE_PAIR_INTERVAL_MS,
+    });
   }
 }
 
@@ -106,8 +125,17 @@ export async function runExternalApiUpdate(): Promise<void> {
         continue;
       }
     }
+
+    scheduler.recordHeartbeat('price-updater:external', 'success', {
+      taskName: 'External API Price Update',
+      expectedIntervalMs: EXTERNAL_API_INTERVAL_MS,
+    });
   } catch (err) {
     logger.error('[PriceUpdater] External API update error:', { error: err });
+    scheduler.recordHeartbeat('price-updater:external', 'failure', {
+      taskName: 'External API Price Update',
+      expectedIntervalMs: EXTERNAL_API_INTERVAL_MS,
+    });
   }
 }
 
@@ -158,8 +186,17 @@ export async function runStablecoinUpdate(): Promise<void> {
         }
       }
     }
+
+    scheduler.recordHeartbeat('price-updater:stablecoin', 'success', {
+      taskName: 'Stablecoin Monitoring Update',
+      expectedIntervalMs: STABLE_MONITOR_INTERVAL_MS,
+    });
   } catch (err) {
     logger.error('[PriceUpdater] Stablecoin update error:', { error: err });
+    scheduler.recordHeartbeat('price-updater:stablecoin', 'failure', {
+      taskName: 'Stablecoin Monitoring Update',
+      expectedIntervalMs: STABLE_MONITOR_INTERVAL_MS,
+    });
   }
 }
 
