@@ -10,6 +10,7 @@ import { prismaRead } from '../../db';
 import { requireAuth, requireRole } from '../../auth/middleware';
 import { logger } from '../../logger';
 import { asyncHandler } from '../../middleware/asyncHandler';
+import { sensitiveReadLog } from '../../middleware/sensitiveReadLog';
 
 export const adminErrorsRouter = Router();
 
@@ -50,6 +51,7 @@ interface DashboardResponse {
  */
 adminErrorsRouter.get(
   '/',
+  sensitiveReadLog('admin_errors_dashboard'),
   asyncHandler(async (req, res) => {
     const windowMinutes = Math.min(parseInt(req.query.windowMinutes as string) || 60, 1440);
     const limit = Math.min(parseInt(req.query.limit as string) || 50, 200);

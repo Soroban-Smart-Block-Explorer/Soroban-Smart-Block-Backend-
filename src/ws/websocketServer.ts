@@ -23,6 +23,7 @@
  * `src/ws/privacyBroadcaster.ts`.
  */
 
+import crypto from 'crypto';
 import WebSocket, { WebSocketServer } from 'ws';
 import { IncomingMessage, Server } from 'http';
 import crypto from 'crypto';
@@ -79,16 +80,26 @@ function getConnectionCountForIp(ip: string): number {
 }
 
 async function validateApiKey(key: string): Promise<boolean> {
+  // Short-circuit for the static WS_API_KEY (service-to-service token)
   if (WS_API_KEY && key === WS_API_KEY) return true;
 
   try {
-    // Issue #882: the ApiKey table now stores SHA-256(key) in key_hash, not
-    // the plaintext key.  Hash the incoming value before querying the DB so we
-    // never compare plaintext against the stored hash and so the raw secret
-    // never touches the DB query string.
-    const keyHash = crypto.createHash('sha256').update(key).digest('hex');
-    const record = await (prisma as any).apiKey.findUnique({ where: { keyHash } });
-    return !!record?.active;
+    // Use the DevApiKey table (same as the REST API path) so that expiry,
+    // revocation, and status checks are all applied consistently. (#888)
+    const record = await prisma.devApiKey.findFirst({
+      where: {
+        keyHash: crypto.createHash('sha256').update(key).digest('hex'),
+        status: 'active',
+      },
+      select: { id: true, expiresAt: true, revokedAt: true },
+    });
+
+    if (!record) return false;
+    // Reject if the key has been revoked or has passed its expiry date
+    if (record.revokedAt) return false;
+    if (record.expiresAt && record.expiresAt <= new Date()) return false;
+
+    return true;
   } catch {
     return false;
   }
