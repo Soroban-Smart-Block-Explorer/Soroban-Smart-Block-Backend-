@@ -11,8 +11,13 @@ WORKDIR /app
 COPY package*.json ./
 # Only schema is needed for prisma generate — migrations/seed are not required
 COPY prisma/schema.prisma ./prisma/schema.prisma
+# audit-check.js + .auditignore are copied ahead of the full source so the
+# audit step below can apply the same tracked, dated exceptions as CI
+# (#897) without needing the rest of the source tree yet.
+COPY scripts/audit-check.js ./scripts/audit-check.js
+COPY .auditignore ./.auditignore
 
-RUN npm ci && npm audit --audit-level=high
+RUN npm ci && node scripts/audit-check.js
 
 COPY . .
 
@@ -52,12 +57,15 @@ RUN apt-get update -qq && apt-get install -y -qq openssl wget ca-certificates > 
 WORKDIR /app
 
 COPY package*.json ./
+# Same tracked audit exceptions as the builder stage (#897) — see above.
+COPY scripts/audit-check.js ./scripts/audit-check.js
+COPY .auditignore ./.auditignore
 
 # Install production deps only.
 # --ignore-scripts prevents the postinstall 'prisma generate' from running
 # (which would fail without the prisma devDep).  The pre-generated client is
 # copied from the builder stage below instead.
-RUN npm ci --omit=dev --ignore-scripts && npm audit --omit=dev --audit-level=high
+RUN npm ci --omit=dev --ignore-scripts && node scripts/audit-check.js --omit=dev
 
 # Copy compiled application output
 COPY --from=builder /app/dist ./dist

@@ -1,4 +1,4 @@
-import { cacheGet, cacheSet } from '../../cache';
+import { cacheGet, cacheSet, buildCacheKey } from '../../cache';
 
 export interface CrossChainPrice {
   chain: string;
@@ -24,7 +24,10 @@ async function fetchChainPrice(
   tokenAddress: string,
   tokenSymbol?: string | null,
 ): Promise<number | null> {
-  const cacheKey = `chain_price:${chain}:${tokenAddress}`;
+  // buildCacheKey escapes each segment independently (#894) to prevent
+  // segment-boundary collisions between different (chain, tokenAddress)
+  // combinations.
+  const cacheKey = buildCacheKey('chain_price', chain, tokenAddress);
   const cached = await cacheGet<number>(cacheKey);
   if (cached) return cached;
 

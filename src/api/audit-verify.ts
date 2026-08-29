@@ -21,7 +21,7 @@ import {
   hashCertificate,
   CertificatePayload,
 } from '../indexer/audit-engine';
-import { cacheGet, cacheSet } from '../cache';
+import { cacheGet, cacheSet, buildCacheKey } from '../cache';
 import { incidentSignatureFailure } from '../lib/incident-dispatcher';
 import { asyncHandler } from '../middleware/asyncHandler';
 
@@ -738,7 +738,10 @@ auditVerifyRouter.get(
       const darkColor = (req.query.dark as string) || '#000000';
       const lightColor = (req.query.light as string) || '#ffffff';
 
-      const cacheKey = `audit:qr:${certificateId}:${size}`;
+      // buildCacheKey escapes each segment independently (#894) to prevent
+      // segment-boundary collisions between different (certificateId, size)
+      // combinations.
+      const cacheKey = buildCacheKey('audit:qr', certificateId, size);
       const cached = await cacheGet<string>(cacheKey);
       if (cached) {
         res.setHeader('Content-Type', 'image/svg+xml');

@@ -1,6 +1,7 @@
 import { config } from './config';
 import type { RedisClientType } from 'redis';
 import { logger } from './logger';
+import { createHash } from 'crypto';
 
 const CACHE_URL = config.cacheUrl ?? 'memory://';
 const CACHE_MODE = config.cacheMode ?? 'standalone'; // 'standalone' or 'sentinel'
@@ -9,6 +10,25 @@ const MAX_CACHE_SIZE = Math.max(1, parseInt(process.env.CACHE_MAX_SIZE ?? '1000'
 const DEFAULT_MEMORY_TTL_SECONDS = Math.max(1, parseInt(process.env.CACHE_MEMORY_TTL ?? '300'));
 const L1_STALE_REFRESH_FACTOR = 0.8;
 const INVALIDATION_CHANNEL = '__cache:invalidate';
+
+// ── Cache-key hardening (#894) ──────────────────────────────────────────────
+// Callers routinely build keys by concatenating user-controlled input
+// directly, e.g. `abi:${address}` or `anchor:proof:${address}:${version}`.
+// Left un-normalized that allows: (a) unbounded key cardinality — an
+// attacker varying case/whitespace, or supplying arbitrarily long free-text
+// (an NLQ query, a JSON-serialized filter object), can multiply cache
+// entries for what should be one logical resource, evicting legitimate
+// entries out of the bounded in-memory LRU or growing the Redis keyspace
+// without limit; and (b) key collisions across logically distinct requests
+// — a dynamic segment containing the ':' delimiter can make two different
+// (segment1, segment2) pairs concatenate to the identical storage key,
+// letting one cached response be served for an unrelated request (cache
+// poisoning). `normalizeKeyInput` is applied to every key that reaches
+// storage; `buildCacheKey` is the safe way to assemble a key from more than
+// one dynamic segment.
+const CACHE_SCHEMA_VERSION = 'v1'; // bump to invalidate every cached entry after a schema change
+const MAX_KEY_LENGTH = 300;
+const MAX_KEY_SEGMENT_LENGTH = 128;
 
 interface MemoryEntry {
   payload: string;
@@ -80,6 +100,60 @@ function computeVersionHash(payload: string): string {
     hash = ((hash << 5) - hash + chr) | 0;
   }
   return (hash >>> 0).toString(36);
+}
+
+function stripControlChars(value: string): string {
+  // eslint-disable-next-line no-control-regex
+  return value.replace(/[\x00-\x1f\x7f]/g, '');
+}
+
+/**
+ * Normalizes any key before it touches the memory store or Redis: trims,
+ * strips control characters, and folds case so equivalent-but-differently-
+ * cased inputs (an address typed in mixed case, say) share one cache entry
+ * instead of silently multiplying. Keys longer than MAX_KEY_LENGTH — a
+ * free-text NLQ query or a JSON-serialized filter object used as a cache
+ * key, for example — are collapsed to a bounded, content-addressed form so
+ * a single caller cannot grow the keyspace without limit.
+ */
+function normalizeKeyInput(rawKey: string): string {
+  const cleaned = stripControlChars(String(rawKey)).trim().toLowerCase();
+  if (cleaned.length <= MAX_KEY_LENGTH) return cleaned;
+  const digest = createHash('sha256').update(cleaned).digest('hex').slice(0, 32);
+  return `${cleaned.slice(0, MAX_KEY_LENGTH - 40)}~h.${digest}`;
+}
+
+/**
+ * Prepares one dynamic segment for use inside a colon-delimited key built by
+ * buildCacheKey(). Percent-encodes '%' and ':' so a segment that itself
+ * contains the ':' delimiter (an unusual — or malicious — address, tx hash,
+ * or query string) can't be mistaken for an extra path segment once joined.
+ * That's what stops, say, buildCacheKey('anchor:proof', 'abc', '1') and
+ * buildCacheKey('anchor:proof', 'abc:1') from colliding on the same storage
+ * key despite carrying different (address, version) pairs. Segments longer
+ * than MAX_KEY_SEGMENT_LENGTH are hashed down for the same
+ * unbounded-cardinality reason as normalizeKeyInput above.
+ */
+function escapeKeySegment(part: string | number): string {
+  const cleaned = stripControlChars(String(part)).trim().toLowerCase();
+  const escaped = cleaned.replace(/%/g, '%25').replace(/:/g, '%3a');
+  if (escaped.length <= MAX_KEY_SEGMENT_LENGTH) return escaped;
+  const digest = createHash('sha256').update(escaped).digest('hex').slice(0, 24);
+  return `h.${digest}`;
+}
+
+/**
+ * Safely builds a namespaced, multi-part cache key from a fixed
+ * (developer-controlled) namespace and one or more dynamic (potentially
+ * user-controlled) parts. Prefer this over manual `${a}:${b}` template
+ * strings whenever a key has more than one dynamic segment — see
+ * escapeKeySegment for why. cacheGet/cacheSet/cacheDelete still apply the
+ * schema-version prefix and final normalization on top; this only prevents
+ * segment collisions at the point the key is assembled.
+ */
+export function buildCacheKey(namespace: string, ...parts: Array<string | number>): string {
+  const ns = stripControlChars(namespace).trim().toLowerCase();
+  return [ns, ...parts.map(escapeKeySegment)].join(':');
 }
 
 function buildExpiry(ttlSeconds: number | null | undefined): number | null {
@@ -275,9 +349,13 @@ async function publishInvalidation(key: string): Promise<void> {
 }
 
 export function redactKey(key: string): string {
-  const separatorIndex = key.indexOf(':');
-  if (separatorIndex === -1) return key;
-  return `${key.slice(0, separatorIndex + 1)}***`;
+  const parts = key.split(':');
+  if (parts.length <= 1) return key;
+  // A leading schema-version segment (e.g. "v1") isn't sensitive and isn't
+  // useful for identifying which cache namespace failed, so skip past it
+  // when present and keep the real namespace segment visible instead.
+  const start = /^v\d+$/i.test(parts[0]) && parts.length > 2 ? 1 : 0;
+  return `${parts.slice(0, start + 1).join(':')}:[redacted]`;
 }
 
 export async function cacheConnect(): Promise<void> {
@@ -300,7 +378,7 @@ export function cacheBackendType(): 'redis' | 'sentinel' | 'memory' {
 }
 
 export async function pingRedis(): Promise<boolean> {
-  if (!USE_REDIS) return true;
+  if (CACHE_URL === '' || CACHE_URL.startsWith('memory://')) return true;
   if (!redisClient || !redisAvailable) return false;
   try {
     const reply = await redisClient.ping();
@@ -355,7 +433,7 @@ function performStaleCleanup(): void {
 }
 
 export async function cacheGet<T>(key: string): Promise<T | null> {
-  const normalizedKey = key;
+  const normalizedKey = `${CACHE_SCHEMA_VERSION}:${normalizeKeyInput(key)}`;
 
   const local = lruGet(normalizedKey);
   if (local) {
@@ -423,7 +501,7 @@ export async function cacheSet<T>(
   value: T,
   ttlSeconds?: number | null,
 ): Promise<void> {
-  const normalizedKey = key;
+  const normalizedKey = `${CACHE_SCHEMA_VERSION}:${normalizeKeyInput(key)}`;
   const payload = JSON.stringify(value);
   const versionHash = computeVersionHash(payload);
   lruSet(normalizedKey, {
@@ -457,7 +535,7 @@ export async function cacheSet<T>(
 }
 
 export async function cacheDelete(key: string): Promise<void> {
-  const normalizedKey = key;
+  const normalizedKey = `${CACHE_SCHEMA_VERSION}:${normalizeKeyInput(key)}`;
   memoryStore.delete(normalizedKey);
   const client = await getRedisClient();
   if (!client) return;
