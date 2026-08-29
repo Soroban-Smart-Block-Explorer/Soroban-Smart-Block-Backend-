@@ -36,6 +36,7 @@ import { rejectUntrustedForwardedHeaders } from './middleware/proxyTrust';
 import { getHealthStatus, getLivenessStatus, getReadinessStatus } from './health';
 import { getP2pStatusSnapshot, resolveLedgerLocation } from './p2p';
 import { getIndexerStatus } from './indexer-state';
+import { logger } from './logger';
 
 export interface AppOptions {
   /** Returns true once graceful shutdown has begun (probes respond 503). */
@@ -95,21 +96,90 @@ export function createApp(options: AppOptions): express.Express {
     }),
   );
 
-  // Build an origin allowlist from CORS_ALLOWED_ORIGINS (comma-separated URLs).
-  // Production requires an explicit list; other envs fall back to '*'.
+  // ── CORS (issue #892) ─────────────────────────────────────────────────────
+  //
+  // Production: requires an explicit CORS_ALLOWED_ORIGINS allowlist (fail-closed).
+  //   - Set CORS_ALLOWED_ORIGINS to a comma-separated list of allowed origins
+  //     (e.g. "https://app.example.com,https://admin.example.com").
+  //   - If the variable is absent or empty in production, CORS is disabled
+  //     (origin: false) — no cross-origin requests will be permitted.
+  //   - Each entry is validated as a full URL; malformed entries are silently
+  //     dropped and a warning is logged.
+  //
+  // Development / test: falls back to '*' (permissive) so local tooling works.
+  //
+  // Note: never set credentials: true with origin: '*' — that combination is
+  //       rejected by browsers anyway and is confusing.  When an explicit
+  //       allowlist is in use, credentials are allowed.
+
   const corsOrigin: cors.CorsOptions['origin'] = (() => {
-    const raw = process.env.CORS_ALLOWED_ORIGINS?.trim();
-    if (raw) return raw.split(',').map((o) => o.trim());
-    if (config.nodeEnv === 'production') return false;
+    const raw = (process.env.CORS_ALLOWED_ORIGINS ?? '').trim();
+
+    if (raw) {
+      const origins = raw
+        .split(',')
+        .map((o) => o.trim())
+        .filter(Boolean)
+        .filter((o) => {
+          try {
+            const u = new URL(o);
+            // Only allow http(s) origins to prevent javascript:/data: injection.
+            if (u.protocol !== 'https:' && u.protocol !== 'http:') {
+              logger.warn(`[cors] Ignoring invalid CORS origin (bad protocol): ${o}`);
+              return false;
+            }
+            // Reject entries that have a path — origin should be scheme+host only.
+            if (u.pathname !== '/') {
+              logger.warn(`[cors] Ignoring CORS origin with unexpected path component: ${o}`);
+              return false;
+            }
+            return true;
+          } catch {
+            logger.warn(`[cors] Ignoring malformed CORS origin: ${o}`);
+            return false;
+          }
+        })
+        // Strip trailing slash so 'https://example.com/' → 'https://example.com'
+        .map((o) => o.replace(/\/$/, ''));
+
+      if (origins.length === 0) {
+        logger.warn('[cors] CORS_ALLOWED_ORIGINS was set but contained no valid entries');
+        if (config.nodeEnv === 'production') {
+          logger.warn('[cors] Falling back to fail-closed (no cross-origin requests allowed)');
+          return false;
+        }
+        return '*';
+      }
+
+      if (config.nodeEnv === 'production') {
+        logger.info('[cors] CORS allowlist configured', { origins });
+      }
+
+      return origins;
+    }
+
+    // No CORS_ALLOWED_ORIGINS set.
+    if (config.nodeEnv === 'production') {
+      logger.warn(
+        '[cors] CORS_ALLOWED_ORIGINS is not set in production — ' +
+          'cross-origin requests are blocked (fail-closed). ' +
+          'Set CORS_ALLOWED_ORIGINS to enable cross-origin access.',
+      );
+      return false; // fail-closed
+    }
+
+    // Development / test — permissive default is acceptable.
     return '*';
   })();
+
+  const corsCredentials = corsOrigin !== false && corsOrigin !== '*';
 
   app.use(
     cors({
       origin: corsOrigin,
       methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
       allowedHeaders: ['Content-Type', 'Authorization', 'X-Api-Key', 'X-Request-Id'],
-      credentials: true,
+      credentials: corsCredentials,
     }),
   );
 

@@ -1,5 +1,5 @@
-import axios from 'axios';
 import { config } from '../config';
+import { safeGet } from '../webhooks/ssrf-guard';
 
 const TIMEOUT = 10_000;
 
@@ -99,8 +99,17 @@ export interface HorizonAssetRecord {
 async function horizonGet<T>(path: string, params?: Record<string, unknown>): Promise<T | null> {
   try {
     const url = `${config.horizonUrl}${path}`;
-    const resp = await axios.get<T>(url, { params, timeout: TIMEOUT });
-    return resp.data;
+    // Route through SSRF guard — Horizon URL is operator-configured but
+    // may point to an environment where DNS rebinding or redirects could
+    // be abused to reach internal services (#893).
+    const resp = await safeGet(
+      url,
+      params as Record<string, unknown> | undefined,
+      undefined,
+      TIMEOUT,
+    );
+    if (resp.status === 404) return null;
+    return resp.data as T;
   } catch (err: unknown) {
     const status = (err as { response?: { status?: number } })?.response?.status;
     if (status === 404) return null;
@@ -219,8 +228,10 @@ export async function fetchStellarToml(
 ): Promise<Record<string, unknown> | null> {
   try {
     const url = `https://${homeDomain}/.well-known/stellar.toml`;
-    const resp = await axios.get<string>(url, { timeout: TIMEOUT, responseType: 'text' });
-    return parseToml(resp.data);
+    // Route through SSRF guard — home domains are user-supplied strings and
+    // could resolve to internal addresses (#893).
+    const resp = await safeGet(url, undefined, undefined, TIMEOUT);
+    return parseToml(String(resp.data ?? ''));
   } catch {
     return null;
   }

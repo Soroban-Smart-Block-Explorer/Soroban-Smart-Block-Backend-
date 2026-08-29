@@ -1,8 +1,8 @@
-import axios from 'axios';
 import crypto from 'crypto';
 import { EventEmitter } from 'events';
 import { SubscriptionManager } from './subscriptionManager';
 import { logger } from '../logger';
+import { safePost, SsrfBlockedError } from '../webhooks/ssrf-guard';
 
 export interface DeliveryConfig {
   webhook?: {
@@ -240,10 +240,10 @@ export class DeliveryService extends EventEmitter {
         })),
       };
 
-      const headers: any = {
+      const headers: Record<string, string> = {
         'Content-Type': 'application/json',
         'User-Agent': 'Soroban-Feed/1.0',
-        ...config.headers,
+        ...(config.headers as Record<string, string> | undefined),
       };
 
       // Add HMAC signature if secret is provided
@@ -252,20 +252,23 @@ export class DeliveryService extends EventEmitter {
         headers['X-Soroban-Signature'] = signature;
       }
 
-      const response = await axios.post(config.url, payload, {
-        headers,
-        timeout: 10000,
-      });
+      // Route through SSRF guard — config.url is user-supplied and must not be
+      // allowed to reach internal services (#893).
+      const response = await safePost(config.url, JSON.stringify(payload), headers, 10000);
 
       if (response.status >= 200 && response.status < 300) {
         await this.subscriptionManager.updateDeliveryStats(subscriptionId, true);
       } else {
-        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        throw new Error(`HTTP ${response.status}`);
       }
     } catch (error) {
       logger.error(
         `Webhook delivery failed for ${subscriptionId}:`,
-        error instanceof Error ? error.message : 'Unknown error',
+        error instanceof SsrfBlockedError
+          ? `SSRF blocked: ${error.message}`
+          : error instanceof Error
+            ? error.message
+            : 'Unknown error',
       );
       await this.subscriptionManager.updateDeliveryStats(
         subscriptionId,

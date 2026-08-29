@@ -11,6 +11,7 @@
 import { xdr } from '@stellar/stellar-sdk';
 import { prismaWrite as prisma } from '../db';
 import { logger } from '../logger';
+import { safePost, SsrfBlockedError } from '../webhooks/ssrf-guard';
 
 // ── In-memory cache of active frozen keys ────────────────────────────────────
 
@@ -133,17 +134,29 @@ export async function recordFreezeViolation(
   if (severity === 'critical') {
     const webhookUrl = process.env.FREEZE_ALERT_WEBHOOK_URL;
     if (webhookUrl) {
-      fetch(webhookUrl, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
+      // Route through SSRF guard — FREEZE_ALERT_WEBHOOK_URL is operator-configured
+      // but must not be allowed to target internal services (#893).
+      safePost(
+        webhookUrl,
+        JSON.stringify({
           alert: 'CRITICAL_FREEZE_VIOLATION',
           transactionHash,
           contractAddress,
           frozenKeys,
           ledgerSequence,
         }),
-      }).catch((err) => logger.error('[freeze-scanner] Failed to send alert webhook', err));
+        { 'Content-Type': 'application/json' },
+        5000,
+      ).catch((err) => {
+        if (err instanceof SsrfBlockedError) {
+          logger.error('[freeze-scanner] SSRF blocked on alert webhook', {
+            url: webhookUrl,
+            err: err.message,
+          });
+        } else {
+          logger.error('[freeze-scanner] Failed to send alert webhook', err);
+        }
+      });
     } else {
       logger.warn(`[freeze-scanner] CRITICAL VIOLATION DETECTED for tx ${transactionHash}`);
     }

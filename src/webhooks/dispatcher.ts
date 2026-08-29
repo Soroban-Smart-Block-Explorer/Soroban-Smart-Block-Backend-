@@ -1,7 +1,7 @@
-import crypto from 'crypto';
 import { prismaRead, prismaWrite } from '../db';
 import { processResponseBody } from './redaction';
 import { assertSafeUrl, safePost, SsrfBlockedError } from './ssrf-guard';
+import { signWebhookBody } from './webhookVerify';
 import { logger } from '../logger';
 import { uuidv7 } from '../utils/uuidv7';
 
@@ -317,8 +317,11 @@ async function deliverOnce(
   const headers: Record<string, string> = { 'Content-Type': 'application/json' };
 
   // Every subscription now has a secret (#481).
-  const sig = crypto.createHmac('sha256', secret).update(body).digest('hex');
-  headers['X-Webhook-Signature'] = `sha256=${sig}`;
+  // Use signWebhookBody for constant-time-safe signing and add X-Webhook-Timestamp
+  // so the receiver can enforce a skew window and replay cache (#884).
+  const timestampMs = Date.now();
+  headers['X-Webhook-Timestamp'] = String(timestampMs);
+  headers['X-Webhook-Signature'] = signWebhookBody(body, secret);
 
   const expiresAt = new Date(Date.now() + responseRetentionDays * 24 * 60 * 60 * 1000);
 

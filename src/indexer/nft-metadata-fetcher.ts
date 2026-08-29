@@ -6,11 +6,11 @@
  * Results are stored in NftItem.metadata with a TTL of 24h.
  */
 
-import axios from 'axios';
 import { SorobanRpc, scValToNative, xdr } from '@stellar/stellar-sdk';
 import { prismaRead, prismaWrite } from '../db';
 import { logger } from '../logger';
 import { config } from '../config';
+import { safeGet, SsrfBlockedError } from '../webhooks/ssrf-guard';
 
 const FETCH_TIMEOUT_MS = 10_000;
 const METADATA_TTL_MS = 24 * 60 * 60 * 1000; // 24h
@@ -57,13 +57,18 @@ async function fetchMetadataJson(uri: string): Promise<Record<string, unknown>> 
   for (let i = 0; i < IPFS_GATEWAYS.length; i++) {
     const resolvedUri = resolveIpfsUri(uri, i);
     try {
-      const { data } = await axios.get<Record<string, unknown>>(resolvedUri, {
-        timeout: FETCH_TIMEOUT_MS,
-        maxContentLength: 2_000_000,
-        headers: { Accept: 'application/json' },
-      });
+      // Route through SSRF guard to prevent fetching from internal network
+      // addresses hidden behind IPFS gateway or HTTP redirects (#893).
+      const response = await safeGet(
+        resolvedUri,
+        undefined,
+        { Accept: 'application/json' },
+        FETCH_TIMEOUT_MS,
+      );
+      const data = response.data as Record<string, unknown>;
       if (typeof data === 'object' && data !== null) return data;
     } catch (err) {
+      if (err instanceof SsrfBlockedError) throw err; // propagate SSRF blocks
       lastError = err as Error;
       // try next gateway if IPFS URI
       if (!uri.startsWith('ipfs://') && !/^(Qm|bafy)/.test(uri)) break;
