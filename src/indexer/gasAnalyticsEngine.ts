@@ -1,9 +1,72 @@
 /**
  * Gas Analytics Engine — indexes multi-dimensional resource data from
  * Soroban transactions and runs anomaly detection / alert generation.
+ *
+ * Issue #879: staleness tracking added. `getGasAnalyticsStalenessStatus()`
+ * exposes the last-run timestamps for `/readyz` integration.
  */
 
 import { prismaRead, prismaWrite } from '../db';
+
+// ── Staleness tracking (#879) ─────────────────────────────────────────────────
+
+const GAS_INDEXING_STALE_MS = 10 * 60 * 1000; // 10 minutes
+const GAS_ANOMALY_STALE_MS = 60 * 60 * 1000; // 1 hour
+
+const _gasLastRunAt: Record<'indexing' | 'anomalyDetection', Date | null> = {
+  indexing: null,
+  anomalyDetection: null,
+};
+
+export interface GasAnalyticsStalenessStatus {
+  indexing: {
+    lastRunAt: string | null;
+    ageMs: number | null;
+    stale: boolean;
+    thresholdMs: number;
+  };
+  anomalyDetection: {
+    lastRunAt: string | null;
+    ageMs: number | null;
+    stale: boolean;
+    thresholdMs: number;
+  };
+}
+
+/**
+ * Returns the current staleness status of the gas analytics jobs.
+ * Suitable for inclusion in /readyz and health dashboards.
+ */
+export function getGasAnalyticsStalenessStatus(): GasAnalyticsStalenessStatus {
+  const now = Date.now();
+  const indexingAge = _gasLastRunAt.indexing ? now - _gasLastRunAt.indexing.getTime() : null;
+  const anomalyAge = _gasLastRunAt.anomalyDetection
+    ? now - _gasLastRunAt.anomalyDetection.getTime()
+    : null;
+
+  return {
+    indexing: {
+      lastRunAt: _gasLastRunAt.indexing?.toISOString() ?? null,
+      ageMs: indexingAge,
+      stale: indexingAge === null || indexingAge > GAS_INDEXING_STALE_MS,
+      thresholdMs: GAS_INDEXING_STALE_MS,
+    },
+    anomalyDetection: {
+      lastRunAt: _gasLastRunAt.anomalyDetection?.toISOString() ?? null,
+      ageMs: anomalyAge,
+      stale: anomalyAge === null || anomalyAge > GAS_ANOMALY_STALE_MS,
+      thresholdMs: GAS_ANOMALY_STALE_MS,
+    },
+  };
+}
+
+/**
+ * Returns true when any gas analytics job is stale.
+ */
+export function isGasAnalyticsStale(): boolean {
+  const s = getGasAnalyticsStalenessStatus();
+  return s.indexing.stale || s.anomalyDetection.stale;
+}
 
 interface SorobanResources {
   instructions?: number;
@@ -65,6 +128,9 @@ export async function indexTransactionGasData(
       errorCode,
     },
   });
+
+  // Stamp last-run so staleness detection knows this job ran (#879)
+  _gasLastRunAt.indexing = new Date();
 }
 
 export async function runGasAnomalyDetection(contractAddress: string): Promise<void> {
@@ -123,6 +189,9 @@ export async function runGasAnomalyDetection(contractAddress: string): Promise<v
       });
     }
   }
+
+  // Stamp last-run for staleness detection (#879)
+  _gasLastRunAt.anomalyDetection = new Date();
 }
 
 export async function generateOptimizationSuggestions(contractAddress: string): Promise<void> {

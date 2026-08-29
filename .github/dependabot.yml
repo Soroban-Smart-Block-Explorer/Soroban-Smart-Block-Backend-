@@ -23,3 +23,20 @@ updates:
       day: monday
       time: "09:00"
     open-pull-requests-limit: 5
+
+  # Docker base-image tracking (#903)
+  # Monitors all image tags pinned in docker-compose.yml and the Dockerfile
+  # (node:24-slim, redis:7.2.4-alpine, apache/age:release_PG16_1.6.0,
+  # provectuslabs/kafka-ui:v0.7.2, etc.).  Dependabot will open PRs when
+  # newer patch/minor releases are published so tags never drift back to :latest.
+  - package-ecosystem: docker
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: "09:00"
+    open-pull-requests-limit: 5
+    ignore:
+      # Block major-version bumps — these require a manual migration review.
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]

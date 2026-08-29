@@ -4,6 +4,7 @@ import { prismaRead, prismaWrite } from '../db';
 import { asyncHandler } from '../middleware/asyncHandler';
 import { AppError } from '../middleware/errorHandler';
 import { logger } from '../logger';
+import { safePost } from '../webhooks/ssrf-guard';
 
 export const alertsRouter = Router();
 
@@ -205,17 +206,20 @@ async function deliverAlert(
   const webhookUrl = process.env.ALERT_WEBHOOK_URL;
   if (webhookUrl) {
     try {
-      await fetch(webhookUrl, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
+      // Route through SSRF guard — ALERT_WEBHOOK_URL is operator-configured
+      // but must not be allowed to target internal services (#893).
+      await safePost(
+        webhookUrl,
+        JSON.stringify({
           tokenAddress: alert.tokenAddress,
           alertType: alert.alertType,
           threshold: alert.threshold,
           currentPrice: price,
           timestamp: new Date().toISOString(),
         }),
-      });
+        { 'Content-Type': 'application/json' },
+        5000,
+      );
     } catch (err) {
       logger.error('[Alert] Webhook delivery failed:', err);
     }
@@ -224,13 +228,15 @@ async function deliverAlert(
   const slackWebhook = process.env.SLACK_WEBHOOK_URL;
   if (slackWebhook) {
     try {
-      await fetch(slackWebhook, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
+      // Route through SSRF guard — SLACK_WEBHOOK_URL is operator-configured (#893).
+      await safePost(
+        slackWebhook,
+        JSON.stringify({
           text: `Price Alert: ${alert.tokenAddress}\nType: ${alert.alertType}\nThreshold: ${alert.threshold}\nCurrent Price: ${price}`,
         }),
-      });
+        { 'Content-Type': 'application/json' },
+        5000,
+      );
     } catch {
       // ignore
     }
