@@ -25,6 +25,7 @@ import { rotateKeys } from './keys';
 import { prismaRead, prismaWrite } from '../db';
 import { invalidateKeyCache } from '../middleware/apiKeyAuth';
 import { logger } from '../logger';
+import { scheduler } from '../scheduler/cron-scheduler';
 
 const ROTATION_INTERVAL_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
 const EXPIRY_CHECK_INTERVAL_MS = 60 * 60 * 1000; // 1 hour
@@ -41,9 +42,17 @@ export function startKeyRotationScheduler(): void {
     rotateKeys()
       .then((kp) => {
         logger.info('Scheduled JWT signing key rotation completed', { kid: kp.kid });
+        scheduler.recordHeartbeat(HEARTBEAT_ID, 'success', {
+          taskName: 'JWT Signing Key Rotation',
+          expectedIntervalMs: ROTATION_INTERVAL_MS,
+        });
       })
       .catch((err) => {
         logger.error('Scheduled JWT signing key rotation failed', { error: String(err) });
+        scheduler.recordHeartbeat(HEARTBEAT_ID, 'failure', {
+          taskName: 'JWT Signing Key Rotation',
+          expectedIntervalMs: ROTATION_INTERVAL_MS,
+        });
       });
   }, ROTATION_INTERVAL_MS);
 }

@@ -30,6 +30,7 @@ import yogaHandler from './graphql';
 import { errorHandler } from './middleware/errorHandler';
 import { requestContext } from './middleware/requestContext';
 import { apiKeyAuth } from './middleware/apiKeyAuth';
+import { metricsAuth, metricsRateLimiter } from './middleware/metricsAuth';
 import { auditLogMiddleware } from './middleware/auditLog';
 import { asyncHandler } from './middleware/asyncHandler';
 import { rejectUntrustedForwardedHeaders } from './middleware/proxyTrust';
@@ -225,8 +226,14 @@ export function createApp(options: AppOptions): express.Express {
   app.use('/api/v1', router);
   app.use('/api/billing', billingRouter);
 
+  // #907 — /metrics is rate-limited and gated behind an IP allowlist or
+  // bearer token (see src/middleware/metricsAuth.ts). It is also excluded
+  // from public Ingress routing (k8s/ingress.yaml) and restricted at the
+  // pod-network layer (k8s/network-policy.yaml).
   app.get(
     '/metrics',
+    metricsRateLimiter,
+    metricsAuth,
     asyncHandler(async (_req, res) => {
       res.set('Content-Type', registry.contentType);
       res.end(await registry.metrics());

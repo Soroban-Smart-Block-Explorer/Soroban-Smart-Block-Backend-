@@ -92,6 +92,18 @@ const envSchema = z.object({
   JWT_SECRET: z.string().optional(),
   WS_SECRET: z.string().optional(),
   WEBHOOK_SECRET: z.string().optional(),
+
+  // #907 — /metrics access control. Comma-separated IP/CIDR allowlist and/or
+  // a shared bearer token; see src/middleware/metricsAuth.ts.
+  METRICS_ALLOWED_IPS: z.string().default(''),
+  METRICS_TOKEN: z.string().optional(),
+  METRICS_RATE_LIMIT_MAX: z.coerce.number().int().positive().default(30),
+  METRICS_RATE_LIMIT_WINDOW_MS: z.coerce.number().int().positive().default(60000),
+
+  // #906 — worker/background-job health thresholds, see src/health.ts and
+  // src/scheduler/cron-scheduler.ts.
+  WORKER_STALE_INTERVAL_MULTIPLIER: z.coerce.number().positive().default(3),
+  WORKER_MAX_CONSECUTIVE_FAILURES: z.coerce.number().int().positive().default(3),
 });
 
 let parsedEnv: z.infer<typeof envSchema>;
@@ -207,4 +219,12 @@ export const config = {
 
   shutdownTimeoutMs: parsedEnv.SHUTDOWN_TIMEOUT_MS,
   stateDumpPath: parsedEnv.STATE_DUMP_PATH,
+
+  metricsAllowedIps: parsedEnv.METRICS_ALLOWED_IPS,
+  metricsToken: parsedEnv.METRICS_TOKEN,
+  metricsRateLimitMax: parsedEnv.METRICS_RATE_LIMIT_MAX,
+  metricsRateLimitWindowMs: parsedEnv.METRICS_RATE_LIMIT_WINDOW_MS,
+
+  workerStaleIntervalMultiplier: parsedEnv.WORKER_STALE_INTERVAL_MULTIPLIER,
+  workerMaxConsecutiveFailures: parsedEnv.WORKER_MAX_CONSECUTIVE_FAILURES,
 } as const;

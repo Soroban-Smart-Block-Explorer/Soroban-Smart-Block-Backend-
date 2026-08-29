@@ -1,6 +1,17 @@
 ---
 # Ingress — API Gateway entry point for external traffic.
 # Assumes an nginx-ingress controller; adjust ingressClassName/annotations for other controllers.
+#
+# #907 — /metrics is intentionally NOT exposed through this Ingress. Prometheus
+# scrapes it in-cluster (see the `prometheus.io/scrape` annotations on the
+# soroban-api Service in service.yaml, and the ServiceMonitor in
+# adaptive-indexer-deployment.yaml for the indexer components), which never
+# routes through the public LB/Ingress. As defense in depth against a
+# misconfigured or bypassed Ingress, the server-snippet below explicitly
+# denies /metrics at the ingress controller too, on top of the app-level
+# IP/token guard in src/middleware/metricsAuth.ts and the NetworkPolicy in
+# k8s/network-policy.yaml (allow-metrics-scrape only admits the monitoring
+# namespace at the pod-network layer).
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
@@ -16,6 +27,16 @@ metadata:
     nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"
     nginx.ingress.kubernetes.io/proxy-send-timeout: "3600"
     cert-manager.io/cluster-issuer: "letsencrypt-prod"
+    # Block /metrics at the controller regardless of the path rules below —
+    # requires the `allow-snippet-annotations`/snippet feature to be enabled
+    # on the ingress-nginx controller (it is on by default; some hardened
+    # installs disable snippets, in which case enforce this via a dedicated
+    # `location-snippet`-capable proxy or WAF rule instead).
+    nginx.ingress.kubernetes.io/server-snippet: |
+      location /metrics {
+        deny all;
+        return 404;
+      }
 spec:
   ingressClassName: nginx
   tls:
