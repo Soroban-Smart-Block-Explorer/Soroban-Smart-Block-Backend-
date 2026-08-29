@@ -6,7 +6,10 @@ import { getConnectedPeerCount, isP2pEnabled } from './p2p';
 import { measureReplicaLag } from './db/replicaGateway';
 import { getLatestLedger } from './indexer/rpc';
 import { getLastIndexedLedger } from './indexer/indexer';
+import { getStalenessStatus, isFeeAggregationStale } from './indexer/fee-aggregator';
+import { getGasAnalyticsStalenessStatus, isGasAnalyticsStale } from './indexer/gasAnalyticsEngine';
 import { config } from './config';
+import { scheduler, type JobHealthSnapshot } from './scheduler/cron-scheduler';
 
 /**
  * Health check status for individual dependencies
@@ -73,6 +76,10 @@ export interface ReadinessResponse {
   timestamp: string;
   dependencies: Record<string, boolean>;
   blockers?: string[];
+  analytics?: {
+    feeAggregation: ReturnType<typeof getStalenessStatus>;
+    gasAnalytics: ReturnType<typeof getGasAnalyticsStalenessStatus>;
+  };
 }
 
 /**
@@ -127,6 +134,10 @@ async function checkCacheHealth(): Promise<DependencyHealth> {
   const ready = isCacheReady();
   const type = cacheBackendType();
   const redisConnected = await pingRedis().catch(() => false);
+  const isInMemoryFallback =
+    type === 'memory' &&
+    !!config.cacheUrl &&
+    !config.cacheUrl.startsWith('memory://');
 
   const status = type === 'redis' && !redisConnected ? 'unhealthy' : ready ? 'healthy' : 'degraded';
 
@@ -139,7 +150,11 @@ async function checkCacheHealth(): Promise<DependencyHealth> {
     details: {
       ready,
       type,
-      connected: type === 'redis' ? redisConnected : true,
+      // Issue #909: Explicit cacheBackend field so consumers (dashboards,
+      // health checks, and alert rules) can distinguish Redis from fallback.
+      cacheBackend: type === 'redis' || type === 'sentinel' ? 'redis' : 'in-memory',
+      inMemoryFallback: isInMemoryFallback,
+      connected: type === 'redis' || type === 'sentinel' ? redisConnected : true,
     },
     lastChecked: new Date().toISOString(),
   };
@@ -230,13 +245,44 @@ async function checkIndexerHealth(latestNetworkLedger: number | null): Promise<D
 }
 
 /**
- * Check worker health (background jobs, price updater, etc.)
+ * Check worker health (#906) — background jobs registered with the central
+ * cron scheduler (src/scheduler/cron-scheduler.ts), plus interval-managed
+ * pipelines that report heartbeats into it directly (price updates, JWT key
+ * rotation, indexer gap reconciliation sweeps).
+ *
+ * - unhealthy: any job has hit config.workerMaxConsecutiveFailures in a row.
+ * - degraded:  any job with a known schedule has missed its expected window
+ *              by more than config.workerStaleIntervalMultiplier intervals.
+ * - healthy:   otherwise, including before any job has reported in yet
+ *              (nothing to be unhealthy about on a cold start).
  */
-function checkWorkerHealth(): DependencyHealth {
+export function checkWorkerHealth(): DependencyHealth {
+  const summary = scheduler.getHealthSummary(
+    config.workerStaleIntervalMultiplier,
+    config.workerMaxConsecutiveFailures,
+  );
+
+  const describe = (j: JobHealthSnapshot) => j.taskName;
+  const staleJobs = summary.jobs.filter((j) => j.stale).map(describe);
+  const failingJobs = summary.jobs
+    .filter((j) => j.consecutiveFailures >= config.workerMaxConsecutiveFailures)
+    .map(describe);
+
+  const message =
+    summary.status === 'unhealthy'
+      ? `Background job(s) failing repeatedly: ${failingJobs.join(', ')}`
+      : summary.status === 'degraded'
+        ? `Background job(s) have missed their scheduled window: ${staleJobs.join(', ')}`
+        : summary.jobs.length > 0
+          ? 'Workers operational'
+          : 'Workers operational (no job heartbeats reported yet)';
+
   return {
-    status: 'healthy',
-    message: 'Workers operational',
-    details: {},
+    status: summary.status,
+    message,
+    details: {
+      jobs: summary.jobs,
+    },
     lastChecked: new Date().toISOString(),
   };
 }
@@ -341,16 +387,34 @@ export function getReadinessStatus(): ReadinessResponse {
   const dependencies = getReadinessState();
   const ready = Object.values(dependencies).every(Boolean);
 
-  const blockers = ready
-    ? undefined
+  const blockers: string[] = ready
+    ? []
     : Object.entries(dependencies)
         .filter(([, status]) => !status)
         .map(([name]) => name);
 
+  // Issue #879: surface staleness of analytics aggregation jobs so operators
+  // can detect frozen dashboards before users do.
+  const feeAggregation = getStalenessStatus();
+  const gasAnalytics = getGasAnalyticsStalenessStatus();
+
+  if (isFeeAggregationStale()) {
+    blockers.push('fee_aggregation_stale');
+  }
+  if (isGasAnalyticsStale()) {
+    blockers.push('gas_analytics_stale');
+  }
+
+  const overallReady = ready && !isFeeAggregationStale() && !isGasAnalyticsStale();
+
   return {
-    status: ready ? 'ready' : 'not_ready',
+    status: overallReady ? 'ready' : 'not_ready',
     timestamp: new Date().toISOString(),
     dependencies,
-    ...(blockers && blockers.length > 0 && { blockers }),
+    ...(blockers.length > 0 && { blockers }),
+    analytics: {
+      feeAggregation,
+      gasAnalytics,
+    },
   };
 }

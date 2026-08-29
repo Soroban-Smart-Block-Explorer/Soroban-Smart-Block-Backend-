@@ -1,7 +1,12 @@
 import WebSocket from 'ws';
 import { xdr } from '@stellar/stellar-sdk';
-import { prismaWrite as prisma } from '../db';
+import { prismaRead, prismaWrite, prismaWrite as prisma } from '../db';
 import { config } from '../config';
+import {
+  indexerPipelineStageDuration,
+  indexerPipelineStageLag,
+  indexerPipelineStageProcessedTotal,
+} from '../metrics';
 import {
   fetchEvents,
   getLatestLedger,
@@ -217,45 +222,94 @@ export async function processLedgerRange(
 ) {
   logger.info(`Indexing ledgers ${start} → ${end}`);
 
-  // 1. Fetch metadata and check reorgs sequentially for all ledgers in the range first
+  // Stage lag metrics update
+  try {
+    const latestTip = await getLatestLedger().catch(() => end);
+    const lag = Math.max(0, latestTip - end);
+    indexerPipelineStageLag.set({ stage: 'fetch' }, lag);
+    indexerPipelineStageLag.set({ stage: 'decode' }, lag);
+    indexerPipelineStageLag.set({ stage: 'persist' }, lag);
+    indexerPipelineStageLag.set({ stage: 'enrich' }, lag);
+  } catch (err) {
+    // Non-blocking metrics gauge catch
+  }
+
+  // Stage 1: FETCH metadata & Reorg check
+  const stopFetchTimer = indexerPipelineStageDuration.startTimer({ stage: 'fetch' });
+
   for (let seq = start; seq <= end; seq++) {
     if (!opts.force && !(await amIResponsibleFor(seq))) {
-      // Not one of this range's rendezvous-hash owners (P2P mode only — see
-      // docs/P2P_INDEXER_DESIGN.md §1.2/§3). Another replica indexes it;
-      // skip without writing so we don't do redundant RPC/DB work outside
-      // our assigned ranges. opts.force bypasses this for on-the-fly
-      // graceful-degradation indexing (indexSingleLedger below), where we
-      // explicitly want to index a ledger regardless of steady-state
-      // ownership because no reachable owner had it.
       continue;
     }
     const ledgerMeta = await fetchLedgerMetadata(seq);
 
-    // Reorg check
+    // Deep Reorg Check & Extended Backtracking
     const prevSeq = seq - 1;
     const prevLedger = await prismaRead.ledger.findUnique({ where: { sequence: prevSeq } });
+
     if (prevLedger && prevLedger.hash !== ledgerMeta.previousLedgerHash) {
       logger.warn(
-        `🚨 REORG DETECTED at ledger ${seq}! Expected prev hash ${prevLedger.hash}, but network says ${ledgerMeta.previousLedgerHash}`,
+        `🚨 REORG DETECTED at ledger ${seq}! Local hash ${prevLedger.hash} vs network expected ${ledgerMeta.previousLedgerHash}`,
       );
 
+      const maxDepth = config.indexerReorgProtectionDepth || 100;
+      const rolledBackSequences: number[] = [prevSeq];
+      let commonAncestorFound = false;
+      let commonAncestorSeq = prevSeq - 1;
+
+      // Backtrack up to maxDepth ledgers to locate common ancestor
+      for (let depth = 1; depth < maxDepth; depth++) {
+        const checkSeq = prevSeq - depth;
+        if (checkSeq <= 0) break;
+
+        const localCheckLedger = await prismaRead.ledger.findUnique({ where: { sequence: checkSeq } });
+        if (!localCheckLedger) break;
+
+        let remoteCheckMeta = null;
+        try {
+          remoteCheckMeta = await fetchLedgerMetadata(checkSeq);
+        } catch (e) {
+          logger.error(`Failed to fetch remote metadata for deep reorg check at ledger ${checkSeq}`, e);
+          break;
+        }
+
+        if (localCheckLedger.hash === remoteCheckMeta.hash) {
+          commonAncestorFound = true;
+          commonAncestorSeq = checkSeq;
+          logger.info(`Found common ancestor at ledger sequence ${checkSeq} (depth: ${depth})`);
+          break;
+        } else {
+          rolledBackSequences.push(checkSeq);
+        }
+      }
+
+      if (!commonAncestorFound) {
+        logger.error(
+          `🚨 DEEP REORG EXCEEDS SAFETY THRESHOLD (${maxDepth} ledgers). Performing safety rollback for ${rolledBackSequences.length} ledgers.`,
+        );
+      }
+
+      // Record Reorg event and perform atomic single DB transaction rollback
       await prismaWrite.reorgEvent.create({
         data: {
           ledgerSequence: seq,
           expectedHash: prevLedger.hash,
           actualHash: ledgerMeta.previousLedgerHash,
           previousHash: prevLedger.previousLedgerHash ?? '',
-          rolledBackLedgers: [prevSeq],
+          rolledBackLedgers: rolledBackSequences,
         },
       });
 
-      await rollbackLedgers([prevSeq]);
-      await setLastIndexedLedger(prevSeq - 1);
+      await rollbackLedgers(rolledBackSequences);
+      await setLastIndexedLedger(commonAncestorSeq);
 
-      throw new Error(`Reorg detected at ledger ${seq}. Rolled back ${prevSeq}.`);
+      throw new Error(
+        `Reorg detected at ledger ${seq}. Rolled back ${rolledBackSequences.length} ledgers (${rolledBackSequences.join(', ')}). Resuming from common ancestor ${commonAncestorSeq}.`,
+      );
     }
 
-    // Save/upsert Ledger record
+    // Persist Ledger record
+    const stopPersistLedgerTimer = indexerPipelineStageDuration.startTimer({ stage: 'persist' });
     await prismaWrite.ledger.upsert({
       where: { sequence: seq },
       update: {
@@ -272,28 +326,41 @@ export async function processLedgerRange(
         txCount: ledgerMeta.txCount,
       },
     });
+    stopPersistLedgerTimer();
+    indexerPipelineStageProcessedTotal.inc({ stage: 'persist', status: 'success' });
   }
 
-  // 2. Fetch events for the range and process them normally
+  // Complete Stage 1 (Fetch)
+  stopFetchTimer();
+  indexerPipelineStageProcessedTotal.inc({ stage: 'fetch', status: 'success' });
+
+  // Stage 2 & 3: FETCH events & DECODE / PERSIST / ENRICH events and transactions
+  const stopEventsFetchTimer = indexerPipelineStageDuration.startTimer({ stage: 'fetch' });
   const events = await fetchEvents(start, end);
+  stopEventsFetchTimer();
 
   for (const event of events) {
+    const stopPersistContractTimer = indexerPipelineStageDuration.startTimer({ stage: 'persist' });
     await prismaWrite.contract.upsert({
       where: { address: event.contractId },
       update: {},
       create: { address: event.contractId },
     });
+    stopPersistContractTimer();
 
-    // Queue an initial audit for newly discovered contracts (fires after 5 min)
+    // Enrich Stage: Queue initial audit
+    const stopEnrichAuditTimer = indexerPipelineStageDuration.startTimer({ stage: 'enrich' });
     enqueueInitialAudit(event.contractId);
+    stopEnrichAuditTimer();
+    indexerPipelineStageProcessedTotal.inc({ stage: 'enrich', status: 'success' });
 
     const existingTx = await prisma.transaction.findUnique({
       where: { hash: event.transactionHash },
     });
-    const existingTx = await prisma.transaction.findUnique({
-      where: { hash: event.transactionHash },
-    });
+
     if (!existingTx) {
+      // Decode Stage
+      const stopDecodeTxTimer = indexerPipelineStageDuration.startTimer({ stage: 'decode' });
       const txResult = await getTransaction(event.transactionHash).catch(() =>
         getTransactionFromHorizon(event.transactionHash).catch(() => null),
       );
@@ -306,7 +373,11 @@ export async function processLedgerRange(
             functionArgs: null,
             humanReadable: null,
           };
+      stopDecodeTxTimer();
+      indexerPipelineStageProcessedTotal.inc({ stage: 'decode', status: 'success' });
 
+      // Persist Stage
+      const stopPersistTxTimer = indexerPipelineStageDuration.startTimer({ stage: 'persist' });
       const transaction = await prismaWrite.transaction.upsert({
         where: { hash: event.transactionHash },
         update: {},
@@ -325,11 +396,11 @@ export async function processLedgerRange(
           feeCharged: String((txResult as any)?.feeCharged ?? ''),
         },
       });
+      stopPersistTxTimer();
+      indexerPipelineStageProcessedTotal.inc({ stage: 'persist', status: 'success' });
 
-      // Record ZKP verifier invocations when the invoked function looks like
-      // a proof verification entry point (verify_proof / verify_snark /
-      // verify_stark / verify_groth16). Best-effort: a failure here must
-      // never disrupt the main indexing loop.
+      // Enrich Stage: ZKP & AA & Feeds
+      const stopEnrichTxTimer = indexerPipelineStageDuration.startTimer({ stage: 'enrich' });
       try {
         if (rawXdr && decoded.functionName && decoded.contractAddress) {
           const envelope = xdr.TransactionEnvelope.fromXDR(rawXdr, 'base64');
@@ -356,7 +427,6 @@ export async function processLedgerRange(
         logger.error('ZKP recording error:', zkpErr);
       }
 
-      // Trigger Account Abstraction processing (non-blocking)
       try {
         void processAaTransaction(
           transaction.hash,
@@ -370,17 +440,24 @@ export async function processLedgerRange(
         logger.error('AA processing error:', err);
       }
 
-      // Publish to feed
       await feedOrchestrator
         .publishTransaction(transaction)
         .catch((err) => logger.error('publishTransaction error:', err));
+
+      stopEnrichTxTimer();
+      indexerPipelineStageProcessedTotal.inc({ stage: 'enrich', status: 'success' });
     }
 
+    // Decode & Persist Event
+    const stopDecodeEventTimer = indexerPipelineStageDuration.startTimer({ stage: 'decode' });
     const { eventType, decoded } = decodeEvent(event.topics, event.data);
-    // Include paging token (unique per event position) to prevent ID collisions
-    // when a single transaction emits multiple events with the same first topic.
+    stopDecodeEventTimer();
+    indexerPipelineStageProcessedTotal.inc({ stage: 'decode', status: 'success' });
+
     const positionKey = event.pagingToken || `${event.ledgerSequence}-${events.indexOf(event)}`;
     const eventId = `${event.transactionHash}-${positionKey}`;
+
+    const stopPersistEventTimer = indexerPipelineStageDuration.startTimer({ stage: 'persist' });
     const savedEvent = await prismaWrite.event.upsert({
       where: { id: eventId },
       update: {},
@@ -396,13 +473,18 @@ export async function processLedgerRange(
         ledgerCloseTime: event.ledgerCloseTime,
       },
     });
+    stopPersistEventTimer();
+    indexerPipelineStageProcessedTotal.inc({ stage: 'persist', status: 'success' });
 
-    // Publish event to feed
+    // Enrich Event: Feeds & Session Authorization
+    const stopEnrichEventTimer = indexerPipelineStageDuration.startTimer({ stage: 'enrich' });
     await feedOrchestrator
       .publishEvent(savedEvent)
       .catch((err) => logger.error('publishEvent error:', err));
 
     await processSessionAuthorization(event, eventType, decoded, eventId);
+    stopEnrichEventTimer();
+    indexerPipelineStageProcessedTotal.inc({ stage: 'enrich', status: 'success' });
   }
 }
 
@@ -416,7 +498,7 @@ export async function indexSingleLedger(ledgerSeq: number): Promise<void> {
 }
 
 // ---------------------------------------------------------------------------
-// Parallel catch-up
+// Parallel catch-up with per-batch checkpointing (issue #881)
 // ---------------------------------------------------------------------------
 
 /**
@@ -433,10 +515,121 @@ function chunkRange(from: number, to: number, n: number): Array<[number, number]
 }
 
 /**
+ * Persist a CatchUpCheckpoint row for a worker's chunk.
+ *
+ * Uses upsert so a crash-then-restart path finds the existing row and reads
+ * `lastCommittedLedger` to resume mid-batch instead of re-fetching from
+ * `rangeStart`.
+ */
+async function upsertCheckpoint(
+  rangeStart: number,
+  rangeEnd: number,
+  lastCommittedLedger: number | null,
+  completed: boolean,
+): Promise<void> {
+  const db = prismaWrite as any;
+  try {
+    await db.catchUpCheckpoint.upsert({
+      where: { rangeStart_rangeEnd: { rangeStart, rangeEnd } },
+      create: {
+        id: uuidv7(),
+        rangeStart,
+        rangeEnd,
+        lastCommittedLedger,
+        completed,
+      },
+      update: {
+        lastCommittedLedger,
+        completed,
+      },
+    });
+  } catch (err) {
+    // Best-effort: checkpoint failure must not abort the indexing work
+    logger.warn(`[catch-up] checkpoint upsert failed for ${rangeStart}-${rangeEnd}: ${err}`);
+  }
+}
+
+/**
+ * Look up the resume cursor for a chunk from a persisted checkpoint.
+ * Returns the last committed ledger + 1 (i.e. where to resume from), or
+ * `rangeStart` if no checkpoint exists yet.
+ */
+async function getChunkResumeCursor(rangeStart: number, rangeEnd: number): Promise<number> {
+  const db = prismaWrite as any;
+  try {
+    const row: { lastCommittedLedger: number | null; completed: boolean } | null =
+      await db.catchUpCheckpoint.findUnique({
+        where: { rangeStart_rangeEnd: { rangeStart, rangeEnd } },
+        select: { lastCommittedLedger: true, completed: true },
+      });
+    if (!row) return rangeStart;
+    if (row.completed) {
+      logger.info(`[catch-up] chunk ${rangeStart}-${rangeEnd} already completed — skipping`);
+      return rangeEnd + 1; // signals "nothing to do"
+    }
+    if (row.lastCommittedLedger !== null) {
+      const resume = row.lastCommittedLedger + 1;
+      if (resume <= rangeEnd) {
+        logger.info(
+          `[catch-up] resuming chunk ${rangeStart}-${rangeEnd} from ledger ${resume} ` +
+            `(last committed: ${row.lastCommittedLedger})`,
+        );
+        return resume;
+      }
+    }
+  } catch (err) {
+    logger.warn(`[catch-up] checkpoint read failed for ${rangeStart}-${rangeEnd}: ${err}`);
+  }
+  return rangeStart;
+}
+
+/**
+ * Process a single worker chunk [rangeStart, rangeEnd] with intra-chunk
+ * checkpointing every BATCH ledgers.
+ *
+ * After each BATCH-ledger sub-range completes, the progress is persisted to
+ * CatchUpCheckpoint.  On crash-restart `getChunkResumeCursor` picks up the
+ * last committed position so at most BATCH ledgers are re-processed.
+ */
+async function processChunkWithCheckpointing(rangeStart: number, rangeEnd: number): Promise<void> {
+  // Resume from last checkpoint rather than rangeStart
+  const resumeFrom = await getChunkResumeCursor(rangeStart, rangeEnd);
+  if (resumeFrom > rangeEnd) {
+    // Chunk already completed in a previous run
+    return;
+  }
+
+  // Write an initial "in-progress" checkpoint so a crash before the first
+  // sub-batch flush is also detectable (lastCommittedLedger = null means
+  // "started but nothing committed yet").
+  await upsertCheckpoint(
+    rangeStart,
+    rangeEnd,
+    resumeFrom > rangeStart ? resumeFrom - 1 : null,
+    false,
+  );
+
+  // Process in BATCH-sized sub-ranges, persisting progress after each one
+  for (let subStart = resumeFrom; subStart <= rangeEnd; subStart += BATCH) {
+    const subEnd = Math.min(subStart + BATCH - 1, rangeEnd);
+    await processLedgerRange(subStart, subEnd);
+    // Flush checkpoint after each successful sub-batch
+    await upsertCheckpoint(rangeStart, rangeEnd, subEnd, subEnd >= rangeEnd);
+    logger.debug(
+      `[catch-up] checkpoint flushed for chunk ${rangeStart}-${rangeEnd}: committed ${subEnd}`,
+    );
+  }
+}
+
+/**
  * Run parallel workers over [from, to], then advance IndexerState to `to`.
- * Workers process non-overlapping chunks concurrently; the state write is
- * serialised after all workers succeed so a partial failure leaves the
- * cursor unchanged and the whole round retries safely (upserts are idempotent).
+ * Workers process non-overlapping chunks concurrently, each with its own
+ * intra-chunk checkpoint.  The global cursor write is serialised after all
+ * workers succeed so a partial failure leaves the cursor unchanged and the
+ * whole round retries safely (upserts are idempotent).
+ *
+ * On restart after a crash, each worker resumes from its last persisted
+ * CatchUpCheckpoint rather than re-fetching from the chunk start.
  */
 async function catchUp(from: number, to: number): Promise<void> {
   const chunks = chunkRange(from, to, WORKERS);
@@ -444,7 +637,7 @@ async function catchUp(from: number, to: number): Promise<void> {
     `[catch-up] ${chunks.length} worker(s) covering ledgers ${from}–${to} ` +
       `(chunk size ~${chunks[0][1] - chunks[0][0] + 1})`,
   );
-  await Promise.all(chunks.map(([s, e]) => processLedgerRange(s, e)));
+  await Promise.all(chunks.map(([s, e]) => processChunkWithCheckpointing(s, e)));
   await setLastIndexedLedger(to);
   logger.info(`[catch-up] done — cursor advanced to ${to}`);
 }

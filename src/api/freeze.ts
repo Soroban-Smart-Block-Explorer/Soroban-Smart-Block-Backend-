@@ -11,8 +11,12 @@ import { prismaWrite as prisma } from '../db';
 import { invalidateFreezeCache } from '../indexer/freeze-scanner';
 import { adminAuth } from '../middleware/adminAuth';
 import { uuidv7 } from '../utils/uuidv7';
+import { sensitiveReadLog } from '../middleware/sensitiveReadLog';
 
 export const freezeRouter = Router();
+
+// Audit every GET on the freeze router — these expose freeze/lock state (#890)
+freezeRouter.use(sensitiveReadLog('freeze_read', (req) => req.path));
 
 const getActor = (req: Request) => req.actor ?? 'unknown';
 

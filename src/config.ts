@@ -30,6 +30,7 @@ const envSchema = z.object({
   INDEXER_POLL_INTERVAL_MS: z.coerce.number().int().positive().min(100).default(5000),
   INDEXER_BATCH_SIZE: z.coerce.number().int().positive().max(1000).default(100),
   INDEXER_CATCHUP_WORKERS: z.coerce.number().int().min(1).max(32).default(4),
+  INDEXER_REORG_PROTECTION_DEPTH: z.coerce.number().int().positive().default(100),
 
   MICRO_BLOCK_SYNC_ENABLED: z
     .union([z.boolean(), z.string()])
@@ -92,6 +93,18 @@ const envSchema = z.object({
   JWT_SECRET: z.string().optional(),
   WS_SECRET: z.string().optional(),
   WEBHOOK_SECRET: z.string().optional(),
+
+  // #907 — /metrics access control. Comma-separated IP/CIDR allowlist and/or
+  // a shared bearer token; see src/middleware/metricsAuth.ts.
+  METRICS_ALLOWED_IPS: z.string().default(''),
+  METRICS_TOKEN: z.string().optional(),
+  METRICS_RATE_LIMIT_MAX: z.coerce.number().int().positive().default(30),
+  METRICS_RATE_LIMIT_WINDOW_MS: z.coerce.number().int().positive().default(60000),
+
+  // #906 — worker/background-job health thresholds, see src/health.ts and
+  // src/scheduler/cron-scheduler.ts.
+  WORKER_STALE_INTERVAL_MULTIPLIER: z.coerce.number().positive().default(3),
+  WORKER_MAX_CONSECUTIVE_FAILURES: z.coerce.number().int().positive().default(3),
 });
 
 let parsedEnv: z.infer<typeof envSchema>;
@@ -169,6 +182,7 @@ export const config = {
   indexerPollIntervalMs: parsedEnv.INDEXER_POLL_INTERVAL_MS,
   indexerBatchSize: parsedEnv.INDEXER_BATCH_SIZE,
   indexerCatchupWorkers: parsedEnv.INDEXER_CATCHUP_WORKERS,
+  indexerReorgProtectionDepth: parsedEnv.INDEXER_REORG_PROTECTION_DEPTH,
 
   microBlockSyncEnabled: parsedEnv.MICRO_BLOCK_SYNC_ENABLED,
   microBlockPollIntervalMs: parsedEnv.MICRO_BLOCK_POLL_INTERVAL_MS,
@@ -207,4 +221,12 @@ export const config = {
 
   shutdownTimeoutMs: parsedEnv.SHUTDOWN_TIMEOUT_MS,
   stateDumpPath: parsedEnv.STATE_DUMP_PATH,
+
+  metricsAllowedIps: parsedEnv.METRICS_ALLOWED_IPS,
+  metricsToken: parsedEnv.METRICS_TOKEN,
+  metricsRateLimitMax: parsedEnv.METRICS_RATE_LIMIT_MAX,
+  metricsRateLimitWindowMs: parsedEnv.METRICS_RATE_LIMIT_WINDOW_MS,
+
+  workerStaleIntervalMultiplier: parsedEnv.WORKER_STALE_INTERVAL_MULTIPLIER,
+  workerMaxConsecutiveFailures: parsedEnv.WORKER_MAX_CONSECUTIVE_FAILURES,
 } as const;

@@ -52,6 +52,11 @@ jobs:
           key: prisma-${{ hashFiles('prisma/schema.prisma') }}
           restore-keys: prisma-
 
+      # Issue #899: Verify package-lock.json is in sync with package.json.
+      # `npm ci --dry-run` exits non-zero if the lockfile would need updating.
+      - name: Verify package-lock.json is in sync
+        run: npm ci --dry-run
+
       - name: Install dependencies
         run: npm ci
 
@@ -128,6 +133,22 @@ jobs:
       - name: Validate orphaned routers (budget 15)
         run: npm run validate-routes:ci
 
+      # #903: Reject unpinned `:latest` image tags in compose manifests.
+      # All images must be pinned to an immutable tag so builds are reproducible
+      # and Dependabot can track upgrades.  This step fails the PR if any
+      # docker-compose*.yml file contains an `image: …:latest` reference.
+      - name: Reject unpinned :latest image tags in compose files
+        run: |
+          RESULT=$(grep -rn "image:.*:latest" --include='docker-compose*.yml' . || true)
+          if [ -n "$RESULT" ]; then
+            echo "ERROR: Unpinned ':latest' image tags found in compose files (#903)."
+            echo "Pin every image to an explicit, immutable tag (e.g. redis:7.2.4-alpine)."
+            echo ""
+            echo "$RESULT"
+            exit 1
+          fi
+          echo "OK: No unpinned :latest tags found in compose files."
+
   test:
     name: Test
     runs-on: ubuntu-latest
@@ -178,6 +199,47 @@ jobs:
           DATABASE_URL: postgresql://test:test@localhost:5432/test
           TESTNET_DATABASE_URL: postgresql://test:test@localhost:5432/test
           STELLAR_NETWORK: testnet
+
+      # Issue #898: Run coverage with threshold enforcement.
+      # Vitest exits non-zero if any threshold configured in vitest.config.ts
+      # is not met, failing the CI job automatically.
+      - name: Run coverage (with threshold enforcement)
+        run: npm run test:coverage
+        env:
+          DATABASE_URL: postgresql://test:test@localhost:5432/test
+          TESTNET_DATABASE_URL: postgresql://test:test@localhost:5432/test
+          STELLAR_NETWORK: testnet
+          CACHE_URL: memory://
+
+      # Issue #898: Upload coverage artifacts so reports are inspectable in the
+      # GitHub Actions UI for each PR and push. Retained for 30 days.
+      - name: Upload coverage report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report
+          path: coverage/
+          retention-days: 30
+
+  # Issue #908: Validate Prometheus alert rule files with promtool.
+  # promtool ships inside the prom/prometheus Docker image; we install it
+  # directly from the GitHub release to avoid pulling the full image.
+  prometheus-lint:
+    name: Prometheus Rules Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Install promtool
+        run: |
+          PROM_VERSION="2.54.0"
+          curl -sL "https://github.com/prometheus/prometheus/releases/download/v${PROM_VERSION}/prometheus-${PROM_VERSION}.linux-amd64.tar.gz" \
+            | tar -xz --strip-components=1 -C /usr/local/bin \
+                "prometheus-${PROM_VERSION}.linux-amd64/promtool"
+          promtool --version
+
+      - name: Validate Prometheus alert rules
+        run: promtool check rules prometheus/alerts.yml
 
   security:
     name: Security

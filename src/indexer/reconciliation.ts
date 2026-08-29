@@ -10,6 +10,9 @@ import { prismaRead as prisma } from '../db';
 import { config } from '../config';
 import { logger } from '../logger';
 import { triggerAutomatedGapRepair } from './repair';
+import { scheduler } from '../scheduler/cron-scheduler';
+
+const HEARTBEAT_ID = 'indexer:reconciliation-sweep';
 
 export interface ReconciliationReport {
   timestamp: string;
@@ -200,8 +203,16 @@ export function scheduleReconciliation(): NodeJS.Timeout {
   const initialDelay = setTimeout(async () => {
     try {
       await runReconciliation();
+      scheduler.recordHeartbeat(HEARTBEAT_ID, 'success', {
+        taskName: 'Indexer Gap Reconciliation Sweep',
+        expectedIntervalMs: INTERVAL_MS,
+      });
     } catch (err) {
       logger.error('[reconciliation] Initial run failed:', err);
+      scheduler.recordHeartbeat(HEARTBEAT_ID, 'failure', {
+        taskName: 'Indexer Gap Reconciliation Sweep',
+        expectedIntervalMs: INTERVAL_MS,
+      });
     }
   }, 60_000); // 1 minute after startup
 
@@ -209,8 +220,16 @@ export function scheduleReconciliation(): NodeJS.Timeout {
   const interval = setInterval(async () => {
     try {
       await runReconciliation();
+      scheduler.recordHeartbeat(HEARTBEAT_ID, 'success', {
+        taskName: 'Indexer Gap Reconciliation Sweep',
+        expectedIntervalMs: INTERVAL_MS,
+      });
     } catch (err) {
       logger.error('[reconciliation] Scheduled run failed:', err);
+      scheduler.recordHeartbeat(HEARTBEAT_ID, 'failure', {
+        taskName: 'Indexer Gap Reconciliation Sweep',
+        expectedIntervalMs: INTERVAL_MS,
+      });
     }
   }, INTERVAL_MS);
 

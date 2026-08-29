@@ -8,6 +8,15 @@ metadata:
   labels:
     app.kubernetes.io/name: soroban-explorer
     app.kubernetes.io/component: api
+  annotations:
+    # #907 — annotation-based Prometheus discovery. /metrics itself is never
+    # routed through the public Ingress (see ingress.yaml); only in-cluster
+    # scrapers reach it, and only from the monitoring namespace per the
+    # allow-metrics-scrape NetworkPolicy (network-policy.yaml). The endpoint
+    # also enforces its own IP/token guard — src/middleware/metricsAuth.ts.
+    prometheus.io/scrape: "true"
+    prometheus.io/port: "3000"
+    prometheus.io/path: "/metrics"
 spec:
   type: ClusterIP
   selector:

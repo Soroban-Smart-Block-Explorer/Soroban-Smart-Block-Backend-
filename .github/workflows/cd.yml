@@ -1,0 +1,198 @@
+name: CD
+
+# #905 — build/push the container image to GHCR and roll it out via GitHub
+# Environments with required-reviewer gates. Triggers on version tags (real
+# releases) and on merges to main (continuous deployment to staging).
+on:
+  push:
+    branches: [main]
+    tags: ['v*.*.*']
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Environment to deploy'
+        required: true
+        default: staging
+        type: choice
+        options:
+          - staging
+          - production
+
+permissions:
+  contents: read
+  packages: write
+  id-token: write # required for keyless cosign signing + SLSA attestation
+  attestations: write
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false # never cancel an in-flight deploy
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+
+jobs:
+  build-and-push:
+    name: Build & Push Image
+    runs-on: ubuntu-latest
+    outputs:
+      image-digest: ${{ steps.push.outputs.digest }}
+      image-tag: ${{ steps.meta.outputs.version }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0 # full history so `git describe` resolves
+
+      - name: Compute version (git describe)
+        id: version
+        run: |
+          VERSION=$(git describe --tags --always --dirty 2>/dev/null || echo "0.0.0-${GITHUB_SHA::8}")
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract image metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=raw,value=${{ steps.version.outputs.version }}
+            type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' }}
+            type=sha,format=long
+          labels: |
+            org.opencontainers.image.version=${{ steps.version.outputs.version }}
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+
+      - name: Build and push
+        id: push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      # SLSA provenance attestation, uploaded to GHCR alongside the image and
+      # verifiable with `gh attestation verify` / `cosign verify-attestation`.
+      - name: Attest build provenance
+        uses: actions/attest-build-provenance@v1
+        with:
+          subject-name: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          subject-digest: ${{ steps.push.outputs.digest }}
+          push-to-registry: true
+
+  deploy-staging:
+    name: Deploy to Staging
+    needs: build-and-push
+    if: github.ref == 'refs/heads/main' || (github.event_name == 'workflow_dispatch' && inputs.environment == 'staging')
+    runs-on: ubuntu-latest
+    environment:
+      name: staging
+      url: https://testnet-api.example.com
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Install kubectl
+        uses: azure/setup-kubectl@v4
+        with:
+          version: v1.29.0
+
+      - name: Install kustomize
+        uses: imranismail/setup-kustomize@v2
+
+      # Point kubeconfig at the staging cluster. Populate KUBE_CONFIG_STAGING
+      # (base64-encoded kubeconfig) as an Environment secret on `staging` —
+      # required-reviewer approval on that Environment gates this whole job.
+      - name: Configure kubeconfig
+        run: |
+          mkdir -p "$HOME/.kube"
+          echo "${{ secrets.KUBE_CONFIG_STAGING }}" | base64 -d > "$HOME/.kube/config"
+
+      - name: Set image tag via kustomize
+        working-directory: k8s
+        run: |
+          if [ -f kustomization.yaml ]; then
+            kustomize edit set image \
+              soroban-explorer-api=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${{ needs.build-and-push.outputs.image-digest }}
+          else
+            echo "No k8s/kustomization.yaml present — falling back to kubectl set image."
+          fi
+
+      - name: Apply manifests
+        run: |
+          if [ -f k8s/kustomization.yaml ]; then
+            kubectl apply -k k8s/
+          else
+            kubectl apply -f k8s/ --recursive
+            kubectl set image deployment/soroban-api \
+              api=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${{ needs.build-and-push.outputs.image-digest }} \
+              -n soroban
+          fi
+
+      - name: Wait for rollout
+        run: kubectl rollout status deployment/soroban-api -n soroban --timeout=300s
+
+  deploy-production:
+    name: Deploy to Production
+    needs: [build-and-push, deploy-staging]
+    if: startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'workflow_dispatch' && inputs.environment == 'production')
+    runs-on: ubuntu-latest
+    environment:
+      name: production
+      url: https://api.example.com
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Install kubectl
+        uses: azure/setup-kubectl@v4
+        with:
+          version: v1.29.0
+
+      - name: Install kustomize
+        uses: imranismail/setup-kustomize@v2
+
+      # `environment: production` above requires whatever reviewers/wait-timer
+      # are configured on the repo's "production" GitHub Environment before
+      # this job is allowed to start — that's the deploy gate, not a workflow
+      # `if:` check.
+      - name: Configure kubeconfig
+        run: |
+          mkdir -p "$HOME/.kube"
+          echo "${{ secrets.KUBE_CONFIG_PRODUCTION }}" | base64 -d > "$HOME/.kube/config"
+
+      - name: Set image tag via kustomize
+        working-directory: k8s
+        run: |
+          if [ -f kustomization.yaml ]; then
+            kustomize edit set image \
+              soroban-explorer-api=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${{ needs.build-and-push.outputs.image-digest }}
+          else
+            echo "No k8s/kustomization.yaml present — falling back to kubectl set image."
+          fi
+
+      - name: Apply manifests
+        run: |
+          if [ -f k8s/kustomization.yaml ]; then
+            kubectl apply -k k8s/
+          else
+            kubectl apply -f k8s/ --recursive
+            kubectl set image deployment/soroban-api-mainnet \
+              api=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${{ needs.build-and-push.outputs.image-digest }} \
+              -n soroban
+          fi
+
+      - name: Wait for rollout
+        run: kubectl rollout status deployment/soroban-api-mainnet -n soroban --timeout=300s

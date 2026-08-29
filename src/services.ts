@@ -26,6 +26,7 @@ import { startAuditScheduler } from './indexer/audit-scheduler';
 import { startContinuousAuditMonitor } from './indexer/audit-monitor';
 import { startAuditExpiryChecker } from './indexer/audit-expiry-checker';
 import { startAuditDigestScheduler } from './indexer/audit-digest-scheduler';
+import { startExpiryCheckScheduler } from './auth/keyRotationScheduler';
 import { startPriceUpdater } from './services/pricing';
 import { feedOrchestrator } from './feed/orchestrator';
 import { eventBus } from './events/eventBus';
@@ -160,6 +161,14 @@ export async function initializeServices(disabledServices: string[]): Promise<vo
     logger.info('Price updater started');
   } catch (err) {
     logger.warn('Price updater failed to start', { error: String(err) });
+  }
+
+  // DevApiKey expiry enforcement — auto-disables expired keys + emits KeyRotationAudit (#888)
+  try {
+    startExpiryCheckScheduler();
+    logger.info('DevApiKey expiry scheduler started');
+  } catch (err) {
+    logger.warn('DevApiKey expiry scheduler failed to start', { error: String(err) });
   }
 
   await feedOrchestrator.initialize();
