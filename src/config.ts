@@ -30,6 +30,7 @@ const envSchema = z.object({
   INDEXER_POLL_INTERVAL_MS: z.coerce.number().int().positive().min(100).default(5000),
   INDEXER_BATCH_SIZE: z.coerce.number().int().positive().max(1000).default(100),
   INDEXER_CATCHUP_WORKERS: z.coerce.number().int().min(1).max(32).default(4),
+  INDEXER_REORG_PROTECTION_DEPTH: z.coerce.number().int().positive().default(100),
 
   MICRO_BLOCK_SYNC_ENABLED: z
     .union([z.boolean(), z.string()])
@@ -181,6 +182,7 @@ export const config = {
   indexerPollIntervalMs: parsedEnv.INDEXER_POLL_INTERVAL_MS,
   indexerBatchSize: parsedEnv.INDEXER_BATCH_SIZE,
   indexerCatchupWorkers: parsedEnv.INDEXER_CATCHUP_WORKERS,
+  indexerReorgProtectionDepth: parsedEnv.INDEXER_REORG_PROTECTION_DEPTH,
 
   microBlockSyncEnabled: parsedEnv.MICRO_BLOCK_SYNC_ENABLED,
   microBlockPollIntervalMs: parsedEnv.MICRO_BLOCK_POLL_INTERVAL_MS,

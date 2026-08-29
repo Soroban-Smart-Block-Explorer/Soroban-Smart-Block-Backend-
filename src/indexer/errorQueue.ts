@@ -3,6 +3,8 @@ import { Prisma } from '@prisma/client';
 import { logger } from '../logger';
 
 const MAX_RETRIES = 3;
+const DEFAULT_BATCH_SIZE = 50;
+const DEFAULT_CONCURRENCY = 5;
 
 export interface FailedItemInput {
   itemType: 'transaction' | 'event' | 'ledger';
@@ -13,19 +15,52 @@ export interface FailedItemInput {
   context?: Record<string, unknown>;
 }
 
+export interface RetryOptions {
+  batchSize?: number;
+  concurrency?: number;
+}
+
+/**
+ * Detect non-retryable or poison errors (e.g. corrupted XDR, schema violations, syntax errors)
+ */
+export function isPoisonError(error: unknown): boolean {
+  if (!error) return false;
+  const msg = error instanceof Error ? error.message.toLowerCase() : String(error).toLowerCase();
+  const stack = error instanceof Error ? (error.stack ?? '').toLowerCase() : '';
+
+  const poisonIndicators = [
+    'invalid xdr',
+    'corrupted xdr',
+    'syntaxerror',
+    'schemavalidationfailed',
+    'unparseable',
+    'malformed xdr',
+    'typeerror: cannot read',
+    'poison',
+  ];
+
+  return poisonIndicators.some(
+    (indicator) => msg.includes(indicator) || stack.includes(indicator),
+  );
+}
+
 /** Persist a failed decode item. Idempotent — increments retryCount on conflict. */
 export async function enqueueFailure(item: FailedItemInput): Promise<void> {
   const err = item.error instanceof Error ? item.error : new Error(String(item.error));
+  const poisonDetected = isPoisonError(item.error);
+
   const existing = await prisma.failedItem.findFirst({
     where: { itemId: item.itemId, itemType: item.itemType },
   });
 
-  let isDead = false;
+  let isDead = poisonDetected;
   let currentRetryCount = 0;
 
   if (existing) {
     currentRetryCount = existing.retryCount + 1;
-    isDead = currentRetryCount >= MAX_RETRIES;
+    if (currentRetryCount >= MAX_RETRIES || poisonDetected) {
+      isDead = true;
+    }
     await prisma.failedItem.update({
       where: { id: existing.id },
       data: {
@@ -38,7 +73,9 @@ export async function enqueueFailure(item: FailedItemInput): Promise<void> {
     });
   } else {
     currentRetryCount = 0;
-    isDead = currentRetryCount >= MAX_RETRIES;
+    if (poisonDetected) {
+      isDead = true;
+    }
     await prisma.failedItem.create({
       data: {
         itemType: item.itemType,
@@ -47,7 +84,10 @@ export async function enqueueFailure(item: FailedItemInput): Promise<void> {
         rawXdr: item.rawXdr ?? null,
         errorMsg: err.message,
         errorStack: err.stack ?? null,
-        context: item.context != null ? (item.context as Prisma.InputJsonValue) : Prisma.JsonNull,
+        context:
+          item.context != null
+            ? ({ ...item.context, isPoison: poisonDetected } as Prisma.InputJsonValue)
+            : ({ isPoison: poisonDetected } as Prisma.InputJsonValue),
         retryCount: currentRetryCount,
         dead: isDead,
       },
@@ -55,9 +95,14 @@ export async function enqueueFailure(item: FailedItemInput): Promise<void> {
   }
 
   if (isDead) {
+    const reason = poisonDetected
+      ? `Poison message detected (${err.message})`
+      : `Reached max retries (${MAX_RETRIES})`;
+
     logger.error(
-      `🚨 [DEAD LETTER] Item ${item.itemType}:${item.itemId} reached ${MAX_RETRIES} retries. Moving to DeadLetterItem queue.`,
+      `🚨 [POISON ISOLATION / DLQ] Item ${item.itemType}:${item.itemId} (ledger ${item.ledger}): ${reason}. Isolating to DeadLetterItem queue.`,
     );
+
     await moveToDeadLetter({
       itemType: item.itemType,
       itemId: item.itemId,
@@ -66,7 +111,7 @@ export async function enqueueFailure(item: FailedItemInput): Promise<void> {
       errorMsg: err.message,
       errorStack: err.stack ?? null,
       retryCount: currentRetryCount,
-      payload: item.context ?? null,
+      payload: { ...item.context, isPoison: poisonDetected, isolationReason: reason },
     });
   } else {
     logger.error(
@@ -118,7 +163,6 @@ export async function reprocessDeadLetterItem(id: string): Promise<boolean> {
   const dlItem = await prisma.deadLetterItem.findUnique({ where: { id } });
   if (!dlItem) return false;
 
-  // Reset corresponding FailedItem to non-dead and retry count 0 so it gets retried
   const existingFailed = await prisma.failedItem.findFirst({
     where: { itemId: dlItem.itemId, itemType: dlItem.itemType },
   });
@@ -147,9 +191,23 @@ export async function purgeDeadLetterItems(ids?: string[]): Promise<number> {
   return deleted.count;
 }
 
+/** Get queue depth and backpressure status metrics */
+export async function getQueueBackpressureStatus() {
+  const [pendingCount, deadCount] = await Promise.all([
+    prisma.failedItem.count({ where: { dead: false } }),
+    prisma.deadLetterItem.count(),
+  ]);
+
+  return {
+    pendingCount,
+    deadCount,
+    isOverloaded: pendingCount > 500,
+  };
+}
+
 /**
- * Retry all non-dead failed items by calling the provided handler.
- * Items that succeed are deleted; items that fail again are re-enqueued.
+ * Retry non-dead failed items with backpressure batching and worker-pool concurrency control.
+ * Healthy items are processed concurrently; poison items are isolated immediately.
  */
 export async function retryFailures(
   handler: (item: {
@@ -159,26 +217,76 @@ export async function retryFailures(
     rawXdr: string | null;
     context: unknown;
   }) => Promise<void>,
-): Promise<void> {
+  options: RetryOptions = {},
+): Promise<{ processed: number; succeeded: number; failed: number }> {
+  const batchSize = options.batchSize ?? DEFAULT_BATCH_SIZE;
+  const concurrency = options.concurrency ?? DEFAULT_CONCURRENCY;
+
+  // 1. Fetch capped batch of non-dead failed items (backpressure control)
   const pending = await prisma.failedItem.findMany({
     where: { dead: false },
+    take: batchSize,
     orderBy: { createdAt: 'asc' },
   });
 
-  for (const item of pending) {
-    try {
-      await handler(item);
-      await prisma.failedItem.delete({ where: { id: item.id } });
-      logger.info(`[errorQueue] Retry succeeded for ${item.itemType} ${item.itemId}`);
-    } catch (err) {
-      await enqueueFailure({
-        itemType: item.itemType as 'transaction' | 'event' | 'ledger',
-        itemId: item.itemId,
-        ledger: item.ledger,
-        rawXdr: item.rawXdr ?? undefined,
-        error: err,
-        context: item.context as Record<string, unknown> | undefined,
-      });
-    }
+  if (pending.length === 0) {
+    return { processed: 0, succeeded: 0, failed: 0 };
   }
+
+  logger.info(
+    `[errorQueue] Retrying ${pending.length} failed items (batchSize: ${batchSize}, concurrency: ${concurrency})`,
+  );
+
+  let succeeded = 0;
+  let failed = 0;
+
+  // 2. Process batch in worker pool chunks up to max concurrency
+  for (let i = 0; i < pending.length; i += concurrency) {
+    const chunk = pending.slice(i, i + concurrency);
+    await Promise.all(
+      chunk.map(async (item) => {
+        try {
+          // If poison error is detected in metadata upfront, isolate immediately
+          if (isPoisonError(item.errorMsg)) {
+            logger.warn(
+              `🚨 [POISON ISOLATION] Fast isolating pre-identified poison item ${item.itemType}:${item.itemId}`,
+            );
+            await prisma.failedItem.update({
+              where: { id: item.id },
+              data: { dead: true },
+            });
+            await moveToDeadLetter({
+              itemType: item.itemType,
+              itemId: item.itemId,
+              ledger: item.ledger,
+              hash: item.rawXdr ?? null,
+              errorMsg: item.errorMsg,
+              errorStack: item.errorStack ?? null,
+              retryCount: item.retryCount,
+              payload: { context: item.context, isPoison: true },
+            });
+            failed += 1;
+            return;
+          }
+
+          await handler(item);
+          await prisma.failedItem.delete({ where: { id: item.id } });
+          succeeded += 1;
+          logger.info(`[errorQueue] Retry succeeded for ${item.itemType} ${item.itemId}`);
+        } catch (err) {
+          failed += 1;
+          await enqueueFailure({
+            itemType: item.itemType as 'transaction' | 'event' | 'ledger',
+            itemId: item.itemId,
+            ledger: item.ledger,
+            rawXdr: item.rawXdr ?? undefined,
+            error: err,
+            context: item.context as Record<string, unknown> | undefined,
+          });
+        }
+      }),
+    );
+  }
+
+  return { processed: pending.length, succeeded, failed };
 }
