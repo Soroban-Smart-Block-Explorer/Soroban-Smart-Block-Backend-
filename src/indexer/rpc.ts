@@ -302,3 +302,29 @@ export async function fetchLedgerMetadata(sequence: number): Promise<{
 
   throw new Error(`Failed to fetch ledger ${sequence}`);
 }
+
+const CATCHUP_PREFETCH_CONCURRENCY = 8;
+
+/**
+ * #913 — fetch ledger metadata for multiple sequences with bounded
+ * concurrency instead of one RPC/Horizon round-trip at a time. Used by
+ * catch-up to pipeline network calls while downstream processing (reorg
+ * checks, persistence) stays sequential.
+ */
+export async function fetchLedgerMetadataBatch(
+  sequences: number[],
+): Promise<Map<number, Awaited<ReturnType<typeof fetchLedgerMetadata>>>> {
+  const results = new Map<number, Awaited<ReturnType<typeof fetchLedgerMetadata>>>();
+  let cursor = 0;
+
+  async function worker() {
+    while (cursor < sequences.length) {
+      const seq = sequences[cursor++];
+      results.set(seq, await fetchLedgerMetadata(seq));
+    }
+  }
+
+  const workerCount = Math.min(CATCHUP_PREFETCH_CONCURRENCY, sequences.length);
+  await Promise.all(Array.from({ length: workerCount }, worker));
+  return results;
+}

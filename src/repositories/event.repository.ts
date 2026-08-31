@@ -16,14 +16,18 @@ export interface EventFindOptions {
   take?: number;
   skip?: number;
   orderBy?: Record<string, 'asc' | 'desc'>;
+  /** #914 — keyset cursor (event id) for cursor-based pagination. */
+  cursorId?: string;
 }
 
 export class EventRepository {
   async findManySummary(options: EventFindOptions) {
     return prisma.event.findMany({
       where: options.where,
-      orderBy: options.orderBy ?? { ledgerSequence: 'desc' },
-      skip: options.skip,
+      orderBy: options.orderBy ? options.orderBy : [{ ledgerSequence: 'desc' }, { id: 'desc' }],
+      ...(options.cursorId
+        ? { cursor: { id: options.cursorId }, skip: 1 }
+        : { skip: options.skip }),
       take: options.take,
       select: EVENT_SUMMARY_SELECT,
     });

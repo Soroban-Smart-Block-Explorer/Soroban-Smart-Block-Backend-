@@ -15,6 +15,7 @@ import {
   getTransactionFromHorizon,
   type LedgerEvent,
   fetchLedgerMetadata,
+  fetchLedgerMetadataBatch,
 } from './rpc';
 import { decodeTransaction, decodeEvent } from './decoder';
 import { decodeZkpVerification, recordZkpVerification } from './zkp-verifier';
@@ -237,11 +238,19 @@ export async function processLedgerRange(
   // Stage 1: FETCH metadata & Reorg check
   const stopFetchTimer = indexerPipelineStageDuration.startTimer({ stage: 'fetch' });
 
+  // #913 — prefetch ledger metadata for this worker's sequences with bounded
+  // concurrency instead of awaiting one RPC/Horizon round-trip per ledger.
+  // Downstream reorg-check/persist logic below still runs strictly in order.
+  const responsibleSeqs: number[] = [];
   for (let seq = start; seq <= end; seq++) {
-    if (!opts.force && !(await amIResponsibleFor(seq))) {
-      continue;
+    if (opts.force || (await amIResponsibleFor(seq))) {
+      responsibleSeqs.push(seq);
     }
-    const ledgerMeta = await fetchLedgerMetadata(seq);
+  }
+  const prefetchedMeta = await fetchLedgerMetadataBatch(responsibleSeqs);
+
+  for (const seq of responsibleSeqs) {
+    const ledgerMeta = prefetchedMeta.get(seq) ?? (await fetchLedgerMetadata(seq));
 
     // Deep Reorg Check & Extended Backtracking
     const prevSeq = seq - 1;
