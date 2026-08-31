@@ -129,7 +129,9 @@ export class AdaptivePollingService {
     // Rule 2: Caught up and idle - slow down
     else if (ledgersBehind === 0 && processingQueueDepth === 0) {
       targetInterval = Math.min(this.currentInterval * 1.2, this.config.maxInterval);
-      logger.debug(`Caught up (0 behind, 0 queued), targeting increased interval ${targetInterval}ms`);
+      logger.debug(
+        `Caught up (0 behind, 0 queued), targeting increased interval ${targetInterval}ms`,
+      );
     }
     // Rule 3: Some backlog with available capacity - slight speedup
     else if (ledgersBehind > 0 && availableWorkers > 0) {

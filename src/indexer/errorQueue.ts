@@ -39,9 +39,7 @@ export function isPoisonError(error: unknown): boolean {
     'poison',
   ];
 
-  return poisonIndicators.some(
-    (indicator) => msg.includes(indicator) || stack.includes(indicator),
-  );
+  return poisonIndicators.some((indicator) => msg.includes(indicator) || stack.includes(indicator));
 }
 
 /** Persist a failed decode item. Idempotent — increments retryCount on conflict. */

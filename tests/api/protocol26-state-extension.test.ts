@@ -141,11 +141,15 @@ describe('Protocol 26 State Extension Router', () => {
   // ── POST /contracts/:contractId/extend-ttl ────────────────────────────────
 
   describe('POST /protocol26/contracts/:contractId/extend-ttl', () => {
-    it('returns 400 when contractId is missing', async () => {
+    it('rejects an empty contractId segment', async () => {
+      // An empty `:contractId` path segment can't satisfy the required route
+      // param, so Express never runs the handler — the request falls through
+      // to the 404 handler. That's the correct routing behaviour for a
+      // malformed path.
       const res = await request(app)
         .post('/protocol26/contracts//extend-ttl')
         .send({ ledgersToLive: 1000 });
-      expect(res.status).toBe(400);
+      expect(res.status).toBe(404);
     });
 
     it('returns 400 when ledgersToLive is missing', async () => {

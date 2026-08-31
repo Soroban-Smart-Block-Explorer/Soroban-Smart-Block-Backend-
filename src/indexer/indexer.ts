@@ -262,14 +262,19 @@ export async function processLedgerRange(
         const checkSeq = prevSeq - depth;
         if (checkSeq <= 0) break;
 
-        const localCheckLedger = await prismaRead.ledger.findUnique({ where: { sequence: checkSeq } });
+        const localCheckLedger = await prismaRead.ledger.findUnique({
+          where: { sequence: checkSeq },
+        });
         if (!localCheckLedger) break;
 
         let remoteCheckMeta = null;
         try {
           remoteCheckMeta = await fetchLedgerMetadata(checkSeq);
         } catch (e) {
-          logger.error(`Failed to fetch remote metadata for deep reorg check at ledger ${checkSeq}`, e);
+          logger.error(
+            `Failed to fetch remote metadata for deep reorg check at ledger ${checkSeq}`,
+            e,
+          );
           break;
         }
 

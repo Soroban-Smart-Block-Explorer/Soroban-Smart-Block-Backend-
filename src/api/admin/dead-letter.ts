@@ -47,7 +47,10 @@ deadLetterAdminRouter.post(
     const { id } = req.body;
     if (id) {
       const success = await reprocessDeadLetterItem(id);
-      res.json({ success, message: success ? `Item ${id} re-enqueued for retry` : 'Item not found' });
+      res.json({
+        success,
+        message: success ? `Item ${id} re-enqueued for retry` : 'Item not found',
+      });
       return;
     }
 

@@ -1,4 +1,4 @@
-import { config } from './config';
+import { createHash } from 'crypto';
 import { config } from './config';
 import type { RedisClientType } from 'redis';
 import { logger } from './logger';
