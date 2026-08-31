@@ -13,6 +13,8 @@ import {
 } from '@stellar/stellar-sdk';
 import { config } from '../config';
 import { getCachedAbi } from '../indexer/abi-cache';
+import { prismaWrite, prismaRead } from '../db';
+import { logger } from '../logger';
 
 export type FindingSeverity = 'critical' | 'high' | 'medium' | 'low';
 
@@ -327,38 +329,97 @@ export async function persistRegressionTests(
 // In-memory store for async fuzz jobs
 interface FuzzJob {
   id: string;
-  status: 'running' | 'completed' | 'failed';
+  status: 'running' | 'completed' | 'failed' | 'interrupted';
   report?: FuzzReport;
   error?: string;
   startedAt: string;
+  completedAt?: string;
 }
-
-const fuzzJobs = new Map<string, FuzzJob>();
-let jobCounter = 0;
 
 export function startFuzzJob(
   contractAddress: string,
   options: { maxCases?: number; targetFunctions?: string[]; persist?: boolean } = {},
 ): string {
-  const id = `fuzz_${++jobCounter}_${Date.now()}`;
-  const job: FuzzJob = { id, status: 'running', startedAt: new Date().toISOString() };
-  fuzzJobs.set(id, job);
+  const id = `fuzz_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
 
-  fuzzContract(contractAddress, options)
-    .then((report) => {
-      job.status = 'completed';
-      job.report = report;
+  prismaWrite.fuzzJob
+    .create({
+      data: {
+        id,
+        contractAddress,
+        status: 'running',
+        startedAt: new Date(),
+      },
     })
-    .catch((e) => {
-      job.status = 'failed';
-      job.error = String(e);
+    .then(() => {
+      fuzzContract(contractAddress, options)
+        .then(async (report) => {
+          await prismaWrite.fuzzJob
+            .update({
+              where: { id },
+              data: {
+                status: 'completed',
+                report: report as any,
+                completedAt: new Date(),
+              },
+            })
+            .catch((err) => {
+              logger.error(`[fuzzer] Failed to update completed job ${id} in DB:`, err);
+            });
+        })
+        .catch(async (e) => {
+          await prismaWrite.fuzzJob
+            .update({
+              where: { id },
+              data: {
+                status: 'failed',
+                error: String(e),
+                completedAt: new Date(),
+              },
+            })
+            .catch((err) => {
+              logger.error(`[fuzzer] Failed to update failed job ${id} in DB:`, err);
+            });
+        });
+    })
+    .catch((err) => {
+      logger.error(`[fuzzer] Failed to create fuzz job ${id} in DB:`, err);
     });
 
   return id;
 }
 
-export function getFuzzJob(id: string): FuzzJob | undefined {
-  return fuzzJobs.get(id);
+export async function getFuzzJob(id: string): Promise<FuzzJob | null> {
+  const dbJob = await prismaRead.fuzzJob.findUnique({
+    where: { id },
+  });
+  if (!dbJob) return null;
+  return {
+    id: dbJob.id,
+    status: dbJob.status as 'running' | 'completed' | 'failed' | 'interrupted',
+    report: dbJob.report ? (dbJob.report as unknown as FuzzReport) : undefined,
+    error: dbJob.error || undefined,
+    startedAt: dbJob.startedAt.toISOString(),
+    completedAt: dbJob.completedAt?.toISOString() || undefined,
+  };
+}
+
+export async function reconcileOrphanedFuzzJobs(): Promise<void> {
+  try {
+    const result = await prismaWrite.fuzzJob.updateMany({
+      where: { status: 'running' },
+      data: {
+        status: 'interrupted',
+        error: 'Job was interrupted due to application restart',
+        completedAt: new Date(),
+      },
+    });
+    if (result.count > 0) {
+      logger.warn(`[fuzzer] Reconciled ${result.count} orphaned fuzzing jobs as interrupted.`);
+    }
+  } catch (error) {
+    logger.error('[fuzzer] Error reconciling orphaned fuzz jobs:', error);
+  }
 }
 
 /**

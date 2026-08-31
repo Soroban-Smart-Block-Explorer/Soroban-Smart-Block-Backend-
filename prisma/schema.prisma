@@ -5159,3 +5159,17 @@ model FeatureFlagOverride {
   @@index([flagKey, scopeType])
   @@map("_feature_flag_overrides")
 }
+
+model FuzzJob {
+  id              String    @map("id") @id
+  contractAddress String    @map("contract_address")
+  status          String    @map("status") // 'running', 'completed', 'failed', 'interrupted'
+  report          Json?     @map("report")
+  error           String?   @map("error")
+  startedAt       DateTime  @map("started_at") @default(now())
+  completedAt     DateTime? @map("completed_at")
+
+  @@index([contractAddress])
+  @@index([status])
+  @@map("_fuzz_jobs")
+}

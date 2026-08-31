@@ -1,7 +1,7 @@
 import { prismaRead, prismaWrite } from './db';
 import { isCacheReady, cacheBackendType, pingRedis } from './cache';
 import { getIndexerStatus } from './indexer-state';
-import { getReadinessState } from './readiness';
+import { getReadinessState, markReady, markNotReady } from './readiness';
 import { getConnectedPeerCount, isP2pEnabled } from './p2p';
 import { measureReplicaLag } from './db/replicaGateway';
 import { getLatestLedger } from './indexer/rpc';
@@ -51,6 +51,7 @@ export interface HealthResponse {
     indexer: DependencyHealth;
     worker: DependencyHealth;
     p2p: DependencyHealth;
+    coldStorage: DependencyHealth;
   };
   system: SystemMetrics;
   readiness: {
@@ -309,19 +310,74 @@ function checkP2pHealth(): DependencyHealth {
 /**
  * Get overall health status
  */
-export async function getHealthStatus(): Promise<HealthResponse> {
-  const database = await checkDatabaseHealth();
-  const cache = await checkCacheHealth();
-  const rpc = await checkRpcHealth();
+export async function getHealthStatus(detailed = false): Promise<HealthResponse> {
+  const readinessState = getReadinessState();
 
-  const latestNetworkLedger =
-    rpc.status !== 'unhealthy' && rpc.details ? (rpc.details.latestNetworkLedger as number) : null;
+  let database: DependencyHealth;
+  let cache: DependencyHealth;
+  let rpc: DependencyHealth;
+  let indexer: DependencyHealth;
+  let worker: DependencyHealth;
+  let p2p: DependencyHealth;
+  let coldStorage: DependencyHealth;
 
-  const indexer = await checkIndexerHealth(latestNetworkLedger);
-  const worker = checkWorkerHealth();
-  const p2p = checkP2pHealth();
+  if (detailed) {
+    // Detailed health check: perform live probes
+    database = await checkDatabaseHealth();
+    cache = await checkCacheHealth();
+    rpc = await checkRpcHealth();
 
-  const dependencies = { database, cache, rpc, indexer, worker, p2p };
+    const latestNetworkLedger =
+      rpc.status !== 'unhealthy' && rpc.details ? (rpc.details.latestNetworkLedger as number) : null;
+
+    indexer = await checkIndexerHealth(latestNetworkLedger);
+    worker = checkWorkerHealth();
+    p2p = checkP2pHealth();
+    coldStorage = {
+      status: readinessState.coldStorage ? 'healthy' : 'unhealthy',
+      message: readinessState.coldStorage ? 'Cold storage ready' : 'Cold storage not ready',
+      lastChecked: new Date().toISOString(),
+    };
+
+    // Keep readiness state in sync with detailed probes
+    if (database.status === 'unhealthy') markNotReady('db'); else markReady('db');
+    if (cache.status === 'unhealthy') markNotReady('cache'); else markReady('cache');
+    if (rpc.status === 'unhealthy') markNotReady('rpc'); else markReady('rpc');
+    if (indexer.status === 'unhealthy') markNotReady('indexer'); else markReady('indexer');
+    if (worker.status === 'unhealthy') markNotReady('worker'); else markReady('worker');
+    if (p2p.status === 'unhealthy') markNotReady('p2p'); else markReady('p2p');
+  } else {
+    // Default health check: derive status from readiness state + cheap signals
+    database = {
+      status: readinessState.db ? 'healthy' : 'unhealthy',
+      message: readinessState.db ? 'Database ready (readiness state)' : 'Database not ready',
+      lastChecked: new Date().toISOString(),
+    };
+    cache = {
+      status: readinessState.cache ? 'healthy' : 'unhealthy',
+      message: readinessState.cache ? 'Cache ready (readiness state)' : 'Cache not ready',
+      lastChecked: new Date().toISOString(),
+    };
+    rpc = {
+      status: readinessState.rpc ? 'healthy' : 'unhealthy',
+      message: readinessState.rpc ? 'RPC ready (readiness state)' : 'RPC not ready',
+      lastChecked: new Date().toISOString(),
+    };
+    indexer = {
+      status: readinessState.indexer ? 'healthy' : 'unhealthy',
+      message: readinessState.indexer ? 'Indexer ready (readiness state)' : 'Indexer not ready',
+      lastChecked: new Date().toISOString(),
+    };
+    worker = checkWorkerHealth(); // cheap, in-memory check
+    p2p = checkP2pHealth(); // cheap, in-memory check
+    coldStorage = {
+      status: readinessState.coldStorage ? 'healthy' : 'unhealthy',
+      message: readinessState.coldStorage ? 'Cold storage ready (readiness state)' : 'Cold storage not ready',
+      lastChecked: new Date().toISOString(),
+    };
+  }
+
+  const dependencies = { database, cache, rpc, indexer, worker, p2p, coldStorage };
 
   // Determine overall status
   const statuses = Object.values(dependencies).map((d) => d.status);
@@ -335,7 +391,6 @@ export async function getHealthStatus(): Promise<HealthResponse> {
     overallStatus = 'healthy';
   }
 
-  const readinessState = getReadinessState();
   const ready = Object.values(readinessState).every(Boolean);
 
   // Collect system metrics

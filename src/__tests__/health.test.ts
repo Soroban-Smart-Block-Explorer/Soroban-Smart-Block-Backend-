@@ -15,6 +15,15 @@ import { checkWorkerHealth } from '../health';
 import { scheduler } from '../scheduler/cron-scheduler';
 import { config } from '../config';
 
+vi.mock('../logger', () => ({
+  logger: {
+    info: vi.fn(),
+    error: vi.fn(),
+    warn: vi.fn(),
+    debug: vi.fn(),
+  },
+}));
+
 describe('checkWorkerHealth', () => {
   beforeEach(() => {
     scheduler._clearHealthRegistry();

@@ -47,6 +47,14 @@ export async function initializeServices(disabledServices: string[]): Promise<vo
   dbConnectionStatus.set(1);
   markReady('db');
 
+  try {
+    const { getLatestLedger } = await import('./indexer/rpc');
+    await getLatestLedger();
+    markReady('rpc');
+  } catch (err) {
+    logger.error('[rpc] Failed to contact RPC node during services init', { error: String(err) });
+  }
+
   await initializeColdStorage();
   markReady('coldStorage');
 
