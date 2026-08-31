@@ -51,11 +51,8 @@ interface ValidationResult {
 const PENDING_SCHEMA_ROUTERS = new Set([
   'advanced-events.ts',
   'assets.ts',
-  'auth.ts',
   'authMultisig.ts',
-  'authOAuth2.ts',
   'authProfile.ts',
-  'authSecurity.ts',
   'authWebhooks.ts',
   'bn254.ts',
   'checked-arithmetic.ts',
