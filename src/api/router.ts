@@ -69,6 +69,8 @@ import { oracleIntelligenceRouter } from './oracle-intelligence';
 
 // ── SAC Trustlines (#637) ─────────────────────────────────────────────────────
 import { sacTrustlinesRouter } from './sac-trustlines';
+// ── ECO08 Grants & Bounties Explorer (#1019) ───────────────────────────────────
+import { grantsBountiesRouter } from './grants-bounties';
 
 // ── Admin ─────────────────────────────────────────────────────────────────────
 import { adminErrorsRouter } from './admin/errors';
@@ -221,6 +223,7 @@ import { governanceTreasuryRouter } from './governance-treasury';
 import { governanceRouter } from './governance';
 router.use('/governance/treasury', governanceTreasuryRouter);
 router.use('/governance', governanceRouter);
+router.use('/grants-bounties', grantsBountiesRouter);
 router.use('/systemic', systemicRouter);
 router.use('/benchmarks', benchmarkRouter);
 router.use('/emergency', emergencyBaseRouter);
