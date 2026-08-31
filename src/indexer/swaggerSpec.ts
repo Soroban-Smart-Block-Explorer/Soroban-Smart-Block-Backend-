@@ -9,9 +9,6 @@ const options: swaggerJsdoc.Options = {
       version: '1.0.0',
       description: 'Human-readable Soroban contract explorer. Decodes raw XDR into plain English.',
     },
-    // TODO(#251): `servers` base is already /api/v1, but route @swagger paths
-    // also include /api/v1 (matching alerts.ts), so rendered URLs are duplicated.
-    // Kept consistent for now — raise with maintainers before changing either side.
     servers: [{ url: '/api/v1', description: 'API v1' }],
     tags: [
       { name: 'Transactions', description: 'Soroban transaction queries and decoding' },

@@ -28,7 +28,7 @@ const listSchema = z.object({
 
 /**
  * @swagger
- * /api/v1/transactions:
+ * /transactions:
  *   get:
  *     summary: List indexed transactions (cursor- or offset-paginated)
  *     tags: [Transactions]
@@ -123,7 +123,7 @@ transactionRouter.get(
 
 /**
  * @swagger
- * /api/v1/transactions/{hash}:
+ * /transactions/{hash}:
  *   get:
  *     summary: Get a single transaction by hash
  *     tags: [Transactions]

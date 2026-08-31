@@ -151,7 +151,7 @@ async function analyzeAndPersist(
 
 /**
  * @swagger
- * /api/v1/composability/analyze:
+ * /composability/analyze:
  *   post:
  *     tags: [Composability]
  *     summary: Analyse a composed transaction's call graph
@@ -246,7 +246,7 @@ composabilityRouter.post(
 
 /**
  * @swagger
- * /api/v1/composability/analyze/batch:
+ * /composability/analyze/batch:
  *   post:
  *     tags: [Composability]
  *     summary: Analyse multiple composed transactions in one request
@@ -344,7 +344,7 @@ composabilityRouter.post(
 
 /**
  * @swagger
- * /api/v1/composability/transactions/{txHash}:
+ * /composability/transactions/{txHash}:
  *   get:
  *     tags: [Composability]
  *     summary: Composed transaction with detected pattern instances
@@ -389,7 +389,7 @@ composabilityRouter.get(
 
 /**
  * @swagger
- * /api/v1/composability/contracts/{address}:
+ * /composability/contracts/{address}:
  *   get:
  *     tags: [Composability]
  *     summary: Composability profile for a contract
@@ -433,7 +433,7 @@ composabilityRouter.get(
 
 /**
  * @swagger
- * /api/v1/composability/contracts/{address}/patterns:
+ * /composability/contracts/{address}/patterns:
  *   get:
  *     tags: [Composability]
  *     summary: Pattern instances observed involving a contract
@@ -487,7 +487,7 @@ composabilityRouter.get(
 
 /**
  * @swagger
- * /api/v1/composability/contracts/{address}/callers:
+ * /composability/contracts/{address}/callers:
  *   get:
  *     tags: [Composability]
  *     summary: Caller count and composition partners for a contract
@@ -536,7 +536,7 @@ composabilityRouter.get(
 
 /**
  * @swagger
- * /api/v1/composability/contracts/{address}/callees:
+ * /composability/contracts/{address}/callees:
  *   get:
  *     tags: [Composability]
  *     summary: Callee count for a contract
@@ -579,7 +579,7 @@ composabilityRouter.get(
 
 /**
  * @swagger
- * /api/v1/composability/patterns:
+ * /composability/patterns:
  *   get:
  *     tags: [Composability]
  *     summary: All catalogued composition patterns ordered by risk rating
@@ -657,7 +657,7 @@ composabilityRouter.get(
 
 /**
  * @swagger
- * /api/v1/composability/patterns/{id}:
+ * /composability/patterns/{id}:
  *   get:
  *     tags: [Composability]
  *     summary: Pattern detail with the 20 most recent instances
@@ -736,7 +736,7 @@ composabilityRouter.post(
 
 /**
  * @swagger
- * /api/v1/composability/static-analyze/{address}:
+ * /composability/static-analyze/{address}:
  *   post:
  *     tags: [Composability]
  *     summary: Run static analysis on a contract's function signatures
@@ -803,7 +803,7 @@ composabilityRouter.post(
 
 /**
  * @swagger
- * /api/v1/composability/circular-dependencies:
+ * /composability/circular-dependencies:
  *   get:
  *     tags: [Composability]
  *     summary: Contracts with detected unbounded recursion
@@ -844,7 +844,7 @@ composabilityRouter.get(
 
 /**
  * @swagger
- * /api/v1/composability/verify/{txHash}:
+ * /composability/verify/{txHash}:
  *   post:
  *     tags: [Composability]
  *     summary: Verify composition safety for a previously analysed transaction
@@ -932,7 +932,7 @@ composabilityRouter.post(
 
 /**
  * @swagger
- * /api/v1/composability/verify/{txHash}/proof:
+ * /composability/verify/{txHash}/proof:
  *   get:
  *     tags: [Composability]
  *     summary: Verification proof data for a transaction
@@ -991,7 +991,7 @@ composabilityRouter.get(
 
 /**
  * @swagger
- * /api/v1/composability/score/{txHash}:
+ * /composability/score/{txHash}:
  *   get:
  *     tags: [Composability]
  *     summary: Safety score and per-dimension breakdown for a transaction
@@ -1076,7 +1076,7 @@ composabilityRouter.get(
 
 /**
  * @swagger
- * /api/v1/composability/report/{txHash}:
+ * /composability/report/{txHash}:
  *   get:
  *     tags: [Composability]
  *     summary: Full composability report for a transaction
@@ -1189,7 +1189,7 @@ composabilityRouter.get(
 
 /**
  * @swagger
- * /api/v1/composability/exploit/check:
+ * /composability/exploit/check:
  *   post:
  *     tags: [Composability]
  *     summary: Check a call sequence for exploit patterns
@@ -1273,7 +1273,7 @@ composabilityRouter.post(
 
 /**
  * @swagger
- * /api/v1/composability/exploit/detected:
+ * /composability/exploit/detected:
  *   get:
  *     tags: [Composability]
  *     summary: Active (unmitigated) exploit alerts
@@ -1310,7 +1310,7 @@ composabilityRouter.get(
 
 /**
  * @swagger
- * /api/v1/composability/mitigate/{txHash}:
+ * /composability/mitigate/{txHash}:
  *   post:
  *     tags: [Composability]
  *     summary: Generate a mitigation patch for a composed transaction
@@ -1375,7 +1375,7 @@ composabilityRouter.post(
 
 /**
  * @swagger
- * /api/v1/composability/mitigate/contract/{contractAddress}:
+ * /composability/mitigate/contract/{contractAddress}:
  *   post:
  *     tags: [Composability]
  *     summary: Generate a mitigation patch across the 10 most recent transactions involving a contract
@@ -1427,7 +1427,7 @@ composabilityRouter.post(
 
 /**
  * @swagger
- * /api/v1/composability/fuzz/{contractAddress}:
+ * /composability/fuzz/{contractAddress}:
  *   post:
  *     tags: [Composability]
  *     summary: Run a composability fuzz campaign against a contract
@@ -1504,7 +1504,7 @@ composabilityRouter.post(
 
 /**
  * @swagger
- * /api/v1/composability/fuzz/{campaignId}:
+ * /composability/fuzz/{campaignId}:
  *   get:
  *     tags: [Composability]
  *     summary: Fuzz campaign record
@@ -1548,7 +1548,7 @@ composabilityRouter.get(
 
 /**
  * @swagger
- * /api/v1/composability/fuzz/{campaignId}/coverage:
+ * /composability/fuzz/{campaignId}/coverage:
  *   get:
  *     tags: [Composability]
  *     summary: Coverage summary for a fuzz campaign
@@ -1599,7 +1599,7 @@ composabilityRouter.get(
 
 /**
  * @swagger
- * /api/v1/composability/exploit-database:
+ * /composability/exploit-database:
  *   get:
  *     tags: [Composability]
  *     summary: Browse the composability exploit knowledge base
@@ -1718,7 +1718,7 @@ composabilityRouter.post(
 
 /**
  * @swagger
- * /api/v1/composability/ecosystem-index:
+ * /composability/ecosystem-index:
  *   get:
  *     tags: [Composability]
  *     summary: Latest ecosystem composability health index
@@ -1781,7 +1781,7 @@ composabilityRouter.get(
 
 /**
  * @swagger
- * /api/v1/composability/ecosystem-index/history:
+ * /composability/ecosystem-index/history:
  *   get:
  *     tags: [Composability]
  *     summary: Historical ecosystem index snapshots
@@ -1821,7 +1821,7 @@ composabilityRouter.get(
 
 /**
  * @swagger
- * /api/v1/composability/graph:
+ * /composability/graph:
  *   get:
  *     tags: [Composability]
  *     summary: Aggregate cross-contract call graph across recent transactions
@@ -1902,7 +1902,7 @@ composabilityRouter.get(
 
 /**
  * @swagger
- * /api/v1/composability/leaderboard:
+ * /composability/leaderboard:
  *   get:
  *     tags: [Composability]
  *     summary: Top 20 most-composed contracts
@@ -1953,7 +1953,7 @@ composabilityRouter.get(
 
 /**
  * @swagger
- * /api/v1/composability/alerts:
+ * /composability/alerts:
  *   post:
  *     tags: [Composability]
  *     summary: Subscribe to composability alerts
@@ -2038,7 +2038,7 @@ composabilityRouter.post(
 
 /**
  * @swagger
- * /api/v1/composability/digest:
+ * /composability/digest:
  *   get:
  *     tags: [Composability]
  *     summary: Weekly composability digest

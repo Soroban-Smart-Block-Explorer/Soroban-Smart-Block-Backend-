@@ -13,7 +13,7 @@ export const assetsRouter = Router();
 
 /**
  * @swagger
- * /api/v1/assets/metrics:
+ * /assets/metrics:
  *   get:
  *     summary: Compute live token storage metrics for all SAC-mapped assets
  *     description: >
