@@ -10,6 +10,7 @@
 
 import * as cron from 'node-cron';
 import { logger } from '../logger';
+import { cronJobRunsTotal, cronJobDurationSeconds, cronJobLastSuccessTimestamp } from '../metrics';
 
 export interface ScheduledJob {
   id: string;
@@ -70,9 +71,10 @@ export interface WorkerHealthSummary {
  * Best-effort parse of common cron shorthand into an approximate interval in
  * milliseconds, for staleness detection when a job doesn't supply
  * `expectedIntervalMs` explicitly. Handles the "every N seconds/minutes"
- * patterns actually used in this codebase (`* * * * *`, `*/N * * * *`,
- * 6-field `*/N * * * * *`); anything else (day-of-week/month schedules)
- * returns null, meaning "don't flag this job as stale".
+ * patterns actually used in this codebase (the five-field every-minute form,
+ * the every-N-minutes form, and their six-field second equivalents); anything
+ * else (day-of-week/month schedules) returns null, meaning "don't flag this
+ * job as stale".
  */
 export function approxCronIntervalMs(expression: string): number | null {
   const parts = expression.trim().split(/\s+/);
@@ -116,6 +118,15 @@ class CronScheduler {
     status: 'success' | 'failure',
     meta?: { taskName?: string; expectedIntervalMs?: number },
   ): void {
+    // #911 — emit per-job metrics for externally-managed recurring tasks too
+    // (price updates, key rotation, reconciliation sweeps) so their health is
+    // visible in /metrics, not just logs. Duration is only tracked for
+    // scheduler-managed jobs (executeJob has the start time).
+    cronJobRunsTotal.inc({ job: id, status });
+    if (status === 'success') {
+      cronJobLastSuccessTimestamp.set({ job: id }, Date.now() / 1000);
+    }
+
     const existing = this.healthRegistry.get(id);
     const consecutiveFailures = status === 'failure' ? (existing?.consecutiveFailures ?? 0) + 1 : 0;
 
@@ -254,10 +265,18 @@ class CronScheduler {
       jobInstance.lastError = undefined;
       jobInstance.executionCount++;
 
+      // #911 — per-job Prometheus metrics. Runs/outcome counters and the
+      // last-success timestamp are emitted centrally in recordHeartbeat()
+      // (the single funnel for scheduler-managed AND externally-managed
+      // jobs); only the duration needs the start time captured here.
+      cronJobDurationSeconds.observe({ job: jobConfig.id }, duration / 1000);
+
       this.recordHeartbeat(jobConfig.id, 'success', {
         taskName: jobConfig.taskName,
         expectedIntervalMs:
-          jobConfig.expectedIntervalMs ?? approxCronIntervalMs(jobConfig.cronExpression) ?? undefined,
+          jobConfig.expectedIntervalMs ??
+          approxCronIntervalMs(jobConfig.cronExpression) ??
+          undefined,
       });
 
       logger.info(
@@ -267,13 +286,19 @@ class CronScheduler {
       const duration = Date.now() - startTime;
       const errorMessage = error instanceof Error ? error.message : String(error);
 
+      // #911 — per-job Prometheus metrics (see success path; runs/outcome
+      // counters flow through recordHeartbeat()).
+      cronJobDurationSeconds.observe({ job: jobConfig.id }, duration / 1000);
+
       jobInstance.lastError = error instanceof Error ? error : new Error(String(error));
       jobInstance.executionCount++;
 
       this.recordHeartbeat(jobConfig.id, 'failure', {
         taskName: jobConfig.taskName,
         expectedIntervalMs:
-          jobConfig.expectedIntervalMs ?? approxCronIntervalMs(jobConfig.cronExpression) ?? undefined,
+          jobConfig.expectedIntervalMs ??
+          approxCronIntervalMs(jobConfig.cronExpression) ??
+          undefined,
       });
 
       logger.error(
@@ -438,6 +463,10 @@ class CronScheduler {
     }
 
     this.jobs.clear();
+    // Reset the flag so the scheduler can be reused (tests and hot-reloads
+    // shut down and re-register jobs against the same singleton). Without
+    // this, every later run is skipped and shutdown calls short-circuit.
+    this.isShuttingDown = false;
     logger.info('[scheduler] Graceful shutdown complete');
   }
 }

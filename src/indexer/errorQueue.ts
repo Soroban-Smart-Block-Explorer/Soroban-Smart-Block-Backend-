@@ -1,6 +1,8 @@
 import { prismaWrite as prisma } from '../db';
 import { Prisma } from '@prisma/client';
 import { logger } from '../logger';
+import { indexerErrorQueueDepth, indexerErrorRetriesTotal, indexerErrorDlqTotal } from '../metrics';
+import { parseFailureReasonFromString } from './failure-parser';
 
 const MAX_RETRIES = 3;
 const DEFAULT_BATCH_SIZE = 50;
@@ -39,9 +41,28 @@ export function isPoisonError(error: unknown): boolean {
     'poison',
   ];
 
-  return poisonIndicators.some(
-    (indicator) => msg.includes(indicator) || stack.includes(indicator),
-  );
+  return poisonIndicators.some((indicator) => msg.includes(indicator) || stack.includes(indicator));
+}
+
+/**
+ * #912 — derive a bounded, low-cardinality reason label for DLQ/retry metrics
+ * from a raw error. Uses failure-parser.ts's translation layer where possible
+ * (so labels reflect the parsed failure category) but buckets into a fixed set
+ * to keep Prometheus label cardinality under control.
+ */
+export function classifyFailureReason(error: unknown): string {
+  if (isPoisonError(error)) return 'poison';
+
+  const msg = error instanceof Error ? error.message : String(error ?? '');
+  const parsed = parseFailureReasonFromString(msg).toLowerCase();
+
+  if (/parse|malformed|xdr|decode|unparseable/i.test(parsed)) return 'parse_error';
+  if (/timeout|timed out/i.test(parsed)) return 'timeout';
+  if (/rate limit|429/i.test(parsed)) return 'rate_limit';
+  if (/network|econn|socket|fetch failed|enotfound/i.test(parsed)) return 'network';
+  if (/budget|resource limit/i.test(parsed)) return 'resource_limit';
+  if (/auth|unauthorized/i.test(parsed)) return 'auth';
+  return 'other';
 }
 
 /** Persist a failed decode item. Idempotent — increments retryCount on conflict. */
@@ -58,6 +79,8 @@ export async function enqueueFailure(item: FailedItemInput): Promise<void> {
 
   if (existing) {
     currentRetryCount = existing.retryCount + 1;
+    // #912 — each re-enqueue is one retry; count it per item type.
+    indexerErrorRetriesTotal.inc({ type: item.itemType });
     if (currentRetryCount >= MAX_RETRIES || poisonDetected) {
       isDead = true;
     }
@@ -111,6 +134,7 @@ export async function enqueueFailure(item: FailedItemInput): Promise<void> {
       errorMsg: err.message,
       errorStack: err.stack ?? null,
       retryCount: currentRetryCount,
+      reason: poisonDetected ? 'poison' : 'retry_exhausted',
       payload: { ...item.context, isPoison: poisonDetected, isolationReason: reason },
     });
   } else {
@@ -129,8 +153,13 @@ export async function moveToDeadLetter(dlData: {
   errorMsg: string;
   errorStack?: string | null;
   retryCount: number;
+  /** Bounded reason label for metrics (defaults to classifyFailureReason(errorMsg)). */
+  reason?: string;
   payload?: Record<string, unknown> | null;
 }): Promise<void> {
+  // #912 — dead-letter events are permanent failures; count them by reason so
+  // operators can see poison-vs-exhaustion mix and alert on DLQ rate.
+  indexerErrorDlqTotal.inc({ reason: dlData.reason ?? classifyFailureReason(dlData.errorMsg) });
   await prisma.deadLetterItem.create({
     data: {
       itemType: dlData.itemType,
@@ -191,12 +220,31 @@ export async function purgeDeadLetterItems(ids?: string[]): Promise<number> {
   return deleted.count;
 }
 
+/**
+ * #912 — refresh the indexer_error_queue_depth gauges from the database.
+ * Called from getQueueBackpressureStatus() and at the end of every
+ * retryFailures() cycle so /metrics reflects queue reality between scans.
+ */
+export async function updateErrorQueueMetrics(): Promise<void> {
+  const [pendingCount, deadCount] = await Promise.all([
+    prisma.failedItem.count({ where: { dead: false } }),
+    prisma.deadLetterItem.count(),
+  ]);
+
+  indexerErrorQueueDepth.set({ queue: 'pending' }, pendingCount);
+  indexerErrorQueueDepth.set({ queue: 'dead' }, deadCount);
+}
+
 /** Get queue depth and backpressure status metrics */
 export async function getQueueBackpressureStatus() {
   const [pendingCount, deadCount] = await Promise.all([
     prisma.failedItem.count({ where: { dead: false } }),
     prisma.deadLetterItem.count(),
   ]);
+
+  // #912 — keep the depth gauges in sync with every backpressure read.
+  indexerErrorQueueDepth.set({ queue: 'pending' }, pendingCount);
+  indexerErrorQueueDepth.set({ queue: 'dead' }, deadCount);
 
   return {
     pendingCount,
@@ -263,6 +311,7 @@ export async function retryFailures(
               errorMsg: item.errorMsg,
               errorStack: item.errorStack ?? null,
               retryCount: item.retryCount,
+              reason: 'poison',
               payload: { context: item.context, isPoison: true },
             });
             failed += 1;
@@ -287,6 +336,9 @@ export async function retryFailures(
       }),
     );
   }
+
+  // #912 — refresh depth gauges at the end of each retry-scan cycle.
+  await updateErrorQueueMetrics();
 
   return { processed: pending.length, succeeded, failed };
 }

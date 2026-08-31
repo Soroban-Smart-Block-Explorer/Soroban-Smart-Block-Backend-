@@ -80,7 +80,6 @@ const PENDING_SCHEMA_ROUTERS = new Set([
   'tax.ts',
   'tip.ts',
   'treasury.ts',
-  'upgrade-trace.ts',
   'virtualList.ts',
   'yield.ts',
 ]);
@@ -148,16 +147,28 @@ function findMountedRouters(): Set<string> {
 }
 
 /**
- * Extract router.use() prefixes from router.ts
+ * Extract router.use() prefixes from router.ts.
+ *
+ * Only mounts that pass a real router (an argument identifier ending in
+ * "Router"/"router") are recorded. Middleware-only mounts such as
+ * `router.use('/admin', adminRateLimit)` (#889) legitimately share a prefix
+ * with a real router mount without being a router themselves — counting them
+ * would raise a false "exact duplicate" route conflict.
  */
 function extractMountedPrefixes(): string[] {
   const content = fs.readFileSync(ROUTER_FILE, 'utf-8');
-  const useRegex = /router\.use\(['"]([^'"]+)['"]/g;
+  const useCallRegex = /router\.use\(\s*['"]([^'"]+)['"]\s*([\s\S]*?)\)\s*;/g;
   const prefixes: string[] = [];
 
-  let match;
-  while ((match = useRegex.exec(content)) !== null) {
-    prefixes.push(match[1]);
+  let match: RegExpExecArray | null;
+  while ((match = useCallRegex.exec(content)) !== null) {
+    const args = match[2] ?? '';
+    const hasRouterArg =
+      /[A-Za-z0-9_$]*[Rr]outer[s]?[^A-Za-z0-9_$]/.test(args) ||
+      /(^|[^A-Za-z0-9_$])[A-Za-z0-9_$]*[Rr]outer[s]?$/.test(args);
+    if (hasRouterArg) {
+      prefixes.push(match[1]);
+    }
   }
 
   return prefixes;
