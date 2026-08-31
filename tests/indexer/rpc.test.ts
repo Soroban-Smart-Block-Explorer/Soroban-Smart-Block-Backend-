@@ -23,6 +23,7 @@ vi.mock('../../src/cache', () => ({
 
 vi.mock('../../src/config', () => ({
   config: {
+    profile: { name: 'devnet' },
     stellarRpcUrl: 'http://localhost:8000',
     stellarRpcWsUrl: 'ws://localhost:8000',
     horizonUrl: 'https://horizon-testnet.stellar.org',

@@ -10,6 +10,7 @@
 
 import * as cron from 'node-cron';
 import { logger } from '../logger';
+import { cronJobRunsTotal, cronJobDurationSeconds, cronJobLastSuccessTimestamp } from '../metrics';
 
 export interface ScheduledJob {
   id: string;
@@ -117,6 +118,15 @@ class CronScheduler {
     status: 'success' | 'failure',
     meta?: { taskName?: string; expectedIntervalMs?: number },
   ): void {
+    // #911 — emit per-job metrics for externally-managed recurring tasks too
+    // (price updates, key rotation, reconciliation sweeps) so their health is
+    // visible in /metrics, not just logs. Duration is only tracked for
+    // scheduler-managed jobs (executeJob has the start time).
+    cronJobRunsTotal.inc({ job: id, status });
+    if (status === 'success') {
+      cronJobLastSuccessTimestamp.set({ job: id }, Date.now() / 1000);
+    }
+
     const existing = this.healthRegistry.get(id);
     const consecutiveFailures = status === 'failure' ? (existing?.consecutiveFailures ?? 0) + 1 : 0;
 
@@ -255,6 +265,12 @@ class CronScheduler {
       jobInstance.lastError = undefined;
       jobInstance.executionCount++;
 
+      // #911 — per-job Prometheus metrics. Runs/outcome counters and the
+      // last-success timestamp are emitted centrally in recordHeartbeat()
+      // (the single funnel for scheduler-managed AND externally-managed
+      // jobs); only the duration needs the start time captured here.
+      cronJobDurationSeconds.observe({ job: jobConfig.id }, duration / 1000);
+
       this.recordHeartbeat(jobConfig.id, 'success', {
         taskName: jobConfig.taskName,
         expectedIntervalMs:
@@ -269,6 +285,10 @@ class CronScheduler {
     } catch (error) {
       const duration = Date.now() - startTime;
       const errorMessage = error instanceof Error ? error.message : String(error);
+
+      // #911 — per-job Prometheus metrics (see success path; runs/outcome
+      // counters flow through recordHeartbeat()).
+      cronJobDurationSeconds.observe({ job: jobConfig.id }, duration / 1000);
 
       jobInstance.lastError = error instanceof Error ? error : new Error(String(error));
       jobInstance.executionCount++;
@@ -443,6 +463,10 @@ class CronScheduler {
     }
 
     this.jobs.clear();
+    // Reset the flag so the scheduler can be reused (tests and hot-reloads
+    // shut down and re-register jobs against the same singleton). Without
+    // this, every later run is skipped and shutdown calls short-circuit.
+    this.isShuttingDown = false;
     logger.info('[scheduler] Graceful shutdown complete');
   }
 }

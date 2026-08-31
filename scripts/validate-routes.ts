@@ -77,7 +77,6 @@ const PENDING_SCHEMA_ROUTERS = new Set([
   'tax.ts',
   'tip.ts',
   'treasury.ts',
-  'upgrade-trace.ts',
   'virtualList.ts',
   'yield.ts',
 ]);

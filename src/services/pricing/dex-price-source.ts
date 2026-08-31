@@ -240,7 +240,8 @@ export async function discoverDexPrice(tokenAddress: string): Promise<DexPrice |
     twap24h,
   };
 
-  await cacheSet<DexPrice>(cacheKey, result, 5);
+  // #917 — TTL resolved from the per-route registry (dex_price → 5s).
+  await cacheSet<DexPrice>(cacheKey, result);
   return result;
 }
 
