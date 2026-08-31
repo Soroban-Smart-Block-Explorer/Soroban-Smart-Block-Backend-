@@ -2,7 +2,7 @@
  * Feature Flag Admin API
  *
  * Operator endpoints for the DB-backed feature-flag system at
- * /api/v1/admin/feature-flags. Supports:
+ * /admin/feature-flags. Supports:
  *   - listing all registered flags with resolved state
  *   - adjusting a flag's default toggle + gradual-rollout percentage
  *   - per-environment and per-developer overrides (runtime, no redeploy)

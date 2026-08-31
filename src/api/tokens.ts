@@ -18,7 +18,7 @@ export const tokenRouter = Router();
 
 /**
  * @swagger
- * /api/v1/tokens:
+ * /tokens:
  *   get:
  *     summary: List all SEP-41 tokens
  *     description: Returns every contract flagged as a token, sorted by symbol.
@@ -52,7 +52,7 @@ tokenRouter.get(
 
 /**
  * @swagger
- * /api/v1/tokens/{address}:
+ * /tokens/{address}:
  *   get:
  *     summary: Get a single token by contract address
  *     description: Returns the full contract record for a contract flagged as a token.
@@ -103,7 +103,7 @@ tokenRouter.get(
 
 /**
  * @swagger
- * /api/v1/tokens/{address}/transfers:
+ * /tokens/{address}/transfers:
  *   get:
  *     summary: List recent transfer events for a token
  *     description: Returns up to 50 of the most recent transfer events for this token, newest first.
@@ -169,7 +169,7 @@ tokenRouter.get(
 
 /**
  * @swagger
- * /api/v1/tokens/{address}/balance/{account}:
+ * /tokens/{address}/balance/{account}:
  *   get:
  *     summary: Get an account's token balance
  *     description: >-

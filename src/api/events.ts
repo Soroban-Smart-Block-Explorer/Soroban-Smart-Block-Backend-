@@ -25,7 +25,7 @@ const eventListQuerySchema = paginationSchema.merge(
 
 /**
  * @swagger
- * /api/v1/events:
+ * /events:
  *   get:
  *     summary: List decoded contract events
  *     tags: [Events]
@@ -119,7 +119,7 @@ eventRouter.get(
 
 /**
  * @swagger
- * /api/v1/events/{id}:
+ * /events/{id}:
  *   get:
  *     summary: Get a single event by ID
  *     tags: [Events]

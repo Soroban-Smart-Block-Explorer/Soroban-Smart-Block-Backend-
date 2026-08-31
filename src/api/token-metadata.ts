@@ -35,7 +35,7 @@ export const tokenMetadataRouter = Router();
 
 /**
  * @swagger
- * /api/v1/token-metadata/{address}:
+ * /token-metadata/{address}:
  *   get:
  *     summary: Resolve token metadata for a Soroban contract address
  *     tags: [TokenMetadata]
@@ -83,7 +83,7 @@ const formatQuerySchema = z.object({
 
 /**
  * @swagger
- * /api/v1/token-metadata/{address}/format:
+ * /token-metadata/{address}/format:
  *   get:
  *     summary: Format a raw on-chain integer amount using the token's decimal config
  *     tags: [TokenMetadata]
@@ -146,7 +146,7 @@ const batchBodySchema = z.object({
 
 /**
  * @swagger
- * /api/v1/token-metadata/batch:
+ * /token-metadata/batch:
  *   post:
  *     summary: Bulk-resolve token metadata for up to 100 addresses
  *     tags: [TokenMetadata]
@@ -190,7 +190,7 @@ tokenMetadataRouter.post(
 
 /**
  * @swagger
- * /api/v1/token-metadata/{address}/cache:
+ * /token-metadata/{address}/cache:
  *   delete:
  *     summary: Evict a token's metadata from the in-process cache
  *     tags: [TokenMetadata]

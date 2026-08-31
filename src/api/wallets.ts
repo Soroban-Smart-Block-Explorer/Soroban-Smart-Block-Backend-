@@ -22,7 +22,7 @@ const paginationSchema = z.object({
 
 /**
  * @swagger
- * /api/v1/wallets/{address}/transactions:
+ * /wallets/{address}/transactions:
  *   get:
  *     summary: List a wallet's Soroban transactions (offset-paginated)
  *     description: Transactions where this address is the source account, newest first.
@@ -121,7 +121,7 @@ walletRouter.get(
 
 /**
  * @swagger
- * /api/v1/wallets/{address}/events:
+ * /wallets/{address}/events:
  *   get:
  *     summary: List events involving a wallet (offset-paginated)
  *     description: >-
@@ -205,7 +205,7 @@ walletRouter.get(
 
 /**
  * @swagger
- * /api/v1/wallets/{address}/history:
+ * /wallets/{address}/history:
  *   get:
  *     summary: Unified Soroban + classic Stellar history for a wallet
  *     description: >-

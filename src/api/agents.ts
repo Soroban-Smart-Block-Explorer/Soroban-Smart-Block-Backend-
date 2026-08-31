@@ -122,7 +122,7 @@ const paginationSchema = z.object({
 
 /**
  * @swagger
- * /api/v1/agents:
+ * /agents:
  *   post:
  *     tags: [Agents]
  *     summary: Deploy a new agent from a template
@@ -165,7 +165,7 @@ agentRouter.post(
 
 /**
  * @swagger
- * /api/v1/agents:
+ * /agents:
  *   get:
  *     tags: [Agents]
  *     summary: List the current user's agents
@@ -289,7 +289,7 @@ agentRouter.post(
 
 /**
  * @swagger
- * /api/v1/agents/{id}/execute:
+ * /agents/{id}/execute:
  *   post:
  *     tags: [Agents]
  *     summary: Execute the agent (trigger single run)
@@ -367,7 +367,7 @@ agentRouter.get(
 
 /**
  * @swagger
- * /api/v1/agents/messages:
+ * /agents/messages:
  *   post:
  *     tags: [Agents]
  *     summary: Send a message to another agent
@@ -437,7 +437,7 @@ agentRouter.post(
 
 /**
  * @swagger
- * /api/v1/agents/negotiate:
+ * /agents/negotiate:
  *   post:
  *     tags: [Agents]
  *     summary: Negotiate a service agreement between two agents
@@ -488,7 +488,7 @@ agentRouter.post(
 
 /**
  * @swagger
- * /api/v1/agents/registry:
+ * /agents/registry:
  *   get:
  *     tags: [Agents]
  *     summary: Find registered agent providers by capability
@@ -587,7 +587,7 @@ agentRouter.get(
 
 /**
  * @swagger
- * /api/v1/agents/escalations:
+ * /agents/escalations:
  *   post:
  *     tags: [Agents]
  *     summary: Escalate an agent decision to a human operator
@@ -675,7 +675,7 @@ agentRouter.post(
 
 /**
  * @swagger
- * /api/v1/agents/monitoring/dashboard:
+ * /agents/monitoring/dashboard:
  *   get:
  *     tags: [Agents]
  *     summary: Get agent monitoring dashboard for the current user
@@ -742,7 +742,7 @@ agentRouter.get(
 
 /**
  * @swagger
- * /api/v1/agents/verification/{executionId}:
+ * /agents/verification/{executionId}:
  *   get:
  *     tags: [Agents]
  *     summary: Get verification status for an execution
