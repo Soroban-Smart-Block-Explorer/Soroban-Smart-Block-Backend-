@@ -1,12 +1,30 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { fuzzerModule, FuzzFinding, FuzzReport } from '../src/fuzzing/fuzzer';
+import {
+  fuzzerModule,
+  FuzzFinding,
+  FuzzReport,
+  startFuzzJob,
+  getFuzzJob,
+  reconcileOrphanedFuzzJobs,
+} from '../src/fuzzing/fuzzer';
 import { generateMutations } from '../src/fuzzing/mutator';
 import { buildCorpusFromHistory, getBoundaryValues } from '../src/fuzzing/corpus';
+import { prismaWrite, prismaRead } from '../src/db';
 
 vi.mock('../src/db', () => ({
   prismaRead: {
     transaction: {
-      findMany: vi.fn(),
+      findMany: vi.fn().mockResolvedValue([]),
+    },
+    fuzzJob: {
+      findUnique: vi.fn(),
+    },
+  },
+  prismaWrite: {
+    fuzzJob: {
+      create: vi.fn().mockResolvedValue({}),
+      update: vi.fn().mockResolvedValue({}),
+      updateMany: vi.fn().mockResolvedValue({ count: 0 }),
     },
   },
 }));
@@ -354,6 +372,50 @@ describe('Fuzzing Module', () => {
       expect(report).toHaveProperty('contractAddress');
       expect(report).toHaveProperty('findings');
       expect(report).toHaveProperty('coverage');
+    });
+  });
+
+  describe('Fuzz Job DB Persistence & Reconciliation', () => {
+    it('startFuzzJob creates a fuzz job record in the DB', async () => {
+      const mockCreate = vi.fn().mockResolvedValue({ id: 'fuzz_123' });
+      prismaWrite.fuzzJob.create = mockCreate;
+
+      const jobId = startFuzzJob('CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2QQ');
+      expect(jobId).toBeDefined();
+      expect(mockCreate).toHaveBeenCalled();
+    });
+
+    it('getFuzzJob retrieves a fuzz job from the DB', async () => {
+      const mockDbJob = {
+        id: 'fuzz_123',
+        contractAddress: 'CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2QQ',
+        status: 'running',
+        report: null,
+        error: null,
+        startedAt: new Date(),
+        completedAt: null,
+      };
+      prismaRead.fuzzJob.findUnique = vi.fn().mockResolvedValue(mockDbJob);
+
+      const job = await getFuzzJob('fuzz_123');
+      expect(job).not.toBeNull();
+      expect(job?.id).toBe('fuzz_123');
+      expect(job?.status).toBe('running');
+    });
+
+    it('reconcileOrphanedFuzzJobs marks running jobs as interrupted', async () => {
+      const mockUpdateMany = vi.fn().mockResolvedValue({ count: 2 });
+      prismaWrite.fuzzJob.updateMany = mockUpdateMany;
+
+      await reconcileOrphanedFuzzJobs();
+      expect(mockUpdateMany).toHaveBeenCalledWith({
+        where: { status: 'running' },
+        data: {
+          status: 'interrupted',
+          error: 'Job was interrupted due to application restart',
+          completedAt: expect.any(Date),
+        },
+      });
     });
   });
 });
