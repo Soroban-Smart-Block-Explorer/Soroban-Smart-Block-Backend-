@@ -184,6 +184,68 @@ function parseSessionCookie(
 }
 
 /**
+ * CSRF Protection Configuration & Constants
+ */
+export const CSRF_COOKIE_NAME = 'soroban_csrf';
+export const CSRF_HEADER_NAME = 'x-csrf-token';
+
+export function generateCsrfToken(sessionId: string): string {
+  const secret = COOKIE_CONFIG.secret || 'default-csrf-secret';
+  return crypto.createHmac('sha256', secret).update(`${sessionId}:csrf`).digest('hex');
+}
+
+/**
+ * CSRF Protection Middleware for cookie-authenticated state-changing routes.
+ *
+ * Safe HTTP methods (GET, HEAD, OPTIONS) are allowed through.
+ * State-changing mutations (POST, PUT, PATCH, DELETE) authenticated via cookie session
+ * must present a matching CSRF token in header (x-csrf-token / x-xsrf-token) or body (_csrf)
+ * matching either the double-submit CSRF cookie or the session CSRF token.
+ */
+export function csrfProtection(req: Request, res: Response, next: NextFunction): void {
+  const safeMethods = new Set(['GET', 'HEAD', 'OPTIONS']);
+  if (safeMethods.has(req.method)) return next();
+
+  // If request is authenticated using session cookie
+  if (req.session) {
+    const headerToken =
+      (req.headers['x-csrf-token'] as string) ||
+      (req.headers['x-xsrf-token'] as string) ||
+      (req.body && req.body._csrf);
+
+    const cookieToken = req.cookies ? req.cookies[CSRF_COOKIE_NAME] : undefined;
+    const expectedToken = generateCsrfToken(req.session.sessionId);
+
+    let isValid = false;
+    if (headerToken) {
+      const headerBuf = Buffer.from(headerToken);
+      if (cookieToken && cookieToken.length === headerToken.length) {
+        isValid = crypto.timingSafeEqual(headerBuf, Buffer.from(cookieToken));
+      }
+      if (!isValid && expectedToken.length === headerToken.length) {
+        isValid = crypto.timingSafeEqual(headerBuf, Buffer.from(expectedToken));
+      }
+    }
+
+    if (!isValid) {
+      logger.warn('[csrf] CSRF token verification failed', {
+        path: req.path,
+        method: req.method,
+        ip: req.ip,
+      });
+      res.status(403).json({
+        error: 'CSRF Token Missing or Invalid',
+        message: 'Cross-site request forgery protection triggered',
+        code: 'CSRF_INVALID',
+      });
+      return;
+    }
+  }
+
+  next();
+}
+
+/**
  * Session cookie authentication middleware.
  * Validates incoming session cookies and attaches SessionContext to req.session.
  *
@@ -233,13 +295,14 @@ export function sessionCookieAuth(): (req: Request, res: Response, next: NextFun
       return next(err);
     }
 
-    next();
+    csrfProtection(req, res, next);
   };
 }
 
 /**
  * Sets a session cookie on the response.
  * Automatically signs the cookie if COOKIE_SECRET is configured.
+ * Also issues non-HttpOnly soroban_csrf cookie for double-submit verification.
  *
  * Usage:
  *   setSessionCookie(res, sessionData);
@@ -259,6 +322,15 @@ export function setSessionCookie(res: Response, session: SessionContext): void {
     maxAge: COOKIE_CONFIG.expiresMs,
     path: '/',
   });
+
+  const csrfToken = generateCsrfToken(session.sessionId);
+  res.cookie(CSRF_COOKIE_NAME, csrfToken, {
+    httpOnly: false,
+    secure: COOKIE_CONFIG.secure,
+    sameSite: COOKIE_CONFIG.sameSite,
+    maxAge: COOKIE_CONFIG.expiresMs,
+    path: '/',
+  });
 }
 
 /**
@@ -269,6 +341,7 @@ export function setSessionCookie(res: Response, session: SessionContext): void {
  */
 export function clearSessionCookie(res: Response): void {
   res.clearCookie(COOKIE_CONFIG.name, { path: '/', httpOnly: COOKIE_CONFIG.httpOnly });
+  res.clearCookie(CSRF_COOKIE_NAME, { path: '/' });
 }
 
 /**

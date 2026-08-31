@@ -3,8 +3,10 @@ import { z } from 'zod';
 import crypto from 'crypto';
 import { prismaWrite, prismaRead } from '../../db';
 import { asyncHandler } from '../../middleware/asyncHandler';
+import { authRateLimit, checkAccountLockout, recordAccountFailure, clearAccountLockout } from '../../auth/bruteForce';
 
 export const authRouter = Router();
+authRouter.use(authRateLimit);
 
 const registerSchema = z.object({
   email: z.string().email(),
@@ -61,10 +63,20 @@ authRouter.post(
     if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
 
     const { email, password } = parsed.data;
+
+    const lock = await checkAccountLockout(email);
+    if (lock.isLocked) {
+      res.setHeader('Retry-After', String(lock.retryAfterSec));
+      return res.status(429).json({ error: 'Account temporarily locked due to too many failed attempts', retryAfter: lock.retryAfterSec });
+    }
+
     const developer = await prismaRead.developer.findUnique({ where: { email } });
     if (!developer || developer.passwordHash !== hashPassword(password)) {
+      await recordAccountFailure(email, req.ip);
       return res.status(401).json({ error: 'Invalid credentials' });
     }
+
+    await clearAccountLockout(email);
 
     if (developer.mfaEnabled) {
       return res.json({ requiresMfa: true, developerId: developer.id });

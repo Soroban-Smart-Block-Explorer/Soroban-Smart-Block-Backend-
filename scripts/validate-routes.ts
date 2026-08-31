@@ -51,11 +51,8 @@ interface ValidationResult {
 const PENDING_SCHEMA_ROUTERS = new Set([
   'advanced-events.ts',
   'assets.ts',
-  'auth.ts',
   'authMultisig.ts',
-  'authOAuth2.ts',
   'authProfile.ts',
-  'authSecurity.ts',
   'authWebhooks.ts',
   'bn254.ts',
   'checked-arithmetic.ts',
@@ -80,7 +77,6 @@ const PENDING_SCHEMA_ROUTERS = new Set([
   'tax.ts',
   'tip.ts',
   'treasury.ts',
-  'upgrade-trace.ts',
   'virtualList.ts',
   'yield.ts',
 ]);
@@ -148,16 +144,26 @@ function findMountedRouters(): Set<string> {
 }
 
 /**
- * Extract router.use() prefixes from router.ts
+ * Extract router.use() prefixes from router.ts.
+ *
+ * Only mounts that actually pass a Router instance are tracked — e.g.
+ * `router.use('/admin', adminRouter)`. Middleware-only mounts such as
+ * `router.use('/admin', adminRateLimit)` are ordinary Express composition
+ * (applying a limiter to an entire surface before its sub-routers run) and
+ * must not be counted, otherwise a shared prefix looks like a duplicate
+ * router mount and trips the exact-conflict check.
  */
 function extractMountedPrefixes(): string[] {
   const content = fs.readFileSync(ROUTER_FILE, 'utf-8');
-  const useRegex = /router\.use\(['"]([^'"]+)['"]/g;
+  // Capture the whole call so we can inspect the mounted handlers.
+  const useRegex = /router\.use\(['"]([^'"]+)['"]([^)]*)\)/g;
   const prefixes: string[] = [];
 
   let match;
   while ((match = useRegex.exec(content)) !== null) {
-    prefixes.push(match[1]);
+    const handlers = match[2] ?? '';
+    const mountsRouter = /\b\w*Router\b/.test(handlers) || /\brouter\b/.test(handlers);
+    if (mountsRouter) prefixes.push(match[1]);
   }
 
   return prefixes;

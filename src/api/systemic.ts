@@ -22,7 +22,7 @@ export const systemicRouter = Router();
 
 /**
  * @swagger
- * /api/v1/systemic/overview:
+ * /systemic/overview:
  *   get:
  *     summary: Systemic risk dashboard overview
  *     tags: [Systemic]
@@ -44,7 +44,7 @@ systemicRouter.get(
 
 /**
  * @swagger
- * /api/v1/systemic/protocols/{address}:
+ * /systemic/protocols/{address}:
  *   get:
  *     summary: Protocol risk profile
  *     tags: [Systemic]
@@ -75,7 +75,7 @@ systemicRouter.get(
 
 /**
  * @swagger
- * /api/v1/systemic/critical-nodes:
+ * /systemic/critical-nodes:
  *   get:
  *     summary: Top 10 most systemically critical protocols
  *     tags: [Systemic]
@@ -97,7 +97,7 @@ systemicRouter.get(
 
 /**
  * @swagger
- * /api/v1/systemic/concentration:
+ * /systemic/concentration:
  *   get:
  *     summary: Ecosystem concentration metrics
  *     tags: [Systemic]
@@ -125,7 +125,7 @@ const simulateSchema = z.object({
 
 /**
  * @swagger
- * /api/v1/systemic/simulate-cascade:
+ * /systemic/simulate-cascade:
  *   post:
  *     summary: Simulate cascade failure from a protocol collapse
  *     tags: [Systemic]
@@ -166,7 +166,7 @@ systemicRouter.post(
 
 /**
  * @swagger
- * /api/v1/systemic/dependency-graph:
+ * /systemic/dependency-graph:
  *   get:
  *     summary: Full cross-protocol dependency graph
  *     tags: [Systemic]
@@ -192,7 +192,7 @@ systemicRouter.get(
 
 /**
  * @swagger
- * /api/v1/systemic/monitor/risk-index:
+ * /systemic/monitor/risk-index:
  *   get:
  *     summary: Current systemic risk index
  *     tags: [Systemic]
@@ -216,7 +216,7 @@ systemicRouter.get(
 
 /**
  * @swagger
- * /api/v1/systemic/monitor/alerts:
+ * /systemic/monitor/alerts:
  *   get:
  *     summary: Recent systemic risk alerts
  *     tags: [Systemic]
@@ -244,7 +244,7 @@ systemicRouter.get(
 
 /**
  * @swagger
- * /api/v1/systemic/monitor/history:
+ * /systemic/monitor/history:
  *   get:
  *     summary: Systemic risk index history
  *     tags: [Systemic]

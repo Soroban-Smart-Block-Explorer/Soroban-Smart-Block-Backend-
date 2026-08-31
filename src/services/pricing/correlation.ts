@@ -41,7 +41,8 @@ async function fetchChainPrice(
       if (data.status === '1' && data.result) {
         const price = parseFloat(data.result);
         if (price > 0) {
-          await cacheSet(cacheKey, price, 300);
+          // #917 — TTL resolved from the per-route registry (chain_price → 30s).
+          await cacheSet(cacheKey, price);
           return price;
         }
       }
@@ -53,7 +54,8 @@ async function fetchChainPrice(
       if (!res.ok) return null;
       const data = (await res.json()) as { priceUsdt?: number };
       if (data.priceUsdt && data.priceUsdt > 0) {
-        await cacheSet(cacheKey, data.priceUsdt, 300);
+        // #917 — TTL resolved from the per-route registry (chain_price → 30s).
+        await cacheSet(cacheKey, data.priceUsdt);
         return data.priceUsdt;
       }
     }

@@ -147,7 +147,9 @@ export async function runReconciliation(lookbackLedgers = 1000): Promise<Reconci
     );
 
     // Automatically trigger gap repair workflow
-    logger.info(`[reconciliation] Triggering automated repair for ${missingLedgerRanges.length} gap(s)...`);
+    logger.info(
+      `[reconciliation] Triggering automated repair for ${missingLedgerRanges.length} gap(s)...`,
+    );
     try {
       await triggerAutomatedGapRepair(missingLedgerRanges);
     } catch (repairErr) {

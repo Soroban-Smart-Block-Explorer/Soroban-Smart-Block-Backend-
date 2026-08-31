@@ -91,6 +91,7 @@ const envSchema = z.object({
     .default(false),
   ADMIN_API_KEY: z.string().optional(),
   JWT_SECRET: z.string().optional(),
+  JWT_PREVIOUS_SECRETS: z.string().optional(),
   WS_SECRET: z.string().optional(),
   WEBHOOK_SECRET: z.string().optional(),
 
@@ -160,6 +161,7 @@ export const config = {
 
   adminApiKey: parsedEnv.ADMIN_API_KEY,
   jwtSecret: parsedEnv.JWT_SECRET,
+  jwtPreviousSecrets: parsedEnv.JWT_PREVIOUS_SECRETS,
   wsSecret: parsedEnv.WS_SECRET,
   webhookSecret: parsedEnv.WEBHOOK_SECRET,
 

@@ -29,7 +29,7 @@ const querySchema = z.object({
 
 /**
  * @swagger
- * /api/v1/analytics/gas:
+ * /analytics/gas:
  *   get:
  *     summary: List gas analytics snapshots
  *     description: Returns pre-computed gas cost aggregations bucketed by hour, day, or week.

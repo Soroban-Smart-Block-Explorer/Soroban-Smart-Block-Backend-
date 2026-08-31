@@ -67,8 +67,7 @@ describe('checkWorkerHealth', () => {
 
     // Jump forward well past staleIntervalMultiplier * expectedIntervalMs
     // (default multiplier is 3 => stale after 3 minutes).
-    const staleAfterMs =
-      60_000 * config.workerStaleIntervalMultiplier + 60_000;
+    const staleAfterMs = 60_000 * config.workerStaleIntervalMultiplier + 60_000;
     vi.setSystemTime(new Date(Date.now() + staleAfterMs));
 
     const result = checkWorkerHealth();
@@ -141,9 +140,7 @@ describe('checkWorkerHealth', () => {
       taskName: 'Stale Job',
       expectedIntervalMs: 60_000,
     });
-    vi.setSystemTime(
-      new Date(Date.now() + 60_000 * config.workerStaleIntervalMultiplier + 60_000),
-    );
+    vi.setSystemTime(new Date(Date.now() + 60_000 * config.workerStaleIntervalMultiplier + 60_000));
 
     // ...and another job actively failing — unhealthy takes precedence.
     const maxFailures = config.workerMaxConsecutiveFailures;

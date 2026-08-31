@@ -12,6 +12,7 @@ export interface KeyPair {
 const KEYS_CACHE_KEY = 'auth:jwks:keys';
 const KEY_TTL = 7 * 24 * 3600; // 7 days cache
 let currentKeyPair: KeyPair | null = null;
+const graceKeyPairs = new Map<string, KeyPair>();
 
 function generateKid(): string {
   return `key_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
@@ -27,7 +28,7 @@ function generateRsaKeyPair(): KeyPair {
   };
 }
 
-export async function getOrCreateKeyPair(): Promise<forge.pki.KeyPair> {
+export async function getOrCreateKeyPair(): Promise<KeyPair> {
   if (currentKeyPair) return currentKeyPair;
 
   const cached = await cacheGet<KeyPair>(KEYS_CACHE_KEY);
@@ -63,25 +64,26 @@ export async function getOrCreateKeyPair(): Promise<forge.pki.KeyPair> {
 
 /**
  * Generate a new RSA key pair and make it the active signing key.
- *
- * Invalidates on call:
- *   - JWKS cache (`auth:jwks:keys`, TTL {@link KEY_TTL}) is overwritten, so
- *     GET /.well-known/jwks.json stops advertising the previous public key.
- *   - Every access token signed with the previous `kid` fails verifyToken()
- *     (src/auth/tokens.ts) immediately, since verification only checks the
- *     current key pair — there is no grace period for outstanding tokens.
- *
- * Not invalidated:
- *   - Refresh tokens (opaque, DB-backed via authSession.tokenHash) are unaffected.
- *
- * Called automatically every 30 days by {@link startKeyRotationScheduler} in
- * src/auth/keyRotationScheduler.ts, and manually via the admin-only
- * POST /auth/keys/rotate route.
+ * Retains the previous key pair in the grace key ring so active tokens
+ * signed with the previous kid remain valid during grace periods (#887).
  */
 export async function rotateKeys(): Promise<KeyPair> {
+  if (currentKeyPair) {
+    graceKeyPairs.set(currentKeyPair.kid, currentKeyPair);
+  }
   currentKeyPair = generateRsaKeyPair();
   await cacheSet(KEYS_CACHE_KEY, currentKeyPair, KEY_TTL);
   return currentKeyPair;
+}
+
+export function getGraceKeyPairs(): KeyPair[] {
+  return Array.from(graceKeyPairs.values());
+}
+
+export async function getKeyPairForKid(kid?: string): Promise<KeyPair | null> {
+  const current = await getOrCreateKeyPair();
+  if (!kid || current.kid === kid) return current;
+  return graceKeyPairs.get(kid) ?? null;
 }
 
 /** Convert PEM public key to JWKS JWK format */
@@ -103,5 +105,9 @@ function pemToJwk(publicKeyPem: string, kid: string): object {
 
 export async function getJwks(): Promise<{ keys: object[] }> {
   const kp = await getOrCreateKeyPair();
-  return { keys: [pemToJwk(kp.publicKeyPem, kp.kid)] };
+  const keys = [pemToJwk(kp.publicKeyPem, kp.kid)];
+  for (const graceKp of graceKeyPairs.values()) {
+    keys.push(pemToJwk(graceKp.publicKeyPem, graceKp.kid));
+  }
+  return { keys };
 }

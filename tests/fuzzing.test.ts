@@ -16,16 +16,6 @@ vi.mock('../src/db', () => ({
     transaction: {
       findMany: vi.fn().mockResolvedValue([]),
     },
-    fuzzJob: {
-      findUnique: vi.fn(),
-    },
-  },
-  prismaWrite: {
-    fuzzJob: {
-      create: vi.fn().mockResolvedValue({}),
-      update: vi.fn().mockResolvedValue({}),
-      updateMany: vi.fn().mockResolvedValue({ count: 0 }),
-    },
   },
 }));
 
@@ -301,7 +291,8 @@ describe('Fuzzing Module', () => {
 
   describe('Contract fixture testing', () => {
     it('triggers known vulnerability in fixture contract', async () => {
-      const contractAddress = 'CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2QQ';
+      // kept for documentation; the assertions below only inspect the finding
+      const _contractAddress = 'CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2QQ';
 
       const finding: FuzzFinding = {
         functionName: 'transfer',

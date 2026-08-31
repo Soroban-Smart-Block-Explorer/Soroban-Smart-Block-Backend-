@@ -20,7 +20,7 @@ export const mevRouter = Router();
 
 /**
  * @swagger
- * /api/v1/mev/overview:
+ * /mev/overview:
  *   get:
  *     summary: Aggregate MEV overview
  *     tags: [MEV]
@@ -53,7 +53,7 @@ mevRouter.get(
 
 /**
  * @swagger
- * /api/v1/mev/statistics:
+ * /mev/statistics:
  *   get:
  *     summary: MEV statistics
  *     description: The overview plus average confidence and attacker/victim/type totals.
@@ -96,7 +96,7 @@ mevRouter.get(
 
 /**
  * @swagger
- * /api/v1/mev/events:
+ * /mev/events:
  *   get:
  *     summary: List MEV events
  *     tags: [MEV]
@@ -190,7 +190,7 @@ mevRouter.get(
 
 /**
  * @swagger
- * /api/v1/mev/events/{id}:
+ * /mev/events/{id}:
  *   get:
  *     summary: Get an MEV event by id
  *     tags: [MEV]
@@ -236,7 +236,7 @@ mevRouter.get(
 
 /**
  * @swagger
- * /api/v1/mev/events/{txHash}/by-tx:
+ * /mev/events/{txHash}/by-tx:
  *   get:
  *     summary: Get an MEV event by transaction hash
  *     tags: [MEV]
@@ -282,7 +282,7 @@ mevRouter.get(
 
 /**
  * @swagger
- * /api/v1/mev/victims/{address}:
+ * /mev/victims/{address}:
  *   get:
  *     summary: Get a victim with recent events
  *     description: The victim record plus its 20 most recent MEV events.
@@ -339,7 +339,7 @@ mevRouter.get(
 
 /**
  * @swagger
- * /api/v1/mev/attackers/{address}:
+ * /mev/attackers/{address}:
  *   get:
  *     summary: Get an attacker with recent events
  *     description: The attacker record plus its 20 most recent MEV events.
@@ -396,7 +396,7 @@ mevRouter.get(
 
 /**
  * @swagger
- * /api/v1/mev/leaderboard:
+ * /mev/leaderboard:
  *   get:
  *     summary: Top attackers by total profit
  *     tags: [MEV]
@@ -472,7 +472,7 @@ mevRouter.get(
 
 /**
  * @swagger
- * /api/v1/mev/protections/{contract}:
+ * /mev/protections/{contract}:
  *   get:
  *     summary: Get a protocol's MEV-resistance profile
  *     tags: [MEV]
@@ -521,7 +521,7 @@ mevRouter.get(
 
 /**
  * @swagger
- * /api/v1/mev/protections/{contract}/score-history:
+ * /mev/protections/{contract}/score-history:
  *   get:
  *     summary: Get a protocol's MEV-resistance score history
  *     tags: [MEV]
@@ -585,7 +585,7 @@ mevRouter.get(
 
 /**
  * @swagger
- * /api/v1/mev/protections/leaderboard:
+ * /mev/protections/leaderboard:
  *   get:
  *     summary: Protocols ranked by MEV-resistance score
  *     tags: [MEV]
@@ -632,7 +632,7 @@ mevRouter.get(
 
 /**
  * @swagger
- * /api/v1/mev/mempool/pending:
+ * /mev/mempool/pending:
  *   get:
  *     summary: List unacknowledged in-progress sandwich alerts
  *     tags: [MEV]
@@ -677,7 +677,7 @@ const checkPendingSchema = z.object({ txHash: z.string() });
 
 /**
  * @swagger
- * /api/v1/mev/check-pending-tx:
+ * /mev/check-pending-tx:
  *   post:
  *     summary: Check whether a transaction is being sandwiched
  *     tags: [MEV]
@@ -752,7 +752,7 @@ const protectTxSchema = z.object({ txHash: z.string(), userAddress: z.string().o
 
 /**
  * @swagger
- * /api/v1/mev/protect-tx:
+ * /mev/protect-tx:
  *   post:
  *     summary: Request protected submission for a transaction
  *     description: Records a protection-request alert and returns its id.
@@ -831,7 +831,7 @@ const notifySchema = z.object({
 
 /**
  * @swagger
- * /api/v1/mev/victims/{address}/notify:
+ * /mev/victims/{address}/notify:
  *   post:
  *     summary: Set notification config for a victim address
  *     description: Upserts the victim record and echoes the notification config.
@@ -947,7 +947,7 @@ const SANDWICH_PATTERNS = [
 
 /**
  * @swagger
- * /api/v1/mev/sandwich-patterns:
+ * /mev/sandwich-patterns:
  *   get:
  *     summary: List known sandwich attack patterns
  *     tags: [MEV]
@@ -989,7 +989,7 @@ const patternSchema = z.object({
 
 /**
  * @swagger
- * /api/v1/mev/sandwich-patterns:
+ * /mev/sandwich-patterns:
  *   post:
  *     summary: Add a sandwich pattern
  *     description: Appends an in-memory pattern. Not persisted across restarts.
@@ -1058,7 +1058,7 @@ mevRouter.post('/sandwich-patterns', (req: Request, res: Response) => {
 
 /**
  * @swagger
- * /api/v1/mev/arbitrage/opportunities:
+ * /mev/arbitrage/opportunities:
  *   get:
  *     summary: Top arbitrage events by profit
  *     description: The 20 highest-profit cross-DEX and CEX-DEX arbitrage events.
@@ -1102,7 +1102,7 @@ mevRouter.get(
 
 /**
  * @swagger
- * /api/v1/mev/arbitrage/executed:
+ * /mev/arbitrage/executed:
  *   get:
  *     summary: Recent executed arbitrage events
  *     tags: [MEV]
@@ -1150,7 +1150,7 @@ mevRouter.get(
 
 /**
  * @swagger
- * /api/v1/mev/arbitrage/leaderboard:
+ * /mev/arbitrage/leaderboard:
  *   get:
  *     summary: Top arbitrageurs by total profit
  *     tags: [MEV]
@@ -1198,7 +1198,7 @@ mevRouter.get(
 
 /**
  * @swagger
- * /api/v1/mev/bots:
+ * /mev/bots:
  *   get:
  *     summary: MEV bots ranked by attack count
  *     tags: [MEV]
@@ -1245,7 +1245,7 @@ mevRouter.get(
 
 /**
  * @swagger
- * /api/v1/mev/bots/active:
+ * /mev/bots/active:
  *   get:
  *     summary: Bots active in the last 24 hours
  *     tags: [MEV]
@@ -1289,7 +1289,7 @@ mevRouter.get(
 
 /**
  * @swagger
- * /api/v1/mev/flash-loan-attacks:
+ * /mev/flash-loan-attacks:
  *   get:
  *     summary: Recent flash loan attacks
  *     tags: [MEV]
@@ -1337,7 +1337,7 @@ mevRouter.get(
 
 /**
  * @swagger
- * /api/v1/mev/compensation/estimate/{address}:
+ * /mev/compensation/estimate/{address}:
  *   get:
  *     summary: Estimate claimable compensation for a victim
  *     description: Returns the victim's loss breakdown and an 80% claimable estimate.
@@ -1433,7 +1433,7 @@ const claimSchema = z.object({
 
 /**
  * @swagger
- * /api/v1/mev/compensation/claim:
+ * /mev/compensation/claim:
  *   post:
  *     summary: Submit a compensation claim
  *     tags: [MEV]
@@ -1517,7 +1517,7 @@ mevRouter.post(
 
 /**
  * @swagger
- * /api/v1/mev/compensation/claims/{address}:
+ * /mev/compensation/claims/{address}:
  *   get:
  *     summary: List compensation claims for an address
  *     tags: [MEV]
@@ -1574,7 +1574,7 @@ mevRouter.get(
 
 /**
  * @swagger
- * /api/v1/mev/alerts:
+ * /mev/alerts:
  *   get:
  *     summary: List MEV alerts
  *     tags: [MEV]
@@ -1659,7 +1659,7 @@ const createAlertSchema = z.object({
 
 /**
  * @swagger
- * /api/v1/mev/alerts:
+ * /mev/alerts:
  *   post:
  *     summary: Create an MEV alert
  *     tags: [MEV]
@@ -1728,7 +1728,7 @@ mevRouter.post(
 
 /**
  * @swagger
- * /api/v1/mev/reports/daily:
+ * /mev/reports/daily:
  *   get:
  *     summary: MEV totals for the last 24 hours
  *     tags: [MEV]
@@ -1791,7 +1791,7 @@ mevRouter.get(
 
 /**
  * @swagger
- * /api/v1/mev/reports/weekly:
+ * /mev/reports/weekly:
  *   get:
  *     summary: MEV totals for the last 7 days
  *     tags: [MEV]
@@ -1854,7 +1854,7 @@ mevRouter.get(
 
 /**
  * @swagger
- * /api/v1/mev/reports/subscribe:
+ * /mev/reports/subscribe:
  *   post:
  *     summary: Subscribe to MEV reports
  *     description: Validates and echoes the subscription. Not persisted.
@@ -1924,7 +1924,7 @@ mevRouter.post('/reports/subscribe', (req: Request, res: Response) => {
 
 /**
  * @swagger
- * /api/v1/mev/export:
+ * /mev/export:
  *   get:
  *     summary: Export MEV events
  *     description: Returns up to 10000 events as JSON, or a CSV file when format=csv.
@@ -2008,7 +2008,7 @@ mevRouter.get(
 
 /**
  * @swagger
- * /api/v1/mev/classify-ledger:
+ * /mev/classify-ledger:
  *   post:
  *     summary: Classify and store MEV events for a ledger
  *     tags: [MEV]

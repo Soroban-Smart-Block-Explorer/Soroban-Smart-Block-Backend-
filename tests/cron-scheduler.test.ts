@@ -151,6 +151,11 @@ describe('CronScheduler - Job Execution', () => {
     scheduler.register(job);
 
     await vi.advanceTimersByTimeAsync(61000);
+    // Stop new ticks and let the in-flight execution's maxDuration timeout
+    // fire so gracefulShutdown in afterEach doesn't wait on an abandoned
+    // fake-timer promise (which would hang the hook for 30s).
+    scheduler.stop('timeout-test');
+    await vi.advanceTimersByTimeAsync(1500);
 
     const status = scheduler.getStatus('timeout-test');
     expect((status as any).lastError).toBeDefined();
@@ -194,10 +199,13 @@ describe('CronScheduler - Backpressure Handling', () => {
 
     expect(mockExecute).toHaveBeenCalledTimes(1);
 
+    // Resolve the final in-flight execution (its resolver was captured when
+    // the last tick started it) and stop new ticks so gracefulShutdown in
+    // afterEach doesn't wait on an abandoned fake-timer promise.
     if (resolveExecution) {
       resolveExecution();
     }
-
+    scheduler.stop('backpressure-test');
     await vi.advanceTimersByTimeAsync(1000);
 
     expect(mockExecute).toHaveBeenCalled();
@@ -224,9 +232,11 @@ describe('CronScheduler - Retry Logic', () => {
       }
     });
 
+    // 0 * * * * * fires once per minute so the count assertions below are
+    // exact (a per-second expression would fire 61+ times across the advance).
     const job: ScheduledJob = {
       id: 'retry-test',
-      cronExpression: '*/1 * * * * *',
+      cronExpression: '0 * * * * *',
       taskName: 'Retry Test',
       execute: mockExecute,
       retryOnFailure: true,
@@ -249,7 +259,7 @@ describe('CronScheduler - Retry Logic', () => {
 
     const job: ScheduledJob = {
       id: 'no-retry-test',
-      cronExpression: '*/1 * * * * *',
+      cronExpression: '0 * * * * *',
       taskName: 'No Retry Test',
       execute: mockExecute,
       retryOnFailure: false,
@@ -287,6 +297,10 @@ describe('CronScheduler - Retry Logic', () => {
     scheduler.register(job);
 
     await vi.advanceTimersByTimeAsync(61000);
+    // Settle the last tick's pending retry timer so afterEach's
+    // gracefulShutdown doesn't wait on it.
+    scheduler.stop('execution-count-test');
+    await vi.advanceTimersByTimeAsync(1500);
 
     const status = scheduler.getStatus('execution-count-test');
     expect((status as any).executionCount).toBeGreaterThan(0);

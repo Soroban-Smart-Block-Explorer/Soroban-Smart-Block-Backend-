@@ -22,7 +22,7 @@ const renderSchema = z.object({
 
 /**
  * @swagger
- * /api/v1/render:
+ * /render:
  *   post:
  *     summary: Render a human-readable string from a template
  *     description: Apply a custom Mustache-style template or a named built-in template to a set of args.
@@ -87,7 +87,7 @@ renderRouter.post('/', (req: Request, res: Response) => {
 
 /**
  * @swagger
- * /api/v1/render/templates:
+ * /render/templates:
  *   get:
  *     summary: List available built-in render templates
  *     description: Returns all function names that have a built-in human-readable template.

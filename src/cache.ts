@@ -1,8 +1,9 @@
-import { config } from './config';
+import { createHash } from 'crypto';
 import { config } from './config';
 import type { RedisClientType } from 'redis';
 import { logger } from './logger';
 import { cacheBackendStatus } from './metrics';
+import { cacheResourceFor, ttlForResource } from './cache-ttl';
 
 const CACHE_URL = config.cacheUrl ?? 'memory://';
 const CACHE_MODE = config.cacheMode ?? 'standalone'; // 'standalone' or 'sentinel'
@@ -520,12 +521,18 @@ export async function cacheSet<T>(
   value: T,
   ttlSeconds?: number | null,
 ): Promise<void> {
+  // #917 — when the caller doesn't specify a TTL, resolve one from the
+  // per-route TTL registry (src/cache-ttl.ts) keyed by the resource namespace
+  // (first `:`-delimited segment of the key). Explicit TTLs always win, so
+  // existing tuned call sites are untouched.
+  const resolvedTtl = ttlSeconds === undefined ? ttlForResource(cacheResourceFor(key)) : ttlSeconds;
+
   const normalizedKey = `${CACHE_SCHEMA_VERSION}:${normalizeKeyInput(key)}`;
   const payload = JSON.stringify(value);
   const versionHash = computeVersionHash(payload);
   lruSet(normalizedKey, {
     payload,
-    expiresAt: buildExpiry(ttlSeconds),
+    expiresAt: buildExpiry(resolvedTtl),
     versionHash,
   });
 
@@ -534,9 +541,9 @@ export async function cacheSet<T>(
 
   try {
     const multi = client.multi();
-    if (ttlSeconds && ttlSeconds > 0) {
-      multi.set(normalizedKey, payload, { EX: ttlSeconds });
-      multi.set(versionKey(normalizedKey), versionHash, { EX: ttlSeconds });
+    if (resolvedTtl && resolvedTtl > 0) {
+      multi.set(normalizedKey, payload, { EX: resolvedTtl });
+      multi.set(versionKey(normalizedKey), versionHash, { EX: resolvedTtl });
     } else {
       multi.set(normalizedKey, payload);
       multi.set(versionKey(normalizedKey), versionHash);

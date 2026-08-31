@@ -121,9 +121,7 @@ const MAX_REPAIR_ATTEMPTS = 3;
 /**
  * Trigger immediate automated repair for detected ledger gaps, updating LedgerGap tracking records and SLA alerts.
  */
-export async function triggerAutomatedGapRepair(
-  gapRanges: Array<[number, number]>,
-): Promise<void> {
+export async function triggerAutomatedGapRepair(gapRanges: Array<[number, number]>): Promise<void> {
   if (gapRanges.length === 0) return;
 
   logger.info(`[repair] 🛠️ Automated gap repair triggered for ${gapRanges.length} range(s)`);
@@ -155,7 +153,9 @@ export async function triggerAutomatedGapRepair(
     }
 
     try {
-      logger.info(`[repair] Executing automated repair run for ledgers ${start} → ${end} (Attempt #${gap.attemptCount})`);
+      logger.info(
+        `[repair] Executing automated repair run for ledgers ${start} → ${end} (Attempt #${gap.attemptCount})`,
+      );
       await processLedgerRange(start, end);
 
       await prisma.ledgerGap.update({
@@ -164,7 +164,10 @@ export async function triggerAutomatedGapRepair(
       });
       logger.info(`[repair] ✅ Gap ${start}–${end} successfully repaired and resolved.`);
     } catch (err) {
-      logger.error(`[repair] ❌ Failed to repair gap ${start}–${end} on attempt #${gap.attemptCount}:`, err);
+      logger.error(
+        `[repair] ❌ Failed to repair gap ${start}–${end} on attempt #${gap.attemptCount}:`,
+        err,
+      );
 
       if (gap.attemptCount >= MAX_REPAIR_ATTEMPTS) {
         logger.error(
