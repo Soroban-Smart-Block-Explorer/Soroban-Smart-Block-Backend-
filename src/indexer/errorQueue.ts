@@ -44,27 +44,6 @@ export function isPoisonError(error: unknown): boolean {
   return poisonIndicators.some((indicator) => msg.includes(indicator) || stack.includes(indicator));
 }
 
-/**
- * #912 — derive a bounded, low-cardinality reason label for DLQ/retry metrics
- * from a raw error. Uses failure-parser.ts's translation layer where possible
- * (so labels reflect the parsed failure category) but buckets into a fixed set
- * to keep Prometheus label cardinality under control.
- */
-export function classifyFailureReason(error: unknown): string {
-  if (isPoisonError(error)) return 'poison';
-
-  const msg = error instanceof Error ? error.message : String(error ?? '');
-  const parsed = parseFailureReasonFromString(msg).toLowerCase();
-
-  if (/parse|malformed|xdr|decode|unparseable/i.test(parsed)) return 'parse_error';
-  if (/timeout|timed out/i.test(parsed)) return 'timeout';
-  if (/rate limit|429/i.test(parsed)) return 'rate_limit';
-  if (/network|econn|socket|fetch failed|enotfound/i.test(parsed)) return 'network';
-  if (/budget|resource limit/i.test(parsed)) return 'resource_limit';
-  if (/auth|unauthorized/i.test(parsed)) return 'auth';
-  return 'other';
-}
-
 /** Persist a failed decode item. Idempotent — increments retryCount on conflict. */
 export async function enqueueFailure(item: FailedItemInput): Promise<void> {
   const err = item.error instanceof Error ? item.error : new Error(String(item.error));

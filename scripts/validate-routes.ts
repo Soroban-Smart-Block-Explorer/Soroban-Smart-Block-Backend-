@@ -51,11 +51,8 @@ interface ValidationResult {
 const PENDING_SCHEMA_ROUTERS = new Set([
   'advanced-events.ts',
   'assets.ts',
-  'auth.ts',
   'authMultisig.ts',
-  'authOAuth2.ts',
   'authProfile.ts',
-  'authSecurity.ts',
   'authWebhooks.ts',
   'bn254.ts',
   'checked-arithmetic.ts',
@@ -149,26 +146,24 @@ function findMountedRouters(): Set<string> {
 /**
  * Extract router.use() prefixes from router.ts.
  *
- * Only mounts that pass a real router (an argument identifier ending in
- * "Router"/"router") are recorded. Middleware-only mounts such as
- * `router.use('/admin', adminRateLimit)` (#889) legitimately share a prefix
- * with a real router mount without being a router themselves — counting them
- * would raise a false "exact duplicate" route conflict.
+ * Only mounts that actually pass a Router instance are tracked — e.g.
+ * `router.use('/admin', adminRouter)`. Middleware-only mounts such as
+ * `router.use('/admin', adminRateLimit)` are ordinary Express composition
+ * (applying a limiter to an entire surface before its sub-routers run) and
+ * must not be counted, otherwise a shared prefix looks like a duplicate
+ * router mount and trips the exact-conflict check.
  */
 function extractMountedPrefixes(): string[] {
   const content = fs.readFileSync(ROUTER_FILE, 'utf-8');
-  const useCallRegex = /router\.use\(\s*['"]([^'"]+)['"]\s*([\s\S]*?)\)\s*;/g;
+  // Capture the whole call so we can inspect the mounted handlers.
+  const useRegex = /router\.use\(['"]([^'"]+)['"]([^)]*)\)/g;
   const prefixes: string[] = [];
 
-  let match: RegExpExecArray | null;
-  while ((match = useCallRegex.exec(content)) !== null) {
-    const args = match[2] ?? '';
-    const hasRouterArg =
-      /[A-Za-z0-9_$]*[Rr]outer[s]?[^A-Za-z0-9_$]/.test(args) ||
-      /(^|[^A-Za-z0-9_$])[A-Za-z0-9_$]*[Rr]outer[s]?$/.test(args);
-    if (hasRouterArg) {
-      prefixes.push(match[1]);
-    }
+  let match;
+  while ((match = useRegex.exec(content)) !== null) {
+    const handlers = match[2] ?? '';
+    const mountsRouter = /\b\w*Router\b/.test(handlers) || /\brouter\b/.test(handlers);
+    if (mountsRouter) prefixes.push(match[1]);
   }
 
   return prefixes;

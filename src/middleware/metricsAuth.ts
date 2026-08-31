@@ -107,9 +107,12 @@ export function metricsAuth(req: Request, res: Response, next: NextFunction): vo
     return;
   }
 
-  logger.warn('[metrics-auth] rejected /metrics request: IP not allowlisted and no token provided', {
-    ip: req.ip,
-  });
+  logger.warn(
+    '[metrics-auth] rejected /metrics request: IP not allowlisted and no token provided',
+    {
+      ip: req.ip,
+    },
+  );
   res.status(403).json({ error: 'Forbidden: not permitted to access metrics' });
 }
 

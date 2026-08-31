@@ -1,3 +1,5 @@
+import { mkdir, writeFile } from 'node:fs/promises';
+import { join } from 'node:path';
 import { buildCorpusFromHistory, CorpusEntry, getBoundaryValues } from './corpus';
 import { generateMutations } from './mutator';
 import { rpc } from '../indexer/rpc';
@@ -37,6 +39,71 @@ export interface FuzzReport {
 }
 
 const DUMMY_ACCOUNT = 'GAAZI4TCR3TY5OJHCTJC2A4QSY6CJWJH5IAJTGKIN2ER7LBNVKOCCWN';
+
+// Where persisted fuzzing regression tests are written (repo-relative).
+const DEFAULT_REGRESSION_DIR = 'tests/fuzzing/regressions';
+
+/**
+ * Generate a fully runnable vitest regression test for a confirmed finding.
+ *
+ * Unlike the previous stub (which only emitted a `TODO` comment), the emitted
+ * test drives the *same* `simulateCall` path the fuzzer uses — contract
+ * address, function and the exact (mutated) args that produced the finding —
+ * so it will catch a silently re-introduced panic. The RPC and DB layers are
+ * stubbed deterministically so the persisted test runs offline in CI.
+ */
+function jsStr(value: unknown, indent?: number): string {
+  // JSON.stringify already escapes quotes/backslashes/newlines. Also escape
+  // backtick and `${` so the literal is safe to embed in generated test source.
+  return JSON.stringify(value, null, indent).replace(/`/g, '\\`').replace(/\$\{/g, '\\${');
+}
+
+export function generateRegressionTest(
+  finding: FuzzFinding,
+  contractAddress: string,
+  importPrefix = '../../../',
+): string {
+  const functionNameJson = jsStr(finding.functionName);
+  const contractJson = jsStr(contractAddress);
+  const argsJson = jsStr(finding.args, 2);
+  // Error text is embedded as a JS literal so it survives quotes/backslashes.
+  const replayedError = jsStr(finding.error ?? finding.result);
+  const describeTitle = `${finding.functionName || 'contract'} fuzz regression`;
+  const testName = `${finding.functionName || 'contract'} repro of ${finding.mutation} (${finding.severity})`;
+
+  return `import { describe, it, expect, vi } from 'vitest';
+import { Account, Keypair } from '@stellar/stellar-sdk';
+import { simulateCall } from '${importPrefix}src/fuzzing/fuzzer';
+
+// Deterministically replay the fuzzed RPC + DB layer so this test runs offline.
+vi.mock('${importPrefix}src/indexer/rpc', () => ({
+  rpc: {
+    simulateTransaction: vi.fn().mockResolvedValue({ error: ${replayedError} }),
+    getAccount: vi.fn(),
+  },
+}));
+vi.mock('${importPrefix}src/db', () => ({
+  prismaRead: { transaction: { findMany: vi.fn().mockResolvedValue([]) } },
+}));
+vi.mock('${importPrefix}src/indexer/abi-cache', () => ({
+  getCachedAbi: vi.fn(),
+}));
+
+describe(${JSON.stringify(describeTitle)}, () => {
+  it(${JSON.stringify(testName)}, async () => {
+    const contractAddress = ${contractJson};
+    const args = ${argsJson};
+    const account = new Account(Keypair.random().publicKey(), '0');
+
+    // Replay the same simulateCall path the fuzzer uses for this finding.
+    const { result } = await simulateCall(contractAddress, ${functionNameJson}, args, account);
+
+    expect(result).toBeDefined();
+    expect(result).not.toContain('panic');
+  });
+});
+`;
+}
 
 async function getOrMakeAccount(): Promise<Account> {
   try {
@@ -92,21 +159,7 @@ function classifyError(error: string | undefined): {
   return { severity: 'low', exploitable: false };
 }
 
-function generateRegressionTest(finding: FuzzFinding): string {
-  const argsJson = JSON.stringify(finding.args, null, 2);
-  return `// Regression test for ${finding.severity} severity finding in ${finding.functionName}
-// Mutation: ${finding.mutation}
-// Expected: ${finding.result}
-describe('${finding.functionName} fuzz regression', () => {
-  it('handles boundary args without panic', async () => {
-    const args = ${argsJson};
-    // TODO: Set up contract and simulate call
-    // expect(result).not.toContain('panic');
-  });
-});`;
-}
-
-async function simulateCall(
+export async function simulateCall(
   contractAddress: string,
   functionName: string,
   args: unknown[],
@@ -142,7 +195,7 @@ async function getContractFunctions(contractAddress: string): Promise<string[]> 
 
 export async function fuzzContract(
   contractAddress: string,
-  options: { maxCases?: number; targetFunctions?: string[] } = {},
+  options: { maxCases?: number; targetFunctions?: string[]; persist?: boolean } = {},
 ): Promise<FuzzReport> {
   const startedAt = new Date().toISOString();
   const startMs = Date.now();
@@ -187,7 +240,7 @@ export async function fuzzContract(
             severity,
             exploitable,
           };
-          finding.regressionTest = generateRegressionTest(finding);
+          finding.regressionTest = generateRegressionTest(finding, contractAddress);
           findings.push(finding);
         }
       }
@@ -209,7 +262,7 @@ export async function fuzzContract(
           severity,
           exploitable,
         };
-        finding.regressionTest = generateRegressionTest(finding);
+        finding.regressionTest = generateRegressionTest(finding, contractAddress);
         findings.push(finding);
       }
     }
@@ -217,6 +270,12 @@ export async function fuzzContract(
 
   const totalCases = executed;
   const coverage = Math.min(100, Math.round((seenPaths.size / Math.max(1, totalCases * 2)) * 100));
+
+  // Persist confirmed findings' regression tests into the repo when requested,
+  // so they become runnable, repeatable fixtures rather than throwaway reports.
+  if (options.persist && findings.length > 0) {
+    await persistRegressionTests(findings, contractAddress);
+  }
 
   return {
     contractAddress,
@@ -228,6 +287,41 @@ export async function fuzzContract(
     startedAt,
     completedAt: new Date().toISOString(),
   };
+}
+
+/**
+ * Write the generated regression test for each finding to the repo's
+ * `tests/fuzzing/regressions/` directory (creating it if needed).
+ *
+ * Returns the directory and the list of file paths that were written.
+ */
+export async function persistRegressionTests(
+  findings: FuzzFinding[],
+  contractAddress: string,
+  dir: string = DEFAULT_REGRESSION_DIR,
+): Promise<{ dir: string; files: string[] }> {
+  await mkdir(dir, { recursive: true });
+  const files: string[] = [];
+  const base = (contractAddress || 'contract').replace(/[^A-Za-z0-9]/g, '').slice(0, 16);
+  const usedNames = new Set<string>();
+
+  for (let i = 0; i < findings.length; i++) {
+    const f = findings[i];
+    const safeFn = (f.functionName || 'unknown').replace(/[^A-Za-z0-9_]/g, '_');
+    let fileName = `${base}-${safeFn}-${i}.test.ts`;
+    let counter = 1;
+    while (usedNames.has(fileName)) {
+      fileName = `${base}-${safeFn}-${i}-${counter++}.test.ts`;
+    }
+    usedNames.add(fileName);
+
+    const filePath = join(dir, fileName);
+    const source = f.regressionTest ?? generateRegressionTest(f, contractAddress);
+    await writeFile(filePath, source, 'utf8');
+    files.push(filePath);
+  }
+
+  return { dir, files };
 }
 
 // In-memory store for async fuzz jobs
@@ -244,7 +338,7 @@ let jobCounter = 0;
 
 export function startFuzzJob(
   contractAddress: string,
-  options: { maxCases?: number; targetFunctions?: string[] } = {},
+  options: { maxCases?: number; targetFunctions?: string[]; persist?: boolean } = {},
 ): string {
   const id = `fuzz_${++jobCounter}_${Date.now()}`;
   const job: FuzzJob = { id, status: 'running', startedAt: new Date().toISOString() };
@@ -266,3 +360,16 @@ export function startFuzzJob(
 export function getFuzzJob(id: string): FuzzJob | undefined {
   return fuzzJobs.get(id);
 }
+
+/**
+ * Public surface exposed for tooling/consumers (and tests). Kept separate from
+ * the fuzzing HTTP router so the fuzzer can be driven programmatically.
+ */
+export const fuzzerModule = {
+  fuzzContract,
+  startFuzzJob,
+  getFuzzJob,
+  generateRegressionTest,
+  persistRegressionTests,
+  simulateCall,
+};

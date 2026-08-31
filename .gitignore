@@ -39,6 +39,12 @@ tests/**/*.d.ts
 **/__snapshots__/
 **/snapshots/
 
+# Auto-generated fuzzing regression fixtures (#921)
+# Written to tests/fuzzing/regressions/ when a confirmed fuzz finding is
+# persisted via fuzzContract({ persist: true }); reproduced on demand instead
+# of being committed, so CI stays hermetic and the tree stays clean.
+tests/fuzzing/regressions/*.test.ts
+
 # Temporary files
 *.tmp
 *.orig

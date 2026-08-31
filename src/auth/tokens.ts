@@ -1,6 +1,7 @@
 import jwt, { SignOptions } from 'jsonwebtoken';
 import { createHash, randomBytes } from 'crypto';
-import { getOrCreateKeyPair } from './keys';
+import { getOrCreateKeyPair, getKeyPairForKid, getGraceKeyPairs } from './keys';
+import { config } from '../config';
 
 export interface TokenPayload {
   sub: string; // wallet address
@@ -34,13 +35,6 @@ export async function issueTokens(payload: Omit<TokenPayload, 'jti'>): Promise<T
   const sessionId = payload.sessionId?.trim() || generateSessionId();
 
   const claims: TokenPayload = { ...payload, jti, sessionId };
-  const opts: SignOptions = {
-    algorithm: 'RS256',
-    expiresIn: ACCESS_TOKEN_TTL,
-    header: { alg: 'RS256', kid } as Parameters<typeof jwt.sign>[2] extends SignOptions
-      ? never
-      : never,
-  };
 
   const token = jwt.sign(claims, privateKeyPem, {
     algorithm: 'RS256',
@@ -63,8 +57,57 @@ export async function issueTokens(payload: Omit<TokenPayload, 'jti'>): Promise<T
 
 export async function verifyToken(token: string): Promise<TokenPayload | null> {
   try {
-    const { publicKeyPem } = await getOrCreateKeyPair();
-    return jwt.verify(token, publicKeyPem, { algorithms: ['RS256'] }) as TokenPayload;
+    const decodedHeader = jwt.decode(token, { complete: true }) as { header: { kid?: string; alg?: string } } | null;
+    const kid = decodedHeader?.header?.kid;
+    const alg = decodedHeader?.header?.alg;
+
+    // Check HMAC algorithms if JWT_SECRET or JWT_PREVIOUS_SECRETS were used
+    if (alg && alg.startsWith('HS')) {
+      const secrets: string[] = [];
+      if (config.jwtSecret) secrets.push(config.jwtSecret);
+      if (config.jwtPreviousSecrets) {
+        secrets.push(...config.jwtPreviousSecrets.split(',').map((s) => s.trim()).filter(Boolean));
+      }
+      for (const secret of secrets) {
+        try {
+          return jwt.verify(token, secret) as TokenPayload;
+        } catch {
+          // continue checking next secret in key ring
+        }
+      }
+      return null;
+    }
+
+    // RS256 key ring lookup by kid
+    if (kid) {
+      const kp = await getKeyPairForKid(kid);
+      if (kp) {
+        try {
+          return jwt.verify(token, kp.publicKeyPem, { algorithms: ['RS256'] }) as TokenPayload;
+        } catch {
+          // Fallback to testing remaining keys
+        }
+      }
+    }
+
+    // Try current key pair
+    const currentKp = await getOrCreateKeyPair();
+    try {
+      return jwt.verify(token, currentKp.publicKeyPem, { algorithms: ['RS256'] }) as TokenPayload;
+    } catch {
+      // Fallback to grace key pairs
+    }
+
+    // Try grace key pairs
+    for (const graceKp of getGraceKeyPairs()) {
+      try {
+        return jwt.verify(token, graceKp.publicKeyPem, { algorithms: ['RS256'] }) as TokenPayload;
+      } catch {
+        // Continue checking grace keys
+      }
+    }
+
+    return null;
   } catch {
     return null;
   }
