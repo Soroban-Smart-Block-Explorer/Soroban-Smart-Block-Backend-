@@ -31,7 +31,7 @@
   "ignorePatterns": ["dist/", "node_modules/"],
   "overrides": [
     {
-      "files": ["tests/load/*.ts", "tests/fixtures/*.ts"],
+      "files": ["tests/load/*.ts", "tests/fixtures/*.ts", "src/benchmarks/**/*.ts"],
       "rules": {
         "no-console": "off"
       }

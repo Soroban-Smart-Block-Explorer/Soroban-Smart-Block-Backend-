@@ -44,6 +44,8 @@
     "postinstall": "prisma generate",
     "lint": "eslint 'src/**/*.ts' 'tests/**/*.ts' --max-warnings 1750",
     "lint:fix": "eslint 'src/**/*.ts' 'tests/**/*.ts' --fix",
+    "lint:budget": "ts-node scripts/lint-budget.ts --max-warnings 158",
+    "lint:budget:ci": "ts-node scripts/lint-budget.ts --max-warnings 158",
     "format": "prettier --check 'src/**/*.ts' 'tests/**/*.ts'",
     "format:fix": "prettier --write 'src/**/*.ts' 'tests/**/*.ts'",
     "prepare": "husky",

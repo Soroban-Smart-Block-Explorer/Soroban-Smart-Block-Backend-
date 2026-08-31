@@ -75,7 +75,7 @@ export async function schedulePruner() {
 }
 
 export async function pruneExpiredData(opts: PruneOptions = {}): Promise<PruneBatchAudit[]> {
-  const dryRun = opts.dryRun ?? (process.env.PRUNER_DRY_RUN === 'true');
+  const dryRun = opts.dryRun ?? process.env.PRUNER_DRY_RUN === 'true';
   const policies = { ...getRetentionPolicies(), ...opts.overridePolicies };
   const auditLogs: PruneBatchAudit[] = [];
 
@@ -200,4 +200,3 @@ export async function pruneExpiredData(opts: PruneOptions = {}): Promise<PruneBa
     throw err;
   }
 }
-

@@ -98,8 +98,15 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Lint
-        run: npm run lint
+      # #920: ESLint warning budget ratchet. `npm run lint` alone tolerates up
+      # to 1750 warnings (a flat cap), which makes a genuinely new warning
+      # indistinguishable from the existing debt. The ratchet instead fails the
+      # build as soon as the *blocking* warning count exceeds the checked-in
+      # budget (see scripts/lint-budget.ts), so any new warning fails CI and the
+      # pre-existing pile is paid down incrementally. The noisiest rules
+      # (no-explicit-any, no-phantom-prisma-field) are tracked-but-non-blocking.
+      - name: Lint (warning budget ratchet)
+        run: npm run lint:budget:ci
 
       # #696: Prettier formatting check — fails CI if any file is not formatted
       - name: Check formatting

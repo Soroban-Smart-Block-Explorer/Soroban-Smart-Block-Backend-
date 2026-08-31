@@ -135,9 +135,7 @@ async function checkCacheHealth(): Promise<DependencyHealth> {
   const type = cacheBackendType();
   const redisConnected = await pingRedis().catch(() => false);
   const isInMemoryFallback =
-    type === 'memory' &&
-    !!config.cacheUrl &&
-    !config.cacheUrl.startsWith('memory://');
+    type === 'memory' && !!config.cacheUrl && !config.cacheUrl.startsWith('memory://');
 
   const status = type === 'redis' && !redisConnected ? 'unhealthy' : ready ? 'healthy' : 'degraded';
 

@@ -70,9 +70,10 @@ export interface WorkerHealthSummary {
  * Best-effort parse of common cron shorthand into an approximate interval in
  * milliseconds, for staleness detection when a job doesn't supply
  * `expectedIntervalMs` explicitly. Handles the "every N seconds/minutes"
- * patterns actually used in this codebase (`* * * * *`, `*/N * * * *`,
- * 6-field `*/N * * * * *`); anything else (day-of-week/month schedules)
- * returns null, meaning "don't flag this job as stale".
+ * patterns actually used in this codebase (5-field `* * * * *`, stepped
+ * variants such as `N * * * *` with N being a step like 5, and 6-field
+ * stepped variants); anything else (day-of-week/month schedules) returns
+ * null, meaning "don't flag this job as stale".
  */
 export function approxCronIntervalMs(expression: string): number | null {
   const parts = expression.trim().split(/\s+/);
@@ -257,7 +258,9 @@ class CronScheduler {
       this.recordHeartbeat(jobConfig.id, 'success', {
         taskName: jobConfig.taskName,
         expectedIntervalMs:
-          jobConfig.expectedIntervalMs ?? approxCronIntervalMs(jobConfig.cronExpression) ?? undefined,
+          jobConfig.expectedIntervalMs ??
+          approxCronIntervalMs(jobConfig.cronExpression) ??
+          undefined,
       });
 
       logger.info(
@@ -273,7 +276,9 @@ class CronScheduler {
       this.recordHeartbeat(jobConfig.id, 'failure', {
         taskName: jobConfig.taskName,
         expectedIntervalMs:
-          jobConfig.expectedIntervalMs ?? approxCronIntervalMs(jobConfig.cronExpression) ?? undefined,
+          jobConfig.expectedIntervalMs ??
+          approxCronIntervalMs(jobConfig.cronExpression) ??
+          undefined,
       });
 
       logger.error(
