@@ -240,7 +240,7 @@ export function createApp(options: AppOptions): express.Express {
     }),
   );
 
-  // Health endpoint with dependency status
+  // Health endpoint with dependency status (cheap check based on readiness)
   app.get(
     '/health',
     asyncHandler(async (_req, res) => {
@@ -250,7 +250,29 @@ export function createApp(options: AppOptions): express.Express {
           .json({ status: 'shutting_down', timestamp: new Date().toISOString() });
       }
 
-      const healthStatus = await getHealthStatus();
+      const healthStatus = await getHealthStatus(false);
+
+      // Return 503 if any dependency is unhealthy, 200 otherwise
+      const statusCode = healthStatus.status === 'unhealthy' ? 503 : 200;
+
+      res.status(statusCode).json({
+        ...healthStatus,
+        network: config.stellarNetwork,
+      });
+    }),
+  );
+
+  // Detailed health check (Issue #923) with live probes
+  app.get(
+    '/health/detailed',
+    asyncHandler(async (_req, res) => {
+      if (isShuttingDown()) {
+        return res
+          .status(503)
+          .json({ status: 'shutting_down', timestamp: new Date().toISOString() });
+      }
+
+      const healthStatus = await getHealthStatus(true);
 
       // Return 503 if any dependency is unhealthy, 200 otherwise
       const statusCode = healthStatus.status === 'unhealthy' ? 503 : 200;
