@@ -98,7 +98,22 @@ export async function backfillYieldDistributions(
   endLedger: number,
 ): Promise<number> {
   const events = await fetchEvents(startLedger, endLedger);
-  let stored = 0;
+  // #915 — build rows in-memory and insert with a single createMany instead
+  // of one upsert round-trip per event; each `id` is deterministic and the
+  // original upsert never updated an existing row (`update: {}`), so
+  // skipDuplicates preserves identical idempotent-insert semantics.
+  const rows: Array<{
+    id: string;
+    transactionHash: string;
+    contractAddress: string;
+    distributionId: string;
+    recipient: string;
+    amount: string;
+    tokenSymbol?: string;
+    windowLabel: string;
+    ledgerSequence: number;
+    ledgerCloseTime: Date;
+  }> = [];
 
   for (const event of events) {
     const topics = event.topics;
@@ -133,25 +148,26 @@ export async function backfillYieldDistributions(
     const windowLabel = 'Corporate Yield Distribution Sync';
     const id = `${event.transactionHash}-${event.contractId}-${extracted.recipient}-${topicSymbol}`;
 
-    await prisma.yieldDistribution.upsert({
-      where: { id },
-      update: {},
-      create: {
-        id,
-        transactionHash: event.transactionHash,
-        contractAddress: event.contractId,
-        distributionId: extracted.distributionId,
-        recipient: extracted.recipient,
-        amount: extracted.amount,
-        tokenSymbol: extracted.tokenSymbol,
-        windowLabel,
-        ledgerSequence: event.ledgerSequence,
-        ledgerCloseTime: event.ledgerCloseTime,
-      },
+    rows.push({
+      id,
+      transactionHash: event.transactionHash,
+      contractAddress: event.contractId,
+      distributionId: extracted.distributionId,
+      recipient: extracted.recipient,
+      amount: extracted.amount,
+      tokenSymbol: extracted.tokenSymbol,
+      windowLabel,
+      ledgerSequence: event.ledgerSequence,
+      ledgerCloseTime: event.ledgerCloseTime,
     });
-
-    stored++;
   }
 
-  return stored;
+  if (rows.length === 0) return 0;
+
+  const result = await prisma.yieldDistribution.createMany({
+    data: rows,
+    skipDuplicates: true,
+  });
+
+  return result.count;
 }

@@ -20,6 +20,9 @@ const eventListQuerySchema = paginationSchema.merge(
     contract: stellarAddress.optional(),
     type: safeLabel.optional(),
     topic: safeLabel.optional(),
+    // #914 — cursor-based pagination (preferred for deep pages); page/limit
+    // remains supported as a compatibility shim.
+    cursor: z.string().optional(),
   }),
 );
 
@@ -50,6 +53,10 @@ const eventListQuerySchema = paginationSchema.merge(
  *         name: limit
  *         schema: { type: integer, minimum: 1, maximum: 100, default: 20 }
  *         description: Page size
+ *       - in: query
+ *         name: cursor
+ *         schema: { type: string }
+ *         description: Event id to resume after (cursor pagination, preferred for deep pages). Takes precedence over `page` when set.
  *     responses:
  *       200:
  *         description: Paginated list of events (summary fields only)
@@ -75,6 +82,7 @@ const eventListQuerySchema = paginationSchema.merge(
  *                 total: { type: integer, description: 'Total number of events matching the filter' }
  *                 page: { type: integer }
  *                 limit: { type: integer }
+ *                 nextCursor: { type: string, nullable: true, description: 'Pass as `cursor` to fetch the next page' }
  *               example:
  *                 data:
  *                   - id: '3389e9f0f1a4e32477b1c0d9e8a6f5b4c3d2e1f0a9b8c7d6e5f40312233445566-AAAADwAAAAh0cmFuc2Zlcg=='

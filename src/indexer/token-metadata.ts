@@ -164,9 +164,49 @@ interface HorizonAssetRecord {
   name?: string;
 }
 
+// ─── Bounded concurrency + rate-limit handling for Horizon fetches ───────────
+// #916 — resolving many unresolved assets (cache warm-up, fresh contracts)
+// used to fire one sequential Horizon HTTP call per asset with no cap and no
+// 429-awareness. This bounds in-flight requests and backs off on 429s using
+// Retry-After, independent of the RPC retry policy in indexer/rpc.ts.
+
+const HORIZON_ASSET_CONCURRENCY = 5;
+const HORIZON_MAX_RETRIES = 3;
+let horizonActive = 0;
+const horizonQueue: Array<() => void> = [];
+
+async function withHorizonLimit<T>(fn: () => Promise<T>): Promise<T> {
+  if (horizonActive >= HORIZON_ASSET_CONCURRENCY) {
+    await new Promise<void>((resolve) => horizonQueue.push(resolve));
+  }
+  horizonActive++;
+  try {
+    return await fn();
+  } finally {
+    horizonActive--;
+    const next = horizonQueue.shift();
+    if (next) next();
+  }
+}
+
+function parseRetryAfterMs(headers: Record<string, string> | undefined): number {
+  const raw = headers?.['retry-after'];
+  if (!raw) return 1000;
+  const asSeconds = Number(raw);
+  if (Number.isFinite(asSeconds)) return Math.max(0, asSeconds * 1000);
+  const asDate = Date.parse(raw);
+  return Number.isFinite(asDate) ? Math.max(0, asDate - Date.now()) : 1000;
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 /**
  * Fetch classic Stellar asset metadata from Horizon.
  * Returns null if the asset is not found or the request fails.
+ * Bounded to HORIZON_ASSET_CONCURRENCY in-flight requests, and retries on
+ * 429 responses respecting `Retry-After` up to HORIZON_MAX_RETRIES times.
  */
 async function fetchClassicAssetMetadata(
   assetCode: string,
@@ -175,25 +215,39 @@ async function fetchClassicAssetMetadata(
   // XLM (native) has no Horizon asset record
   if (!assetIssuer) return { name: 'Stellar Lumens' };
 
-  try {
+  return withHorizonLimit(async () => {
     const url = `${config.horizonUrl}/assets`;
-    const response = await safeGet(
-      url,
-      { asset_code: assetCode, asset_issuer: assetIssuer, limit: 1 },
-      undefined,
-      6000,
-    );
-    const data = response.data as {
-      _embedded: { records: HorizonAssetRecord[] };
-    };
+    for (let attempt = 0; attempt <= HORIZON_MAX_RETRIES; attempt++) {
+      try {
+        const response = await safeGet(
+          url,
+          { asset_code: assetCode, asset_issuer: assetIssuer, limit: 1 },
+          undefined,
+          6000,
+        );
 
-    const record = data?._embedded?.records?.[0];
-    if (!record) return null;
+        if (response.status === 429 && attempt < HORIZON_MAX_RETRIES) {
+          logger.warn(
+            `[token-metadata] Horizon rate limit hit for ${assetCode}:${assetIssuer}, retrying (attempt ${attempt + 1})`,
+          );
+          await sleep(parseRetryAfterMs(response.headers));
+          continue;
+        }
 
-    return { name: record.name ?? null };
-  } catch {
+        const data = response.data as {
+          _embedded: { records: HorizonAssetRecord[] };
+        };
+
+        const record = data?._embedded?.records?.[0];
+        if (!record) return null;
+
+        return { name: record.name ?? null };
+      } catch {
+        return null;
+      }
+    }
     return null;
-  }
+  });
 }
 
 // ─── Core resolution logic ────────────────────────────────────────────────────
