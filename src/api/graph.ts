@@ -1,4 +1,5 @@
 import { Router, Request, Response } from 'express';
+import crypto from 'crypto';
 import { asyncHandler } from '../middleware/asyncHandler';
 import {
   buildContractDependencyGraph,
@@ -8,6 +9,16 @@ import { getGraphDb } from '../db/graph';
 import { getGraphTemplates } from '../services/graphTemplates';
 import { logger } from '../logger';
 import { z } from 'zod';
+import { cacheGet, cacheSet } from '../cache';
+import {
+  buildCallGraph,
+  DEFAULT_CALL_GRAPH_MAX_DEPTH,
+  DEFAULT_CALL_GRAPH_MAX_NODES,
+  DEFAULT_CALL_GRAPH_MAX_EDGES,
+  DEFAULT_CALL_GRAPH_TIMEOUT_MS,
+  type CallGraphDirection,
+  type CallGraphResult,
+} from '../indexer/call-graph';
 import {
   traverseUpstream,
   traverseDownstream,
@@ -803,5 +814,195 @@ graphRouter.get(
       startAddress: address,
       ...result,
     });
+  }),
+);
+
+// ── Weighted contract-to-contract call graph ─────────────────────────────────
+
+/** Cache TTL for call-graph snapshots (seconds). */
+export const CALL_GRAPH_CACHE_TTL_SECONDS = 60;
+
+const contractCallsQuerySchema = z.object({
+  address: z.string().min(1).optional(),
+  direction: z.enum(['upstream', 'downstream', 'both']).optional().default('both'),
+  maxDepth: z.coerce.number().int().min(1).max(10).optional().default(DEFAULT_CALL_GRAPH_MAX_DEPTH),
+  maxNodes: z.coerce
+    .number()
+    .int()
+    .min(1)
+    .max(100_000)
+    .optional()
+    .default(DEFAULT_CALL_GRAPH_MAX_NODES),
+  maxEdges: z.coerce
+    .number()
+    .int()
+    .min(1)
+    .max(200_000)
+    .optional()
+    .default(DEFAULT_CALL_GRAPH_MAX_EDGES),
+  timeoutMs: z.coerce
+    .number()
+    .int()
+    .min(100)
+    .max(30_000)
+    .optional()
+    .default(DEFAULT_CALL_GRAPH_TIMEOUT_MS),
+  minWeight: z.coerce.number().int().min(1).max(1_000_000).optional().default(1),
+  includeInactive: z.enum(['true', 'false']).optional().default('false'),
+  refresh: z.enum(['true', 'false']).optional().default('false'),
+});
+
+interface CallGraphQueryParams {
+  address: string | null;
+  direction: CallGraphDirection;
+  maxDepth: number;
+  maxNodes: number;
+  maxEdges: number;
+  timeoutMs: number;
+  minWeight: number;
+  includeInactive: boolean;
+}
+
+/** Deterministic cache key for a normalized call-graph query. */
+export function callGraphCacheKey(params: CallGraphQueryParams): string {
+  const hash = crypto.createHash('sha1').update(JSON.stringify(params)).digest('hex');
+  return `graph:callgraph:${hash}`;
+}
+
+/**
+ * @swagger
+ * /api/v1/graph/contract-calls:
+ *   get:
+ *     summary: Weighted contract-to-contract call graph for visualization
+ *     tags: [Graph]
+ *     description: >
+ *       Returns nodes and weighted edges describing "who calls whom". Supply an
+ *       `address` to scope the graph to that contract's neighborhood (walking
+ *       upstream callers, downstream callees, or both); omit it for a bounded
+ *       ecosystem-wide snapshot. Responses are cached with a short TTL.
+ *     parameters:
+ *       - in: query
+ *         name: address
+ *         schema: { type: string }
+ *         description: Root contract address (omit for ecosystem scope)
+ *       - in: query
+ *         name: direction
+ *         schema: { type: string, enum: [upstream, downstream, both], default: both }
+ *       - in: query
+ *         name: maxDepth
+ *         schema: { type: integer, default: 3, minimum: 1, maximum: 10 }
+ *       - in: query
+ *         name: maxNodes
+ *         schema: { type: integer, default: 2000 }
+ *       - in: query
+ *         name: maxEdges
+ *         schema: { type: integer, default: 5000 }
+ *       - in: query
+ *         name: timeoutMs
+ *         schema: { type: integer, default: 5000 }
+ *       - in: query
+ *         name: minWeight
+ *         schema: { type: integer, default: 1 }
+ *         description: Drop edges (and traversal) below this call weight
+ *       - in: query
+ *         name: includeInactive
+ *         schema: { type: boolean, default: false }
+ *       - in: query
+ *         name: refresh
+ *         schema: { type: boolean, default: false }
+ *         description: Bypass the cache and recompute
+ *     responses:
+ *       200:
+ *         description: Weighted call graph snapshot
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 nodes:
+ *                   type: array
+ *                   items:
+ *                     type: object
+ *                     properties:
+ *                       id: { type: string }
+ *                       address: { type: string }
+ *                       label: { type: string }
+ *                       name: { type: string, nullable: true }
+ *                       depth: { type: integer, nullable: true }
+ *                       inDegree: { type: integer }
+ *                       outDegree: { type: integer }
+ *                       callVolume: { type: integer }
+ *                       isRoot: { type: boolean }
+ *                 edges:
+ *                   type: array
+ *                   items:
+ *                     type: object
+ *                     properties:
+ *                       id: { type: string }
+ *                       source: { type: string }
+ *                       target: { type: string }
+ *                       weight: { type: integer }
+ *                 metadata: { type: object }
+ *             example:
+ *               nodes: [{ id: "CALLD5…RJ4M5", address: "CALLD5…RJ4M5", label: "SorobanSwap", name: "SorobanSwap", depth: 0, inDegree: 1, outDegree: 2, callVolume: 42, isRoot: true }]
+ *               edges: [{ id: "CALLD5…RJ4M5->CABC…XY12", source: "CALLD5…RJ4M5", target: "CABC…XY12", weight: 17 }]
+ *               metadata: { scope: "contract", root: "CALLD5…RJ4M5", direction: "both", totalNodes: 3, totalEdges: 2, truncated: false, timedOut: false, cached: false }
+ *       400:
+ *         description: Validation error
+ *         content:
+ *           application/json:
+ *             schema: { $ref: '#/components/schemas/ZodValidationError' }
+ *       500:
+ *         description: Internal server error
+ *         content:
+ *           application/json:
+ *             schema: { $ref: '#/components/schemas/Error' }
+ */
+graphRouter.get(
+  '/contract-calls',
+  asyncHandler(async (req: Request, res: Response) => {
+    let query: z.infer<typeof contractCallsQuerySchema>;
+    try {
+      query = contractCallsQuerySchema.parse(req.query);
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ error: error.errors });
+      }
+      throw error;
+    }
+
+    const params: CallGraphQueryParams = {
+      address: query.address ?? null,
+      direction: query.direction,
+      maxDepth: query.maxDepth,
+      maxNodes: query.maxNodes,
+      maxEdges: query.maxEdges,
+      timeoutMs: query.timeoutMs,
+      minWeight: query.minWeight,
+      includeInactive: query.includeInactive === 'true',
+    };
+
+    const cacheKey = callGraphCacheKey(params);
+
+    if (query.refresh !== 'true') {
+      const cached = await cacheGet<CallGraphResult>(cacheKey);
+      if (cached) {
+        return res.json({ ...cached, metadata: { ...cached.metadata, cached: true } });
+      }
+    }
+
+    const result = await buildCallGraph({
+      address: params.address ?? undefined,
+      direction: params.direction,
+      maxDepth: params.maxDepth,
+      maxNodes: params.maxNodes,
+      maxEdges: params.maxEdges,
+      timeoutMs: params.timeoutMs,
+      minWeight: params.minWeight,
+      includeInactive: params.includeInactive,
+    });
+
+    await cacheSet(cacheKey, result, CALL_GRAPH_CACHE_TTL_SECONDS);
+    res.json(result);
   }),
 );

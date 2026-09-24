@@ -53,7 +53,6 @@ import { developerRouter } from './developer/router';
 import { scheduleRouter } from './schedule';
 import feedRouter from './feed';
 import backfillRouter from './backfill';
-import marketRouter from './market';
 import feedSSERouter from './feedSSE';
 import { arbitrageRouter } from './arbitrage';
 import { auditRouter } from './audit';
@@ -179,3 +178,9 @@ router.use('/audit', auditRouter);
 // Stream + OLAP + cold-storage query gateway. Compute-heavy — key required.
 import { lakehouseRouter } from './lakehouse';
 router.use('/lakehouse', requireApiKey, lakehouseRouter);
+
+// ── Contract call graph & graph explorer ──────────────────────────────────────
+// Weighted "who calls whom" graph for UI clients. Read-only; global auth and
+// rate limiting apply from src/index.ts.
+import { graphRouter } from './graph';
+router.use('/graph', graphRouter);

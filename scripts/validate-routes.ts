@@ -72,7 +72,6 @@ const PENDING_SCHEMA_ROUTERS = new Set([
   'feed.ts',
   'feedSSE.ts',
   'fuzzing.ts',
-  'graph.ts',
   'intelligence.ts',
   'mev.ts',
   'oracle-audit.ts',
