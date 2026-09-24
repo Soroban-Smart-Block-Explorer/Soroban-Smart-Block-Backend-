@@ -3621,6 +3621,36 @@ model PriceAlert {
   @@map("_price_alerts")
 }
 
+/// Saved search + notification subscription.
+///
+/// Persists an authenticated user's search criteria so newly indexed
+/// contracts/events can be matched against it and delivered as push or
+/// webhook notifications (see src/notifications/savedSearchMatcher.ts and
+/// src/indexer/savedSearchRunner.ts).
+model SavedSearch {
+  id         String @map("id") @id @default(cuid())
+  userId     String @map("user_id")
+  name       String @map("name")
+  /// Target entity family: "contract" | "event".
+  targetType String @map("target_type")
+  /// Criteria filters applied by the matcher, e.g. { contractAddress, eventType }.
+  criteria   Json   @map("criteria")
+  /// Delivery config, e.g. { webhookUrl, push, slack }.
+  notify     Json   @map("notify")
+  isActive   Boolean @map("is_active") @default(true)
+  /// Cursor: only data indexed after this time is evaluated by the runner.
+  lastRunAt     DateTime? @map("last_run_at")
+  lastMatchedAt DateTime? @map("last_matched_at")
+  /// Populated when the most recent run failed, so operators can diagnose.
+  lastError  String? @map("last_error")
+  createdAt  DateTime @map("created_at") @default(now())
+  updatedAt  DateTime @map("updated_at") @updatedAt
+
+  @@index([userId, isActive])
+  @@index([targetType, isActive])
+  @@map("_saved_searches")
+}
+
 model VerifiableCredential {
   id String @map("id") @id @default(cuid())
   profileId String @map("profile_id")
