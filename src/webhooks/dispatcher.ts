@@ -446,3 +446,133 @@ async function scheduleRetryOrFail(
     },
   });
 }
+
+// ── Test / "ping" delivery (#verification) ────────────────────────────────────
+
+export interface TestDeliveryResult {
+  deliveryId: string;
+  success: boolean;
+  /** HTTP status returned by the destination, when a response was received. */
+  httpStatus?: number;
+  durationMs: number;
+  /** Populated when the attempt failed or the destination was SSRF-blocked. */
+  error?: string;
+  /** True when the destination URL failed the SSRF guard. */
+  blocked?: boolean;
+}
+
+/**
+ * Perform a single, terminal test delivery for a subscription.
+ *
+ * Unlike `deliverOnce()`, this is user-triggered ("ping") and synchronous:
+ *   - exactly one attempt is made — no retry is scheduled, even on failure
+ *   - the result is persisted as a WebhookDelivery row
+ *   - the outcome is returned so the API can report status/duration inline
+ *
+ * The signed envelope (`{ event, attempt }`) matches real deliveries so a
+ * receiver's signature-verification code works unchanged.
+ */
+export async function sendTestDelivery(params: {
+  subscriptionId: string;
+  url: string;
+  secret: string;
+  /** The `event` object delivered to the endpoint (already serialisable). */
+  payload: unknown;
+  storeResponseBody: boolean;
+  responseRetentionDays: number;
+}): Promise<TestDeliveryResult> {
+  const { subscriptionId, url, secret, payload, storeResponseBody, responseRetentionDays } = params;
+
+  const body = JSON.stringify({ event: payload, attempt: 1 });
+  const timestampMs = Date.now();
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+    'X-Webhook-Timestamp': String(timestampMs),
+    'X-Webhook-Signature': signWebhookBody(body, secret),
+  };
+  const expiresAt = new Date(Date.now() + responseRetentionDays * 24 * 60 * 60 * 1000);
+
+  const delivery = await prismaWrite.webhookDelivery.create({
+    data: {
+      id: uuidv7(),
+      subscriptionId,
+      eventId: '',
+      attempt: 1,
+      status: 'pending',
+      processingStatus: 'processing',
+      leaseExpiresAt: new Date(Date.now() + LEASE_DURATION_MS),
+      expiresAt,
+    },
+    select: { id: true },
+  });
+
+  const startMs = Date.now();
+
+  // Pre-flight SSRF check before opening a socket.
+  try {
+    await assertSafeUrl(url);
+  } catch (err) {
+    const msg = err instanceof SsrfBlockedError ? err.message : String(err);
+    await prismaWrite.webhookDelivery.update({
+      where: { id: delivery.id },
+      data: {
+        status: 'failed',
+        processingStatus: 'done',
+        leaseExpiresAt: null,
+        nextRetryAt: null,
+        errorMsg: msg,
+      },
+    });
+    return {
+      deliveryId: delivery.id,
+      success: false,
+      durationMs: Date.now() - startMs,
+      error: msg,
+      blocked: true,
+    };
+  }
+
+  try {
+    const response = await safePost(url, body, headers, REQUEST_TIMEOUT_MS);
+    const durationMs = Date.now() - startMs;
+    const success = response.status >= 200 && response.status < 300;
+    const processedResponseBody = storeResponseBody
+      ? processResponseBody(String(response.data ?? ''), 500, true)
+      : null;
+
+    await prismaWrite.webhookDelivery.update({
+      where: { id: delivery.id },
+      data: {
+        status: success ? 'success' : 'failed',
+        processingStatus: 'done',
+        leaseExpiresAt: null,
+        nextRetryAt: null,
+        httpStatus: response.status,
+        responseBody: processedResponseBody,
+        deliveredAt: success ? new Date() : null,
+        errorMsg: success ? null : `HTTP ${response.status}`,
+      },
+    });
+
+    return { deliveryId: delivery.id, success, httpStatus: response.status, durationMs };
+  } catch (err: unknown) {
+    const durationMs = Date.now() - startMs;
+    const msg = err instanceof Error ? err.message : String(err);
+    const blocked = err instanceof SsrfBlockedError;
+    const processedError = storeResponseBody ? processResponseBody(msg, 500, true) : null;
+
+    await prismaWrite.webhookDelivery.update({
+      where: { id: delivery.id },
+      data: {
+        status: 'failed',
+        processingStatus: 'done',
+        leaseExpiresAt: null,
+        nextRetryAt: null,
+        errorMsg: msg,
+        responseBody: processedError,
+      },
+    });
+
+    return { deliveryId: delivery.id, success: false, durationMs, error: msg, blocked };
+  }
+}
