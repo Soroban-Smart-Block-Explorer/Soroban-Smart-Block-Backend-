@@ -215,6 +215,18 @@ export async function rollbackLedgers(sequences: number[]) {
       },
     }),
   ]);
+
+  // Drop the rolled-back ledgers' search documents too, otherwise a reorg
+  // leaves orphaned hits in the full-text index. Best-effort: a failure here
+  // must never abort the rollback itself.
+  try {
+    await prismaWrite.$executeRawUnsafe(
+      `DELETE FROM "_search_documents" WHERE "metadata"->>'ledgerSequence' = ANY($1::text[])`,
+      sequences.map(String),
+    );
+  } catch (err) {
+    logger.warn('search index cleanup after rollback failed', { error: String(err) });
+  }
 }
 
 export async function processLedgerRange(
@@ -354,14 +366,23 @@ export async function processLedgerRange(
   const events = await fetchEvents(start, end);
   stopEventsFetchTimer();
 
+  // Contracts recur across every event in the range — index each address once
+  // per processed range rather than once per event.
+  const indexedContracts = new Set<string>();
+
   for (const event of events) {
     const stopPersistContractTimer = indexerPipelineStageDuration.startTimer({ stage: 'persist' });
-    await prismaWrite.contract.upsert({
+    const contract = await prismaWrite.contract.upsert({
       where: { address: event.contractId },
       update: {},
       create: { address: event.contractId },
     });
     stopPersistContractTimer();
+
+    if (!indexedContracts.has(event.contractId)) {
+      indexedContracts.add(event.contractId);
+      await indexSafely('contract', () => indexContract(contract));
+    }
 
     // Enrich Stage: Queue initial audit
     const stopEnrichAuditTimer = indexerPipelineStageDuration.startTimer({ stage: 'enrich' });
@@ -413,6 +434,9 @@ export async function processLedgerRange(
       });
       stopPersistTxTimer();
       indexerPipelineStageProcessedTotal.inc({ stage: 'persist', status: 'success' });
+
+      // Search Stage: keep the full-text index in step with new transactions
+      await indexSafely('transaction', () => indexTransaction(transaction));
 
       // Enrich Stage: ZKP & AA & Feeds
       const stopEnrichTxTimer = indexerPipelineStageDuration.startTimer({ stage: 'enrich' });
@@ -490,6 +514,9 @@ export async function processLedgerRange(
     });
     stopPersistEventTimer();
     indexerPipelineStageProcessedTotal.inc({ stage: 'persist', status: 'success' });
+
+    // Search Stage: index the decoded event for discovery
+    await indexSafely('event', () => indexEvent(savedEvent));
 
     // Enrich Event: Feeds & Session Authorization
     const stopEnrichEventTimer = indexerPipelineStageDuration.startTimer({ stage: 'enrich' });

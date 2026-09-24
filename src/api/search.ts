@@ -34,8 +34,51 @@ const searchQuerySchema = z.object({
   offset: z.coerce.number().int().min(0).default(0),
 });
 
-// GET /search?q=<query> — full-text search across all contracts
-// Supports faceted search with prefix notation:
+// ── Unified full-text search (SR01) ─────────────────────────────────────────
+// Query string is split into a sanitised `q` plus a `type` facet that selects
+// contracts, decoded events or transaction metadata (or `all`).
+
+/** Accepts `true`/`false`/`1`/`0` from a query string (z.coerce.boolean treats
+ * the string "false" as truthy). Defaults to enabled. */
+const booleanish = z
+  .union([z.boolean(), z.string()])
+  .optional()
+  .transform((v) => (v === undefined ? true : v === true || v === 'true' || v === '1'));
+
+const unifiedSearchSchema = z.object({
+  q: safeString
+    .refine((s) => s.trim().length >= 2, 'Query string q required (min 2 chars)')
+    .refine((s) => s.trim().length <= 512, 'Query must not exceed 512 characters'),
+  type: z.enum(['all', 'contract', 'event', 'transaction']).default('all'),
+  limit: z.coerce.number().int().min(1).max(100).default(20),
+  offset: z.coerce.number().int().min(0).default(0),
+  highlight: booleanish,
+});
+
+async function handleUnifiedSearch(req: Request, res: Response) {
+  const parsed = unifiedSearchSchema.safeParse(req.query);
+  if (!parsed.success) {
+    return res.status(400).json({
+      error: 'Invalid query parameters',
+      details: parsed.error.flatten().fieldErrors,
+    });
+  }
+
+  const { q, type, limit, offset, highlight } = parsed.data;
+
+  try {
+    const page = await searchFullText({ q: q.trim(), type, limit, offset, highlight });
+    return res.json(page);
+  } catch (err: any) {
+    return res.status(500).json({ error: 'Search failed', detail: String(err) });
+  }
+}
+
+// GET /search?q=<query>&type=<all|contract|event|transaction> — ranked,
+// highlighted full-text search across the unified index (contracts, decoded
+// events, transaction metadata). When `type` is omitted the legacy
+// contract-source search below is used, which additionally supports faceted
+// prefix notation:
 //   - function:<name>
 //   - import:<module>
 //   - event:<name>
@@ -44,6 +87,12 @@ const searchQuerySchema = z.object({
 searchRouter.get(
   '/',
   asyncHandler(async (req: Request, res: Response) => {
+    // `?type=` selects the unified full-text index; without it we keep the
+    // legacy contract-source faceted search below for backward compatibility.
+    if (req.query.type !== undefined) {
+      return handleUnifiedSearch(req, res);
+    }
+
     const parsed = searchQuerySchema.safeParse(req.query);
     if (!parsed.success) {
       return res
@@ -158,9 +207,17 @@ searchRouter.get(
       for (const source of sources) {
         indexed += await reindexSource(source, indexed);
       }
+
+      // Also rebuild the unified full-text index (contracts, events,
+      // transactions) so `GET /?q=&type=` reflects existing data.
+      const searchIndex = await rebuildSearchIndex();
+
       return res.json({
         indexed,
-        message: `Reindexed ${indexed} entries from ${sources.length} contracts`,
+        searchIndexed: searchIndex.indexed,
+        message:
+          `Reindexed ${indexed} entries from ${sources.length} contracts; ` +
+          `rebuilt ${searchIndex.indexed} full-text documents`,
       });
     } catch (err: any) {
       return res.status(500).json({ error: 'Indexing failed', detail: String(err) });
