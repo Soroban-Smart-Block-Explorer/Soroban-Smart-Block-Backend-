@@ -3709,6 +3709,15 @@ model WebhookSubscription {
   active Boolean @map("active") @default(true)
   storeResponseBody Boolean @map("store_response_body") @default(true)
   responseRetentionDays Int @map("response_retention_days") @default(90)
+
+  // Challenge/response verification state. `verificationToken` is the
+  // SHA-256 digest of the in-flight challenge (never the plaintext) so a
+  // database leak cannot be used to forge a verification response.
+  verified Boolean @map("verified") @default(false)
+  verifiedAt DateTime? @map("verified_at")
+  verificationToken String? @map("verification_token")
+  verificationExpiresAt DateTime? @map("verification_expires_at")
+
   createdAt DateTime @map("created_at") @default(now())
   updatedAt DateTime @map("updated_at") @updatedAt
 
