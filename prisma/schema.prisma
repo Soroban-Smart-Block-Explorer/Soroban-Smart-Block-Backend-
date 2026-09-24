@@ -3044,6 +3044,52 @@ model PortfolioSnapshot {
   @@map("_portfolio_snapshots")
 }
 
+/// Cost-basis lot for one asset held by a linked wallet on one network.
+/// One row per (wallet, network, token); `quantity` is the current open balance.
+model PortfolioPosition {
+  id String @map("id") @id @default(cuid())
+  wallet String @map("wallet")
+  network String @map("network")
+  address String? @map("address")
+  token String @map("token")
+  symbol String? @map("symbol")
+  decimals Int @map("decimals") @default(7)
+  quantity Decimal @map("quantity") @db.Decimal(38, 18)
+  costBasisUsd Decimal @map("cost_basis_usd") @db.Decimal(30, 8)
+  realizedPnlUsd Decimal @map("realized_pnl_usd") @db.Decimal(30, 8) @default(0)
+  acquiredAt DateTime? @map("acquired_at")
+  source String @map("source") @default("manual") // manual | snapshot | event
+  metadata Json? @map("metadata")
+  createdAt DateTime @map("created_at") @default(now())
+  updatedAt DateTime @map("updated_at") @updatedAt
+
+  @@unique([wallet, network, token])
+  @@index([wallet])
+  @@index([wallet, network])
+  @@map("_portfolio_positions")
+}
+
+/// Point-in-time per-network balance + cost-basis snapshot for a linked wallet.
+/// Written whenever a portfolio P&L is materialised so history can be replayed.
+model PortfolioBalanceSnapshot {
+  id String @map("id") @id @default(cuid())
+  wallet String @map("wallet")
+  network String @map("network")
+  token String @map("token")
+  symbol String? @map("symbol")
+  quantity Decimal @map("quantity") @db.Decimal(38, 18)
+  priceUsd Decimal? @map("price_usd") @db.Decimal(30, 8)
+  valueUsd Decimal? @map("value_usd") @db.Decimal(30, 8)
+  costBasisUsd Decimal? @map("cost_basis_usd") @db.Decimal(30, 8)
+  unrealizedPnlUsd Decimal? @map("unrealized_pnl_usd") @db.Decimal(30, 8)
+  snapshotAt DateTime @map("snapshot_at")
+  createdAt DateTime @map("created_at") @default(now())
+
+  @@index([wallet, snapshotAt(sort: Desc)])
+  @@index([wallet, network, snapshotAt(sort: Desc)])
+  @@map("_portfolio_balance_snapshots")
+}
+
 model PrivacyAnalytics {
   id String @map("id") @id @default(cuid())
   timestamp DateTime @map("timestamp")
