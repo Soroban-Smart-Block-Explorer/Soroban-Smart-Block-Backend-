@@ -71,6 +71,8 @@ import { oracleIntelligenceRouter } from './oracle-intelligence';
 import { sacTrustlinesRouter } from './sac-trustlines';
 // ── ECO08 Grants & Bounties Explorer (#1019) ───────────────────────────────────
 import { grantsBountiesRouter } from './grants-bounties';
+// ── Public Status Page & Uptime History API (PLT10 / #1031) ─────────────────
+import { statusRouter } from './status';
 
 // ── Admin ─────────────────────────────────────────────────────────────────────
 import { adminErrorsRouter } from './admin/errors';
@@ -294,3 +296,6 @@ router.use('/compliance/commodity', commodityComplianceRouter);
 router.use('/compliance/rwa', rwaComplianceRouter);
 router.use('/compliance/dtcc-settlement', dtccSettlementRouter);
 router.use('/compliance/settlement-batch', settlementBatchRouter);
+
+// ── Public Status Page & Uptime History API (PLT10 / #1031) ─────────────────
+router.use('/status', statusRouter);
