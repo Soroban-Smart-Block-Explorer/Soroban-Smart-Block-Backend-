@@ -1,9 +1,5 @@
 import { SmtSolver } from './smt-solver';
-import {
-  SymbolicExecutor,
-  type WasmFunction,
-  type Vulnerability,
-} from './symbolic-executor';
+import { SymbolicExecutor, type WasmFunction, type Vulnerability } from './symbolic-executor';
 
 export interface CallGraphEdge {
   caller: string;

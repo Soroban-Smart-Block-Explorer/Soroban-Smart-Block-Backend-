@@ -18,10 +18,11 @@ const res = await fetch('https://explorer.example.com/api/graphql', {
   }),
 });
 const json = await res.json();
-console.log(json.data.transactions.data);`,
+logger.info(json.data.transactions.data);`,
 
   python: `# Python — Fetch contract details
 import requests
+import { logger } from '../logger';
 
 query = """
 query Contract($address: ID!) {

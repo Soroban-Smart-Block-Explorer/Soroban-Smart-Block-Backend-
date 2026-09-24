@@ -1,23 +1,12 @@
 export type BridgeProtocol = 'wormhole' | 'axelar' | 'allbridge' | 'stargate';
 
 export type Chain =
-  | 'ethereum'
-  | 'solana'
-  | 'cosmos'
-  | 'bsc'
-  | 'polygon'
-  | 'avalanche'
-  | 'arbitrum'
-  | 'optimism';
+  'ethereum' | 'solana' | 'cosmos' | 'bsc' | 'polygon' | 'avalanche' | 'arbitrum' | 'optimism';
 
 export type BridgeStatus = 'pending' | 'detected' | 'bridging' | 'completed' | 'failed' | 'reorged';
 
 export type AlertType =
-  | 'large_transfer'
-  | 'bridge_delay'
-  | 'bridge_failure'
-  | 'address_activity'
-  | 'reorg_detected';
+  'large_transfer' | 'bridge_delay' | 'bridge_failure' | 'address_activity' | 'reorg_detected';
 
 export type AlertSeverity = 'info' | 'warning' | 'critical';
 

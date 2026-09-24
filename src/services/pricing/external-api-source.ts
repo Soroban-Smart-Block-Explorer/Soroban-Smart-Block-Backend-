@@ -1,4 +1,5 @@
 import { cacheGet, cacheSet } from '../../cache';
+import { logger } from '../../logger';
 
 const RATE_LIMIT_WINDOW_MS = 60_000;
 const MAX_REQUESTS_PER_WINDOW = 30;
@@ -57,7 +58,7 @@ function coingeckoIdFromSymbol(symbol: string): string {
 
 async function fetchCoinGeckoPrice(tokenSymbol: string): Promise<ExternalPrice | null> {
   if (!checkRateLimit('coingecko')) {
-    console.warn('[ExternalPrice] CoinGecko rate limited');
+    logger.warn('[ExternalPrice] CoinGecko rate limited');
     return null;
   }
 
@@ -89,9 +90,8 @@ async function fetchCoinGeckoPrice(tokenSymbol: string): Promise<ExternalPrice |
       priceChange1h: 0,
       source: 'coingecko',
       confidence: 0.85,
-    };
-
-    await cacheSet(cacheKey, result, 300);
+    }; // #917 — TTL resolved from the per-route registry (se_price → 30s).
+    await cacheSet(cacheKey, result);
     return result;
   } catch {
     return null;
@@ -100,7 +100,7 @@ async function fetchCoinGeckoPrice(tokenSymbol: string): Promise<ExternalPrice |
 
 async function fetchCoinMarketCapPrice(tokenSymbol: string): Promise<ExternalPrice | null> {
   if (!checkRateLimit('cmc')) {
-    console.warn('[ExternalPrice] CMC rate limited');
+    logger.warn('[ExternalPrice] CMC rate limited');
     return null;
   }
 
@@ -151,7 +151,8 @@ async function fetchCoinMarketCapPrice(tokenSymbol: string): Promise<ExternalPri
       confidence: 0.9,
     };
 
-    await cacheSet(cacheKey, result, 300);
+    // #917 — TTL resolved from the per-route registry (cmc_price → 30s).
+    await cacheSet(cacheKey, result);
     return result;
   } catch {
     return null;
@@ -177,9 +178,8 @@ async function fetchStellarExpertPrice(tokenAddress: string): Promise<ExternalPr
       priceUsd: parseFloat(data.price),
       source: 'stellarexpert',
       confidence: 0.6,
-    };
-
-    await cacheSet(cacheKey, result, 300);
+    }; // #917 — TTL resolved from the per-route registry (se_price → 30s).
+    await cacheSet(cacheKey, result);
     return result;
   } catch {
     return null;

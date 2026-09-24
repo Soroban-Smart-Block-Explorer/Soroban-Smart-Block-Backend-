@@ -3,10 +3,7 @@ import { logger } from '../../logger';
 import { recordAudit } from './audit';
 
 export type WebhookEventType =
-  | 'match.found'
-  | 'list.updated'
-  | 'address.status_changed'
-  | 'match.reviewed';
+  'match.found' | 'list.updated' | 'address.status_changed' | 'match.reviewed';
 
 interface WebhookPayload {
   event: WebhookEventType;

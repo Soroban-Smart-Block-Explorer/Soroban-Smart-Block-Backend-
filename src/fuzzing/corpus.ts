@@ -1,4 +1,4 @@
-import { prisma } from '../db';
+import { prismaRead } from '../db';
 
 export interface CorpusEntry {
   functionName: string;
@@ -18,7 +18,13 @@ const BOUNDARY_VALUES: Record<string, unknown[]> = {
   u64: ['0', '1', '18446744073709551615'],
   i64: ['-9223372036854775808', '-1', '0', '1', '9223372036854775807'],
   u128: ['0', '1', '340282366920938463463374607431768211455'],
-  i128: ['-170141183460469231731687303715884105728', '-1', '0', '1', '170141183460469231731687303715884105727'],
+  i128: [
+    '-170141183460469231731687303715884105728',
+    '-1',
+    '0',
+    '1',
+    '170141183460469231731687303715884105727',
+  ],
   string: ['', 'a', 'A'.repeat(255), '\x00', '<script>'],
   symbol: ['', 'transfer', 'a'.repeat(32)],
   address: [
@@ -35,7 +41,7 @@ export function getBoundaryValues(type: string): unknown[] {
 }
 
 export async function buildCorpusFromHistory(contractAddress: string): Promise<TypedCorpus> {
-  const txs = await prisma.transaction.findMany({
+  const txs = await prismaRead.transaction.findMany({
     where: { contractAddress, functionArgs: { not: undefined } },
     select: { functionName: true, functionArgs: true, ledger: true, hash: true },
     orderBy: { ledger: 'desc' },
@@ -47,7 +53,12 @@ export async function buildCorpusFromHistory(contractAddress: string): Promise<T
   for (const tx of txs) {
     if (!tx.functionName) continue;
     const args = Array.isArray(tx.functionArgs) ? tx.functionArgs : [];
-    const entry: CorpusEntry = { functionName: tx.functionName, args, ledger: tx.ledger, txHash: tx.hash };
+    const entry: CorpusEntry = {
+      functionName: tx.functionName,
+      args,
+      ledger: tx.ledger,
+      txHash: tx.hash,
+    };
     if (!byFunction.has(tx.functionName)) byFunction.set(tx.functionName, []);
     byFunction.get(tx.functionName)!.push(entry);
   }

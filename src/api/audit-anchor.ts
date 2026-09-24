@@ -21,7 +21,7 @@
 import { Router, Request, Response } from 'express';
 import { z } from 'zod';
 import { prismaRead } from '../db';
-import { cacheGet, cacheSet } from '../cache';
+import { cacheGet, cacheSet, buildCacheKey } from '../cache';
 import { validateAddressParam } from '../middleware/sanitize';
 import {
   anchorCertificate,
@@ -33,6 +33,7 @@ import {
   verifyOnChainAnchor,
 } from '../lib/anchor-service';
 import { logger } from '../logger';
+import { asyncHandler } from '../middleware/asyncHandler';
 
 export const contractAnchorRouter = Router({ mergeParams: true });
 export const platformAnchorRouter = Router();
@@ -68,7 +69,7 @@ async function resolveCert(address: string, versionParam: string) {
 contractAnchorRouter.get(
   '/estimate',
   validateAddressParam('address'),
-  async (req: Request, res: Response) => {
+  asyncHandler(async (req: Request, res: Response) => {
     try {
       const cert = await resolveCert(req.params.address, req.params.version);
       if (!cert) {
@@ -94,7 +95,7 @@ contractAnchorRouter.get(
     } catch (e) {
       res.status(500).json({ error: String(e) });
     }
-  },
+  }),
 );
 
 // ── POST / — anchor a certificate on-chain ────────────────────────────────────
@@ -106,7 +107,7 @@ const anchorSchema = z.object({
 contractAnchorRouter.post(
   '/',
   validateAddressParam('address'),
-  async (req: Request, res: Response) => {
+  asyncHandler(async (req: Request, res: Response) => {
     try {
       const { address } = req.params;
       const { force } = anchorSchema.parse(req.body);
@@ -174,7 +175,7 @@ contractAnchorRouter.post(
       logger.error('Anchor endpoint error', { error: String(e) });
       res.status(500).json({ error: String(e) });
     }
-  },
+  }),
 );
 
 // ── GET / — anchor status ──────────────────────────────────────────────────────
@@ -182,7 +183,7 @@ contractAnchorRouter.post(
 contractAnchorRouter.get(
   '/',
   validateAddressParam('address'),
-  async (req: Request, res: Response) => {
+  asyncHandler(async (req: Request, res: Response) => {
     try {
       const { address } = req.params;
       const cert = await resolveCert(address, req.params.version);
@@ -219,7 +220,7 @@ contractAnchorRouter.get(
     } catch (e) {
       res.status(500).json({ error: String(e) });
     }
-  },
+  }),
 );
 
 // ── GET /proof — Merkle proof for this certificate ────────────────────────────
@@ -227,10 +228,13 @@ contractAnchorRouter.get(
 contractAnchorRouter.get(
   '/proof',
   validateAddressParam('address'),
-  async (req: Request, res: Response) => {
+  asyncHandler(async (req: Request, res: Response) => {
     try {
       const { address } = req.params;
-      const cacheKey = `anchor:proof:${address}:${req.params.version}`;
+      // buildCacheKey escapes each segment independently (#894) so a
+      // ':'-bearing version string can't be mistaken for part of a
+      // different (address, version) pair's key.
+      const cacheKey = buildCacheKey('anchor:proof', address, req.params.version);
 
       const cached = await cacheGet(cacheKey);
       if (cached) return res.json(cached);
@@ -295,7 +299,7 @@ contractAnchorRouter.get(
     } catch (e) {
       res.status(500).json({ error: String(e) });
     }
-  },
+  }),
 );
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -309,82 +313,88 @@ const merkleAnchorSchema = z.object({
   adminKey: z.string().optional(),
 });
 
-platformAnchorRouter.post('/merkle', async (req: Request, res: Response) => {
-  try {
-    const { contractAddress, adminKey } = merkleAnchorSchema.parse(req.body);
+platformAnchorRouter.post(
+  '/merkle',
+  asyncHandler(async (req: Request, res: Response) => {
+    try {
+      const { contractAddress, adminKey } = merkleAnchorSchema.parse(req.body);
 
-    const envKey = process.env.AUDIT_ADMIN_KEY;
-    if (envKey && adminKey !== envKey) {
-      return res.status(403).json({ error: 'Invalid admin key.' });
+      const envKey = process.env.AUDIT_ADMIN_KEY;
+      if (envKey && adminKey !== envKey) {
+        return res.status(403).json({ error: 'Invalid admin key.' });
+      }
+
+      const result = await anchorMerkleRoot(contractAddress);
+
+      res.status(result.simulated ? 200 : 201).json({
+        merkleRoot: result.merkleRoot,
+        leafCount: result.leafCount,
+        txHash: result.txHash,
+        simulated: result.simulated,
+        contractAddress: contractAddress ?? 'all',
+        note: result.simulated
+          ? 'Merkle root anchoring in simulation mode.'
+          : `Merkle root anchored on-chain. ${result.leafCount} certificate(s) covered.`,
+      });
+    } catch (e) {
+      if (e instanceof z.ZodError) return res.status(400).json({ error: e.errors });
+      res.status(500).json({ error: String(e) });
     }
-
-    const result = await anchorMerkleRoot(contractAddress);
-
-    res.status(result.simulated ? 200 : 201).json({
-      merkleRoot: result.merkleRoot,
-      leafCount: result.leafCount,
-      txHash: result.txHash,
-      simulated: result.simulated,
-      contractAddress: contractAddress ?? 'all',
-      note: result.simulated
-        ? 'Merkle root anchoring in simulation mode.'
-        : `Merkle root anchored on-chain. ${result.leafCount} certificate(s) covered.`,
-    });
-  } catch (e) {
-    if (e instanceof z.ZodError) return res.status(400).json({ error: e.errors });
-    res.status(500).json({ error: String(e) });
-  }
-});
+  }),
+);
 
 // ── GET /merkle — current global Merkle tree ──────────────────────────────────
 
-platformAnchorRouter.get('/merkle', async (req: Request, res: Response) => {
-  try {
-    const contractAddress = req.query.contractAddress as string | undefined;
-    const cacheKey = `anchor:merkle:${contractAddress ?? 'all'}`;
+platformAnchorRouter.get(
+  '/merkle',
+  asyncHandler(async (req: Request, res: Response) => {
+    try {
+      const contractAddress = req.query.contractAddress as string | undefined;
+      const cacheKey = `anchor:merkle:${contractAddress ?? 'all'}`;
 
-    const cached = await cacheGet(cacheKey);
-    if (cached) return res.json(cached);
+      const cached = await cacheGet(cacheKey);
+      if (cached) return res.json(cached);
 
-    const where: Record<string, unknown> = { status: 'published' };
-    if (contractAddress) where.contractAddress = contractAddress;
+      const where: Record<string, unknown> = { status: 'published' };
+      if (contractAddress) where.contractAddress = contractAddress;
 
-    const certs = await prismaRead.auditCertificate.findMany({
-      where,
-      orderBy: [{ contractAddress: 'asc' }, { version: 'asc' }],
-      select: {
-        id: true,
-        contractAddress: true,
-        version: true,
-        certificateHash: true,
-        anchorTxHash: true,
-      },
-    });
+      const certs = await prismaRead.auditCertificate.findMany({
+        where,
+        orderBy: [{ contractAddress: 'asc' }, { version: 'asc' }],
+        select: {
+          id: true,
+          contractAddress: true,
+          version: true,
+          certificateHash: true,
+          anchorTxHash: true,
+        },
+      });
 
-    const tree = buildMerkleTree(certs.map((c) => c.certificateHash));
+      const tree = buildMerkleTree(certs.map((c) => c.certificateHash));
 
-    const result = {
-      merkleRoot: tree.root,
-      treeDepth: tree.layers.length - 1,
-      totalLeaves: certs.length,
-      anchored: certs.filter((c) => !!c.anchorTxHash).length,
-      unanchored: certs.filter((c) => !c.anchorTxHash).length,
-      contractFilter: contractAddress ?? null,
-      certificates: certs.map((c, i) => ({
-        id: c.id,
-        contractAddress: c.contractAddress,
-        version: c.version,
-        certificateHash: c.certificateHash,
-        leafIndex: i,
-        leafHash: tree.leaves[i],
-        anchored: !!c.anchorTxHash,
-        anchorTxHash: c.anchorTxHash,
-      })),
-    };
+      const result = {
+        merkleRoot: tree.root,
+        treeDepth: tree.layers.length - 1,
+        totalLeaves: certs.length,
+        anchored: certs.filter((c) => !!c.anchorTxHash).length,
+        unanchored: certs.filter((c) => !c.anchorTxHash).length,
+        contractFilter: contractAddress ?? null,
+        certificates: certs.map((c, i) => ({
+          id: c.id,
+          contractAddress: c.contractAddress,
+          version: c.version,
+          certificateHash: c.certificateHash,
+          leafIndex: i,
+          leafHash: tree.leaves[i],
+          anchored: !!c.anchorTxHash,
+          anchorTxHash: c.anchorTxHash,
+        })),
+      };
 
-    await cacheSet(cacheKey, result, 300);
-    res.json(result);
-  } catch (e) {
-    res.status(500).json({ error: String(e) });
-  }
-});
+      await cacheSet(cacheKey, result, 300);
+      res.json(result);
+    } catch (e) {
+      res.status(500).json({ error: String(e) });
+    }
+  }),
+);

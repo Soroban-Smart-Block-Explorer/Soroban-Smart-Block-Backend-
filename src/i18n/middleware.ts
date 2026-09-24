@@ -22,18 +22,6 @@ import {
   tAsync as translateAsync,
 } from './engine';
 
-// Extend Express Request type
-declare global {
-  // eslint-disable-next-line @typescript-eslint/no-namespace
-  namespace Express {
-    interface Request {
-      locale: SupportedLanguage;
-      t: (key: string, values?: Record<string, unknown>) => string;
-      tAsync: (key: string, values?: Record<string, unknown>) => Promise<string>;
-    }
-  }
-}
-
 /**
  * Express middleware — resolves locale and attaches translation helpers.
  */

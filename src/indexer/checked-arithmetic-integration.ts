@@ -13,6 +13,7 @@ import {
   didOverflow,
 } from './checked-arithmetic-decoder';
 import { prismaRead as prisma } from '../db';
+import { logger } from '../logger';
 
 export interface CheckedArithmeticTransactionContext {
   transactionHash: string;
@@ -115,7 +116,7 @@ export async function storeCheckedArithmeticAnalysis(
       await createOverflowRecord(context, operation);
     }
   } catch (error) {
-    console.error('Failed to store checked arithmetic analysis:', error);
+    logger.error('Failed to store checked arithmetic analysis:', error);
   }
 }
 
@@ -143,14 +144,14 @@ async function createOverflowRecord(
     };
 
     // Log for monitoring
-    console.warn('[CheckedArithmetic] Overflow detected:', {
+    logger.warn('[CheckedArithmetic] Overflow detected:', {
       contract: context.contractAddress,
       operation: operation.type,
       operands: operation.operands.map((n: bigint) => n.toString()),
       ledger: context.ledgerSequence,
     });
   } catch (error) {
-    console.error('Failed to create overflow record:', error);
+    logger.error('Failed to create overflow record:', error);
   }
 }
 
@@ -230,7 +231,7 @@ export async function analyzeCheckedArithmeticPatterns(
       operationTypes,
     };
   } catch (error) {
-    console.error('Failed to analyze checked arithmetic patterns:', error);
+    logger.error('Failed to analyze checked arithmetic patterns:', error);
     return {
       totalCheckedOperations: 0,
       overflowCount: 0,
@@ -318,7 +319,7 @@ export async function identifyOverflowSafeContracts(minOverflowCount: number = 1
 
     return results;
   } catch (error) {
-    console.error('[identifyOverflowSafeContracts] error after %dms:', Date.now() - startMs, error);
+    logger.error('[identifyOverflowSafeContracts] error after %dms:', Date.now() - startMs, error);
     return [];
   }
 }

@@ -22,7 +22,8 @@ import {
 } from './aa-classifier';
 import { inspectSignature } from './signatureInspector';
 import { inspectCustomAccount } from './customAccountInspector';
-import { broadcastEvent } from '../ws/eventBroadcaster';
+import { broadcastEvent } from '../ws/websocketServer';
+import { uuidv7 } from '../utils/uuidv7';
 
 // Per-process in-memory cache: wasmHash → indicators.
 // Avoids repeated RPC fetches for the same contract within a catch-up batch.
@@ -105,8 +106,7 @@ export async function processAaTransaction(
 
   // 2. Fetch WASM indicators for contract-source accounts
   let wasmResult:
-    | (ReturnType<typeof extractWasmAaIndicators> & { threshold: number | null })
-    | null = null;
+    (ReturnType<typeof extractWasmAaIndicators> & { threshold: number | null }) | null = null;
   if (isContractAddress(sourceAccount)) {
     const contract = await prisma.contract.findUnique({
       where: { address: sourceAccount },
@@ -245,6 +245,7 @@ export async function processAaTransaction(
       }),
     },
     create: {
+      id: uuidv7(),
       address: walletAddress ?? sourceAccount,
       walletType: classification.walletType,
       signerCount: classification.signerCount ?? undefined,
@@ -283,6 +284,7 @@ export async function processAaTransaction(
       where: { transactionHash },
       update: {},
       create: {
+        id: uuidv7(),
         transactionHash: decomp.transactionHash,
         walletAddress: decomp.walletAddress,
         authTree: decomp.authTree as unknown as object[],

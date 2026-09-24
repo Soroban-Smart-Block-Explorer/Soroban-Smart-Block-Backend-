@@ -26,12 +26,10 @@ vi.mock('../../src/db', () => ({
   },
 }));
 
-// ─── Mock axios (Horizon calls) ───────────────────────────────────────────────
+// ─── Mock HTTP (token-metadata fetches Horizon through safeGet in ssrf-guard) ─
 
-vi.mock('axios', () => ({
-  default: {
-    get: vi.fn(),
-  },
+vi.mock('../../src/webhooks/ssrf-guard', () => ({
+  safeGet: vi.fn(),
 }));
 
 // ─── Mock config ──────────────────────────────────────────────────────────────
@@ -64,7 +62,7 @@ vi.mock('@stellar/stellar-sdk', async (importOriginal) => {
 });
 
 import { prismaRead } from '../../src/db';
-import axios from 'axios';
+import { safeGet } from '../../src/webhooks/ssrf-guard';
 import {
   getTokenMetadata,
   getClassicAssetMetadata,
@@ -151,12 +149,14 @@ describe('getTokenMetadata — SacMapping (classic asset)', () => {
       assetCode: 'USDC',
       assetIssuer: 'GA5ZSEJYB37JRC5AVCIA5MOP4RHTM335X2KGX3IHOJAPP5RE34K4KZVN',
     } as any);
-    vi.mocked(axios.get).mockResolvedValue({
+    vi.mocked(safeGet).mockResolvedValue({
+      status: 200,
       data: {
         _embedded: {
           records: [{ asset_code: 'USDC', asset_issuer: 'GA5Z...', name: 'USD Coin' }],
         },
       },
+      headers: {},
     });
 
     const meta = await getTokenMetadata(SAC_ADDR);
@@ -172,8 +172,10 @@ describe('getTokenMetadata — SacMapping (classic asset)', () => {
       assetCode: 'MYTOKEN',
       assetIssuer: 'GISSUER',
     } as any);
-    vi.mocked(axios.get).mockResolvedValue({
+    vi.mocked(safeGet).mockResolvedValue({
+      status: 200,
       data: { _embedded: { records: [] } },
+      headers: {},
     });
 
     const meta = await getTokenMetadata(SAC_ADDR);
@@ -191,7 +193,7 @@ describe('getTokenMetadata — SacMapping (classic asset)', () => {
     expect(meta!.symbol).toBe('XLM');
     expect(meta!.name).toBe('Stellar Lumens');
     // Horizon should NOT be called for native XLM
-    expect(axios.get).not.toHaveBeenCalled();
+    expect(safeGet).not.toHaveBeenCalled();
   });
 });
 
@@ -390,12 +392,14 @@ describe('formatTokenAmountSync', () => {
 
 describe('getClassicAssetMetadata', () => {
   it('returns metadata for a classic asset with issuer', async () => {
-    vi.mocked(axios.get).mockResolvedValue({
+    vi.mocked(safeGet).mockResolvedValue({
+      status: 200,
       data: {
         _embedded: {
           records: [{ asset_code: 'USDC', asset_issuer: 'GA5Z...', name: 'USD Coin' }],
         },
       },
+      headers: {},
     });
 
     const meta = await getClassicAssetMetadata(
@@ -412,18 +416,20 @@ describe('getClassicAssetMetadata', () => {
     const meta = await getClassicAssetMetadata('XLM', null);
     expect(meta.symbol).toBe('XLM');
     expect(meta.name).toBe('Stellar Lumens');
-    expect(axios.get).not.toHaveBeenCalled();
+    expect(safeGet).not.toHaveBeenCalled();
   });
 
   it('caches the result on second call', async () => {
-    vi.mocked(axios.get).mockResolvedValue({
+    vi.mocked(safeGet).mockResolvedValue({
+      status: 200,
       data: { _embedded: { records: [{ asset_code: 'USDC', name: 'USD Coin' }] } },
+      headers: {},
     });
 
     await getClassicAssetMetadata('USDC', 'GA5Z...');
     await getClassicAssetMetadata('USDC', 'GA5Z...');
 
-    expect(axios.get).toHaveBeenCalledTimes(1);
+    expect(safeGet).toHaveBeenCalledTimes(1);
   });
 });
 

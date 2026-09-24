@@ -334,33 +334,45 @@ export async function trackBn254GasExemption(
   const pct = savingsPct ?? 0;
   const humanReadable = `Saved ${pct}% in processing fees via host ZK acceleration (${opsSummary})`;
 
-  await prisma.bn254GasExemption.upsert({
+  // `bn254Ops` is stored as a comma-joined string (schema: String?).
+  const opsSerialized = ops.join(',');
+  const existing = await prisma.bn254GasExemption.findFirst({
     where: { transactionHash },
-    update: {
-      bn254Ops: ops,
-      opCount: ops.length,
-      feeCharged,
-      estimatedWasmFee,
-      stroopSavings,
-      savingsPct,
-      cpuInstructions,
-      msmComplexity,
-    },
-    create: {
-      transactionHash,
-      contractAddress,
-      bn254Ops: ops,
-      opCount: ops.length,
-      feeCharged,
-      estimatedWasmFee,
-      stroopSavings,
-      savingsPct,
-      cpuInstructions,
-      msmComplexity,
-      ledgerSequence,
-      ledgerCloseTime,
-    },
+    select: { id: true },
   });
+
+  if (existing) {
+    await prisma.bn254GasExemption.update({
+      where: { id: existing.id },
+      data: {
+        bn254Ops: opsSerialized,
+        opCount: ops.length,
+        feeCharged,
+        estimatedWasmFee,
+        stroopSavings,
+        savingsPct,
+        cpuInstructions,
+        msmComplexity,
+      },
+    });
+  } else {
+    await prisma.bn254GasExemption.create({
+      data: {
+        transactionHash,
+        contractAddress,
+        bn254Ops: opsSerialized,
+        opCount: ops.length,
+        feeCharged,
+        estimatedWasmFee,
+        stroopSavings,
+        savingsPct,
+        cpuInstructions,
+        msmComplexity,
+        ledgerSequence,
+        ledgerCloseTime,
+      },
+    });
+  }
 
   return {
     bn254Ops: ops,
@@ -383,14 +395,15 @@ export async function trackBn254GasExemption(
 export async function getBn254ExemptionByTx(
   transactionHash: string,
 ): Promise<Bn254TrackerResult | null> {
-  const record = await prisma.bn254GasExemption.findUnique({
+  const record = await prisma.bn254GasExemption.findFirst({
     where: { transactionHash },
   });
 
   if (!record) return null;
 
+  const ops = (record.bn254Ops ?? '').split(',').filter((s) => s.length > 0);
   return {
-    bn254Ops: (record.bn254Ops as string[]) ?? [],
+    bn254Ops: ops,
     opCount: record.opCount,
     feeCharged: record.feeCharged,
     estimatedWasmFee: record.estimatedWasmFee,
@@ -400,7 +413,7 @@ export async function getBn254ExemptionByTx(
     msmComplexity: record.msmComplexity,
     humanReadable:
       record.savingsPct != null
-        ? `Saved ${record.savingsPct}% in processing fees via host ZK acceleration (${(record.bn254Ops as string[]).join(', ')})`
+        ? `Saved ${record.savingsPct}% in processing fees via host ZK acceleration (${ops.join(', ')})`
         : '',
   };
 }
@@ -418,20 +431,23 @@ export async function getBn254ExemptionsByContract(
     take: limit,
   });
 
-  return records.map((r) => ({
-    bn254Ops: (r.bn254Ops as string[]) ?? [],
-    opCount: r.opCount,
-    feeCharged: r.feeCharged,
-    estimatedWasmFee: r.estimatedWasmFee,
-    stroopSavings: r.stroopSavings,
-    savingsPct: r.savingsPct,
-    cpuInstructions: r.cpuInstructions,
-    msmComplexity: r.msmComplexity,
-    humanReadable:
-      r.savingsPct != null
-        ? `Saved ${r.savingsPct}% in processing fees via host ZK acceleration (${(r.bn254Ops as string[]).join(', ')})`
-        : '',
-  }));
+  return records.map((r) => {
+    const ops = (r.bn254Ops ?? '').split(',').filter((s) => s.length > 0);
+    return {
+      bn254Ops: ops,
+      opCount: r.opCount,
+      feeCharged: r.feeCharged,
+      estimatedWasmFee: r.estimatedWasmFee,
+      stroopSavings: r.stroopSavings,
+      savingsPct: r.savingsPct,
+      cpuInstructions: r.cpuInstructions,
+      msmComplexity: r.msmComplexity,
+      humanReadable:
+        r.savingsPct != null
+          ? `Saved ${r.savingsPct}% in processing fees via host ZK acceleration (${ops.join(', ')})`
+          : '',
+    };
+  });
 }
 
 /**

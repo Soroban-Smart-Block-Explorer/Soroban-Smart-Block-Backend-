@@ -1,7 +1,9 @@
 import { prismaRead, prismaWrite } from '../../db';
+import { logger } from '../../logger';
 import { computeCompositePrice } from './composite-price';
 import { updateStablecoinMonitoring, autoDetectStablecoin } from './stablecoin-peg';
 import { discoverExternalPrice } from './external-api-source';
+import { scheduler } from '../../scheduler/cron-scheduler';
 
 let isRunning = false;
 let activeInterval: ReturnType<typeof setInterval> | null = null;
@@ -37,8 +39,17 @@ export async function runActivePriceUpdate(): Promise<void> {
       SET "updatedAt" = NOW()
       WHERE "updatedAt" < NOW() - INTERVAL '5 minutes'
     `);
+
+    scheduler.recordHeartbeat('price-updater:active', 'success', {
+      taskName: 'Active Pair Price Update',
+      expectedIntervalMs: ACTIVE_PAIR_INTERVAL_MS,
+    });
   } catch (err) {
-    console.error('[PriceUpdater] Active update error:', err);
+    logger.error('[PriceUpdater] Active update error:', { error: err });
+    scheduler.recordHeartbeat('price-updater:active', 'failure', {
+      taskName: 'Active Pair Price Update',
+      expectedIntervalMs: ACTIVE_PAIR_INTERVAL_MS,
+    });
   } finally {
     isRunning = false;
   }
@@ -56,8 +67,17 @@ export async function runSlowPriceUpdate(): Promise<void> {
       const batch = allTokens.slice(i, i + batchSize);
       await Promise.allSettled(batch.map((t) => computeCompositePrice(t.address, t.tokenSymbol)));
     }
+
+    scheduler.recordHeartbeat('price-updater:slow', 'success', {
+      taskName: 'Inactive Pair Price Update',
+      expectedIntervalMs: INACTIVE_PAIR_INTERVAL_MS,
+    });
   } catch (err) {
-    console.error('[PriceUpdater] Slow update error:', err);
+    logger.error('[PriceUpdater] Slow update error:', { error: err });
+    scheduler.recordHeartbeat('price-updater:slow', 'failure', {
+      taskName: 'Inactive Pair Price Update',
+      expectedIntervalMs: INACTIVE_PAIR_INTERVAL_MS,
+    });
   }
 }
 
@@ -105,13 +125,22 @@ export async function runExternalApiUpdate(): Promise<void> {
         continue;
       }
     }
+
+    scheduler.recordHeartbeat('price-updater:external', 'success', {
+      taskName: 'External API Price Update',
+      expectedIntervalMs: EXTERNAL_API_INTERVAL_MS,
+    });
   } catch (err) {
-    console.error('[PriceUpdater] External API update error:', err);
+    logger.error('[PriceUpdater] External API update error:', { error: err });
+    scheduler.recordHeartbeat('price-updater:external', 'failure', {
+      taskName: 'External API Price Update',
+      expectedIntervalMs: EXTERNAL_API_INTERVAL_MS,
+    });
   }
 }
 
 export async function startPriceUpdater(): Promise<void> {
-  console.log('[PriceUpdater] Starting background price updates...');
+  logger.info('[PriceUpdater] Starting background price updates...');
 
   if (activeInterval) clearInterval(activeInterval);
   if (slowInterval) clearInterval(slowInterval);
@@ -126,7 +155,7 @@ export async function startPriceUpdater(): Promise<void> {
   externalInterval = setInterval(runExternalApiUpdate, EXTERNAL_API_INTERVAL_MS);
   setTimeout(() => runExternalApiUpdate(), 10_000);
 
-  console.log('[PriceUpdater] Background price updates started');
+  logger.info('[PriceUpdater] Background price updates started');
 }
 
 export async function runStablecoinUpdate(): Promise<void> {
@@ -140,15 +169,15 @@ export async function runStablecoinUpdate(): Promise<void> {
 
     for (const token of tokens) {
       if (token.tokenSymbol) {
-        const existing = await prismaRead.tokenMarketData.findUnique({
-          where: { tokenAddress: token.address },
+        const existing = await prismaRead.token.findUnique({
+          where: { address: token.address },
         });
 
         if (!existing) {
           const isStable = await autoDetectStablecoin(token.address);
-          await prismaWrite.tokenMarketData.create({
+          await prismaWrite.token.create({
             data: {
-              tokenAddress: token.address,
+              address: token.address,
               symbol: token.tokenSymbol,
               isStablecoin: isStable,
               tags: isStable ? ['stablecoin'] : [],
@@ -157,8 +186,17 @@ export async function runStablecoinUpdate(): Promise<void> {
         }
       }
     }
+
+    scheduler.recordHeartbeat('price-updater:stablecoin', 'success', {
+      taskName: 'Stablecoin Monitoring Update',
+      expectedIntervalMs: STABLE_MONITOR_INTERVAL_MS,
+    });
   } catch (err) {
-    console.error('[PriceUpdater] Stablecoin update error:', err);
+    logger.error('[PriceUpdater] Stablecoin update error:', { error: err });
+    scheduler.recordHeartbeat('price-updater:stablecoin', 'failure', {
+      taskName: 'Stablecoin Monitoring Update',
+      expectedIntervalMs: STABLE_MONITOR_INTERVAL_MS,
+    });
   }
 }
 
@@ -179,5 +217,5 @@ export function stopPriceUpdater(): void {
     clearInterval(externalInterval);
     externalInterval = null;
   }
-  console.log('[PriceUpdater] Background price updates stopped');
+  logger.info('[PriceUpdater] Background price updates stopped');
 }

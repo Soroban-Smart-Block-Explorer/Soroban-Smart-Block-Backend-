@@ -1,9 +1,5 @@
 import { SmtSolver } from './smt-solver';
-import {
-  SymbolicExecutor,
-  type WasmFunction,
-  type AnalysisResult,
-} from './symbolic-executor';
+import { SymbolicExecutor, type WasmFunction, type AnalysisResult } from './symbolic-executor';
 
 export interface ConcreteValue {
   type: 'i32' | 'i64' | 'address';

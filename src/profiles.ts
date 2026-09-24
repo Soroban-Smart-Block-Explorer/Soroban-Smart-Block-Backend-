@@ -10,6 +10,8 @@
 
 export type NetworkName = 'testnet' | 'mainnet' | 'devnet';
 
+export type CacheMode = 'standalone' | 'sentinel';
+
 export interface NetworkProfile {
   name: NetworkName;
 
@@ -27,7 +29,8 @@ export interface NetworkProfile {
   apiSubdomain: string; // e.g. "testnet-api.example.com"
 
   // ── Cache node ───────────────────────────────────────────────────────────
-  cacheUrl: string; // Redis DSN or in-process sentinel "memory://"
+  cacheUrl: string; // Redis URL (redis://...) or Sentinel URL (sentinel://...)
+  cacheMode: CacheMode; // 'standalone' or 'sentinel'
 }
 
 // ─── Profile registry ─────────────────────────────────────────────────────────
@@ -35,48 +38,52 @@ export interface NetworkProfile {
 const PROFILES: Record<NetworkName, NetworkProfile> = {
   testnet: {
     name: 'testnet',
-    rpcUrl: process.env.TESTNET_RPC_URL ?? 'https://soroban-testnet.stellar.org',
-    rpcWsUrl: process.env.TESTNET_RPC_WS_URL ?? 'wss://soroban-testnet.stellar.org',
-    horizonUrl: process.env.TESTNET_HORIZON_URL ?? 'https://horizon-testnet.stellar.org',
-    networkPassphrase: process.env.TESTNET_PASSPHRASE ?? 'Test SDF Network ; September 2015',
-    databaseUrl: process.env.TESTNET_DATABASE_URL ?? process.env.DATABASE_URL ?? '',
+    // Empty env vars mean "not configured" — fall back to the next default.
+    rpcUrl: process.env.TESTNET_RPC_URL || 'https://soroban-testnet.stellar.org',
+    rpcWsUrl: process.env.TESTNET_RPC_WS_URL || 'wss://soroban-testnet.stellar.org',
+    horizonUrl: process.env.TESTNET_HORIZON_URL || 'https://horizon-testnet.stellar.org',
+    networkPassphrase: process.env.TESTNET_PASSPHRASE || 'Test SDF Network ; September 2015',
+    databaseUrl: process.env.TESTNET_DATABASE_URL || process.env.DATABASE_URL || '',
     readReplicaUrl:
-      process.env.TESTNET_READ_REPLICA_URL ??
-      process.env.TESTNET_DATABASE_URL ??
-      process.env.DATABASE_URL ??
+      process.env.TESTNET_READ_REPLICA_URL ||
+      process.env.TESTNET_DATABASE_URL ||
+      process.env.DATABASE_URL ||
       '',
-    apiSubdomain: process.env.TESTNET_API_SUBDOMAIN ?? 'testnet-api.localhost',
-    cacheUrl: process.env.TESTNET_CACHE_URL ?? 'memory://',
+    apiSubdomain: process.env.TESTNET_API_SUBDOMAIN || 'testnet-api.localhost',
+    cacheUrl: process.env.TESTNET_CACHE_URL || 'memory://',
+    cacheMode: (process.env.TESTNET_CACHE_MODE || 'standalone') as CacheMode,
   },
 
   mainnet: {
     name: 'mainnet',
-    rpcUrl: process.env.MAINNET_RPC_URL ?? '',
-    rpcWsUrl: process.env.MAINNET_RPC_WS_URL ?? '',
-    horizonUrl: process.env.MAINNET_HORIZON_URL ?? 'https://horizon.stellar.org',
+    rpcUrl: process.env.MAINNET_RPC_URL || '',
+    rpcWsUrl: process.env.MAINNET_RPC_WS_URL || '',
+    horizonUrl: process.env.MAINNET_HORIZON_URL || 'https://horizon.stellar.org',
     networkPassphrase:
-      process.env.MAINNET_PASSPHRASE ?? 'Public Global Stellar Network ; September 2015',
-    databaseUrl: process.env.MAINNET_DATABASE_URL ?? '',
-    readReplicaUrl: process.env.MAINNET_READ_REPLICA_URL ?? process.env.MAINNET_DATABASE_URL ?? '',
-    apiSubdomain: process.env.MAINNET_API_SUBDOMAIN ?? 'api.localhost',
-    cacheUrl: process.env.MAINNET_CACHE_URL ?? 'memory://',
+      process.env.MAINNET_PASSPHRASE || 'Public Global Stellar Network ; September 2015',
+    databaseUrl: process.env.MAINNET_DATABASE_URL || '',
+    readReplicaUrl: process.env.MAINNET_READ_REPLICA_URL || process.env.MAINNET_DATABASE_URL || '',
+    apiSubdomain: process.env.MAINNET_API_SUBDOMAIN || 'api.localhost',
+    cacheUrl: process.env.MAINNET_CACHE_URL || 'memory://',
+    cacheMode: (process.env.MAINNET_CACHE_MODE || 'standalone') as CacheMode,
   },
 
   devnet: {
     name: 'devnet',
-    rpcUrl: process.env.DEVNET_RPC_URL ?? 'http://localhost:8000/soroban/rpc',
-    rpcWsUrl: process.env.DEVNET_RPC_WS_URL ?? 'ws://localhost:8000/soroban/rpc',
-    horizonUrl: process.env.DEVNET_HORIZON_URL ?? 'http://localhost:8000',
-    networkPassphrase: process.env.DEVNET_PASSPHRASE ?? 'Standalone Network ; February 2017',
+    rpcUrl: process.env.DEVNET_RPC_URL || 'http://localhost:8000/soroban/rpc',
+    rpcWsUrl: process.env.DEVNET_RPC_WS_URL || 'ws://localhost:8000/soroban/rpc',
+    horizonUrl: process.env.DEVNET_HORIZON_URL || 'http://localhost:8000',
+    networkPassphrase: process.env.DEVNET_PASSPHRASE || 'Standalone Network ; February 2017',
     databaseUrl:
-      process.env.DEVNET_DATABASE_URL ??
+      process.env.DEVNET_DATABASE_URL ||
       'postgresql://postgres:password@localhost:5433/soroban_devnet',
     readReplicaUrl:
-      process.env.DEVNET_READ_REPLICA_URL ??
-      process.env.DEVNET_DATABASE_URL ??
+      process.env.DEVNET_READ_REPLICA_URL ||
+      process.env.DEVNET_DATABASE_URL ||
       'postgresql://postgres:password@localhost:5433/soroban_devnet',
-    apiSubdomain: process.env.DEVNET_API_SUBDOMAIN ?? 'devnet-api.localhost',
-    cacheUrl: process.env.DEVNET_CACHE_URL ?? 'memory://',
+    apiSubdomain: process.env.DEVNET_API_SUBDOMAIN || 'devnet-api.localhost',
+    cacheUrl: process.env.DEVNET_CACHE_URL || 'memory://',
+    cacheMode: (process.env.DEVNET_CACHE_MODE || 'standalone') as CacheMode,
   },
 };
 
@@ -99,19 +106,25 @@ function isDbUrl(s: string): boolean {
  * Throws with an actionable message on the first violation found.
  */
 export function validateProfile(profile: NetworkProfile): void {
-  const { name, databaseUrl, rpcUrl, rpcWsUrl, horizonUrl } = profile;
+  const { name, databaseUrl, rpcUrl, rpcWsUrl, horizonUrl, networkPassphrase } = profile;
 
   // ── Required fields ──────────────────────────────────────────────────────
   if (!databaseUrl) {
-    throw new Error(
-      `[${name}] databaseUrl is required. Set ${name.toUpperCase()}_DATABASE_URL.`,
-    );
+    throw new Error(`[${name}] databaseUrl is required. Set ${name.toUpperCase()}_DATABASE_URL.`);
   }
   if (!rpcUrl) {
     throw new Error(`[${name}] rpcUrl is required. Set ${name.toUpperCase()}_RPC_URL.`);
   }
   if (!rpcWsUrl) {
     throw new Error(`[${name}] rpcWsUrl is required. Set ${name.toUpperCase()}_RPC_WS_URL.`);
+  }
+  if (!horizonUrl) {
+    throw new Error(`[${name}] horizonUrl is required. Set ${name.toUpperCase()}_HORIZON_URL.`);
+  }
+  if (!networkPassphrase) {
+    throw new Error(
+      `[${name}] networkPassphrase is required. Set ${name.toUpperCase()}_PASSPHRASE.`,
+    );
   }
 
   // ── URL protocol validation ───────────────────────────────────────────────
@@ -139,9 +152,7 @@ export function validateProfile(profile: NetworkProfile): void {
   // ── Network profile consistency ───────────────────────────────────────────
   if (name === 'mainnet') {
     if (rpcUrl.includes('testnet') || horizonUrl.includes('testnet')) {
-      throw new Error(
-        `[mainnet] rpcUrl or horizonUrl appears to point to testnet infrastructure.`,
-      );
+      throw new Error(`[mainnet] rpcUrl or horizonUrl appears to point to testnet infrastructure.`);
     }
   }
 }

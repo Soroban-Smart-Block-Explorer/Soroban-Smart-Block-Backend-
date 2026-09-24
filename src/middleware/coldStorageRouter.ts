@@ -1,4 +1,5 @@
 import { Request, Response, NextFunction } from 'express';
+import { existsSync } from 'fs';
 import { readFile, readdir, access, constants } from 'fs/promises';
 import { gunzip as gunzipCb } from 'zlib';
 import { promisify } from 'util';
@@ -15,19 +16,17 @@ import { AppError } from './errorHandler';
 import { logger } from '../logger';
 import * as parquetjs from 'parquetjs-lite';
 
-const RECENT_LEDGER_DAYS = parseInt(process.env.RECENT_LEDGER_DAYS ?? '30');
-const RECENT_LEDGER_THRESHOLD = Math.floor(
-  (Date.now() - RECENT_LEDGER_DAYS * 24 * 60 * 60 * 1000) / 1000,
-);
+const RECENT_LEDGER_COUNT = parseInt(process.env.RECENT_LEDGER_COUNT ?? '10000');
+let currentLedger = 0;
 
 interface ColdStorageConfig {
-  recentThresholdSeconds: number;
+  recentLedgerCount: number;
   coldStorageType: 'parquet' | 'glacier' | 'archive';
   coldStoragePath?: string;
 }
 
 const coldStorageConfig: ColdStorageConfig = {
-  recentThresholdSeconds: RECENT_LEDGER_THRESHOLD,
+  recentLedgerCount: RECENT_LEDGER_COUNT,
   coldStorageType:
     (process.env.COLD_STORAGE_TYPE as 'parquet' | 'glacier' | 'archive') ?? 'parquet',
   coldStoragePath: process.env.COLD_STORAGE_PATH,
@@ -51,6 +50,14 @@ const s3 = new S3Client({
 });
 
 export { coldStorageConfig };
+
+export function setCurrentLedger(seq: number): void {
+  currentLedger = seq;
+}
+
+export function getRecentLedgerThreshold(): number {
+  return currentLedger - coldStorageConfig.recentLedgerCount;
+}
 
 // ── Prometheus metrics ────────────────────────────────────────────────
 
@@ -135,6 +142,13 @@ class L2Cache {
     coldStorageL2CacheSize.set(this.store.size);
   }
 
+  clear(): void {
+    this.store.clear();
+    this.hits = 0;
+    this.misses = 0;
+    coldStorageL2CacheSize.set(0);
+  }
+
   hitRate(): number {
     const total = this.hits + this.misses;
     return total === 0 ? 1 : this.hits / total;
@@ -193,9 +207,27 @@ function isCircuitOpen(tier: string): boolean {
 
 // ── Archive Index ─────────────────────────────────────────────────────
 
+type ArchiveCompression = 'gzip' | 'none' | 'zstd';
+
+interface ArchiveIndexEntry {
+  path: string;
+  compression: ArchiveCompression;
+}
+
 interface ArchiveIndex {
   version: number;
-  entries: Record<number, { path: string; compression: 'gzip' | 'none' | 'zstd' }>;
+  /** Keys are `${dataType}:${ledgerSeq}` so transactions/events do not collide. */
+  entries: Record<string, ArchiveIndexEntry>;
+}
+
+function archiveIndexKey(dataType: string, ledgerSeq: number): string {
+  return `${dataType}:${ledgerSeq}`;
+}
+
+function normalizeRecords(parsed: unknown): any[] {
+  if (Array.isArray(parsed)) return parsed;
+  if (parsed === null || parsed === undefined) return [];
+  return [parsed];
 }
 
 class ArchiveIndexManager {
@@ -205,7 +237,8 @@ class ArchiveIndexManager {
   async load(): Promise<void> {
     try {
       const raw = await readFile(ARCHIVE_INDEX_PATH, 'utf-8');
-      this.index = JSON.parse(raw);
+      const parsed = JSON.parse(raw) as ArchiveIndex;
+      this.index = this.normalizeLoadedIndex(parsed);
       this.loaded = true;
       logger.info('[ColdStorage] Archive index loaded', {
         entries: Object.keys(this.index.entries).length,
@@ -217,9 +250,22 @@ class ArchiveIndexManager {
     }
   }
 
+  /** Accept legacy numeric keys (`"123"`) by mapping them to transactions. */
+  private normalizeLoadedIndex(parsed: ArchiveIndex): ArchiveIndex {
+    const entries: Record<string, ArchiveIndexEntry> = {};
+    for (const [key, value] of Object.entries(parsed.entries ?? {})) {
+      if (key.includes(':')) {
+        entries[key] = value;
+      } else if (/^\d+$/.test(key)) {
+        entries[archiveIndexKey('transactions', Number(key))] = value;
+      }
+    }
+    return { version: parsed.version ?? 1, entries };
+  }
+
   private async scanAndBuild(): Promise<void> {
     try {
-      const entries: Record<number, { path: string; compression: 'gzip' | 'none' | 'zstd' }> = {};
+      const entries: Record<string, ArchiveIndexEntry> = {};
       const dataTypes = ['transactions', 'events'];
       for (const dt of dataTypes) {
         const dir = path.join(ARCHIVE_DIR, dt);
@@ -230,8 +276,12 @@ class ArchiveIndexManager {
             if (match) {
               const seq = parseInt(match[1], 10);
               const ext = match[2];
-              const compression = ext === 'json.gz' ? 'gzip' : ext === 'json.zst' ? 'zstd' : 'none';
-              entries[seq] = { path: path.join(dir, file), compression };
+              const compression: ArchiveCompression =
+                ext === 'json.gz' ? 'gzip' : ext === 'json.zst' ? 'zstd' : 'none';
+              entries[archiveIndexKey(dt, seq)] = {
+                path: path.join(dir, file),
+                compression,
+              };
             }
           }
         } catch {
@@ -255,8 +305,8 @@ class ArchiveIndexManager {
     }
   }
 
-  lookup(ledgerSeq: number): { path: string; compression: 'gzip' | 'none' | 'zstd' } | null {
-    return this.index.entries[ledgerSeq] ?? null;
+  lookup(dataType: string, ledgerSeq: number): ArchiveIndexEntry | null {
+    return this.index.entries[archiveIndexKey(dataType, ledgerSeq)] ?? null;
   }
 }
 
@@ -339,11 +389,10 @@ function findParquetFile(ledgerSeq: number, dataType: string): string | null {
     path.join(baseDir, `ledger_${rangeStart}_${rangeEnd}_v2.parquet`),
   ];
   for (const fp of patterns) {
-    try {
-      access(fp, constants.R_OK);
+    // Must use sync existence check: access() from fs/promises returns a Promise
+    // and cannot be awaited from this sync helper.
+    if (existsSync(fp)) {
       return fp;
-    } catch {
-      continue;
     }
   }
   return null;
@@ -394,17 +443,14 @@ async function initiateGlacierRestore(key: string): Promise<void> {
   logger.info('[ColdStorage] Glacier restore initiated', { key });
 }
 
-async function pollRestoreComplete(key: string, maxRetries = 30): Promise<void> {
-  for (let i = 0; i < maxRetries; i++) {
-    const head = await s3.send(new HeadObjectCommand({ Bucket: S3_BUCKET, Key: key }));
-    const restoreStatus = head.Restore;
-    if (restoreStatus && restoreStatus.includes('ongoing-request="false"')) {
-      return;
-    }
-    const delay = Math.min(1000 * Math.pow(1.5, i), 30000);
-    await new Promise((r) => setTimeout(r, delay));
-  }
-  throw new AppError(503, 'Glacier restore did not complete within timeout');
+function isS3NotFound(err: any): boolean {
+  const name = err?.name ?? err?.Code ?? err?.code;
+  return (
+    name === 'NoSuchKey' ||
+    name === 'NotFound' ||
+    name === '404' ||
+    err?.$metadata?.httpStatusCode === 404
+  );
 }
 
 async function readFromS3(key: string): Promise<any[]> {
@@ -413,24 +459,26 @@ async function readFromS3(key: string): Promise<any[]> {
     const storageClass = head.StorageClass ?? 'STANDARD';
     if (storageClass === 'GLACIER' || storageClass === 'DEEP_ARCHIVE') {
       const restoreStatus = head.Restore;
-      if (!restoreStatus || restoreStatus.includes('ongoing-request="true"')) {
+      // Do not block HTTP requests on multi-hour Glacier restores.
+      if (!restoreStatus) {
         await initiateGlacierRestore(key);
-        await pollRestoreComplete(key);
+        throw new AppError(503, 'Glacier restore initiated; retry after restore completes');
+      }
+      if (restoreStatus.includes('ongoing-request="true"')) {
+        throw new AppError(503, 'Glacier restore in progress; retry later');
       }
     }
     const res = await s3.send(new GetObjectCommand({ Bucket: S3_BUCKET, Key: key }));
     const body = await res.Body!.transformToString();
-    return JSON.parse(body);
+    return normalizeRecords(JSON.parse(body));
   } catch (err: any) {
-    if (err.name === 'NoSuchKey') {
+    if (err instanceof AppError) throw err;
+    if (isS3NotFound(err)) {
       return [];
     }
     if (err.name === 'InvalidObjectState') {
       await initiateGlacierRestore(key);
-      await pollRestoreComplete(key);
-      const res = await s3.send(new GetObjectCommand({ Bucket: S3_BUCKET, Key: key }));
-      const body = await res.Body!.transformToString();
-      return JSON.parse(body);
+      throw new AppError(503, 'Glacier restore initiated; retry after restore completes');
     }
     throw err;
   }
@@ -488,7 +536,7 @@ async function readArchiveFile(
   } else {
     data = raw;
   }
-  return JSON.parse(data.toString('utf-8'));
+  return normalizeRecords(JSON.parse(data.toString('utf-8')));
 }
 
 // ── fetchFromColdStorage (exported) ───────────────────────────────────
@@ -562,7 +610,7 @@ async function fetchFromArchive(ledgerSeq: number, dataType: string): Promise<an
   const cached = l2Cache.get('archive', cacheKey);
   if (cached) return cached;
 
-  const entry = archiveIndex.lookup(ledgerSeq);
+  const entry = archiveIndex.lookup(dataType, ledgerSeq);
   if (!entry) {
     const dirPath = path.join(ARCHIVE_DIR, dataType);
     const filePath = path.join(dirPath, `${ledgerSeq}.json`);
@@ -668,7 +716,7 @@ export function coldStorageRouter(req: Request, res: Response, next: NextFunctio
     return next();
   }
 
-  const isDeepHistory = ledgerSeq < coldStorageConfig.recentThresholdSeconds;
+  const isDeepHistory = ledgerSeq < getRecentLedgerThreshold();
 
   if (isDeepHistory) {
     req.coldStorage = {
@@ -720,4 +768,13 @@ export async function initializeColdStorage(): Promise<void> {
     l2CacheSize: L2_CACHE_MAX_SIZE,
     circuitBreakerThreshold: CB_THRESHOLD,
   });
+}
+
+/** Test-only: reset L2 cache and circuit breakers between cases. */
+export function __resetColdStorageStateForTests(): void {
+  l2Cache.clear();
+  breakerStates.clear();
+  for (const tier of ['parquet', 'glacier', 'archive'] as const) {
+    coldStorageCircuitBreakerState.set({ tier }, 0);
+  }
 }

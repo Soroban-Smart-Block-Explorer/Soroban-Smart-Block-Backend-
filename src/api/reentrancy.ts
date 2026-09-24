@@ -69,16 +69,38 @@ reentrancyRouter.get(
         where: { contractAddress: address },
         orderBy: { detectedAt: 'desc' },
         take: 50,
+        select: {
+          id: true,
+          txHash: true,
+          reentrancyType: true,
+          severity: true,
+          likelihood: true,
+          loopPath: true,
+          entryPoint: true,
+          valueAtRisk: true,
+          usdValueAtRisk: true,
+          description: true,
+          detectedAt: true,
+        },
       }),
       prismaRead.callGraphVertex.findMany({
         where: { contractAddress: address },
         orderBy: { timestamp: 'desc' },
         take: 100,
+        select: { txHash: true, timestamp: true },
       }),
       prismaRead.reentrancyAlertExtended.findMany({
         where: { contractAddress: address },
         orderBy: { createdAt: 'desc' },
         take: 20,
+        select: {
+          id: true,
+          alertType: true,
+          severity: true,
+          message: true,
+          createdAt: true,
+          acknowledged: true,
+        },
       }),
     ]);
 
@@ -154,13 +176,35 @@ reentrancyRouter.get(
       prismaRead.callGraphVertex.findMany({
         where: { txHash },
         orderBy: { callIndex: 'asc' },
+        select: {
+          id: true,
+          contractAddress: true,
+          functionName: true,
+          depth: true,
+          callIndex: true,
+          value: true,
+        },
       }),
       prismaRead.callGraphEdge.findMany({
         where: { txHash },
         orderBy: { callIndex: 'asc' },
+        select: {
+          fromVertexId: true,
+          toVertexId: true,
+          functionName: true,
+          value: true,
+          gasForwarded: true,
+        },
       }),
       prismaRead.reentrancyFinding.findMany({
         where: { txHash },
+        select: {
+          reentrancyType: true,
+          severity: true,
+          likelihood: true,
+          loopPath: true,
+          description: true,
+        },
       }),
     ]);
 
@@ -223,9 +267,11 @@ reentrancyRouter.get(
       prismaRead.callGraphVertex.findMany({
         where: { txHash },
         orderBy: { callIndex: 'asc' },
+        select: { id: true, contractAddress: true, functionName: true, depth: true },
       }),
       prismaRead.callGraphEdge.findMany({
         where: { txHash },
+        select: { fromVertexId: true, toVertexId: true, functionName: true, value: true },
       }),
     ]);
 
@@ -353,6 +399,15 @@ reentrancyRouter.get(
     const scores = await prismaRead.contractRiskScore.findMany({
       take: limit,
       orderBy,
+      select: {
+        contractAddress: true,
+        riskScore: true,
+        totalFindings: true,
+        criticalFindings: true,
+        highFindings: true,
+        previousScore: true,
+        lastAnalyzed: true,
+      },
     });
 
     const contractAddresses = scores.map((s) => s.contractAddress);
@@ -407,6 +462,18 @@ reentrancyRouter.get(
       },
       orderBy: { detectedAt: 'desc' },
       take: limit,
+      select: {
+        txHash: true,
+        contractAddress: true,
+        reentrancyType: true,
+        severity: true,
+        likelihood: true,
+        loopPath: true,
+        valueAtRisk: true,
+        usdValueAtRisk: true,
+        description: true,
+        detectedAt: true,
+      },
     });
 
     res.json({
@@ -442,6 +509,16 @@ reentrancyRouter.get(
     const findings = await prismaRead.reentrancyFinding.findMany({
       orderBy: { detectedAt: 'desc' },
       take: 500, // Fetch more to filter by loop length
+      select: {
+        txHash: true,
+        contractAddress: true,
+        reentrancyType: true,
+        severity: true,
+        likelihood: true,
+        loopPath: true,
+        description: true,
+        detectedAt: true,
+      },
     });
 
     const loopFindings = findings
@@ -537,6 +614,17 @@ reentrancyRouter.get(
       where,
       orderBy: { createdAt: 'desc' },
       take: limit,
+      select: {
+        id: true,
+        contractAddress: true,
+        alertType: true,
+        severity: true,
+        message: true,
+        metadata: true,
+        acknowledged: true,
+        acknowledgedAt: true,
+        createdAt: true,
+      },
     });
 
     res.json({
@@ -598,11 +686,13 @@ reentrancyRouter.get(
       where: { contractAddress: address },
       orderBy: { timestamp: 'desc' },
       take: limit,
+      select: { id: true, contractAddress: true, functionName: true, depth: true, txHash: true },
     });
 
     const txHashes = [...new Set(vertices.map((v) => v.txHash))];
     const edges = await prismaRead.callGraphEdge.findMany({
       where: { txHash: { in: txHashes } },
+      select: { fromVertexId: true, toVertexId: true, functionName: true },
     });
 
     const allVertexIds = new Set(vertices.map((v) => v.id));

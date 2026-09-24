@@ -14,6 +14,7 @@ import { prismaRead, prismaWrite } from '../../db';
 import { buildCallGraph, type TraceCall } from './call-graph';
 import { detectReentrancy } from './detector';
 import { computeRiskScore } from './scoring';
+import { logger } from '../../logger';
 import {
   type ReentrancySeverity,
   type RiskScore,
@@ -160,7 +161,7 @@ export async function persistAnalysis(
   }
 
   // Upsert contract risk score
-  const previousScore = await prismaWrite.contractRiskScore.findUnique({
+  const previousScore = await prismaRead.contractRiskScore.findUnique({
     where: { contractAddress: riskScore.contractAddress },
     select: { riskScore: true },
   });
@@ -207,7 +208,7 @@ export async function analyzeAndPersist(
   try {
     await persistAnalysis(result, txHash, timestamp);
   } catch (err) {
-    console.error(`[ReentrancyFortress] Failed to persist analysis for ${txHash}:`, err);
+    logger.error(`[ReentrancyFortress] Failed to persist analysis for ${txHash}:`, err);
   }
 
   return result;

@@ -75,6 +75,41 @@ const scanParamsSchema = z.object({
   ledger: z.coerce.number().int().min(0, 'Ledger sequence must be non-negative'),
 });
 
+/**
+ * Scan a single ledger for sandwich attack patterns.
+ *
+ * @route {GET} /api/v1/mev/sandwich/scan/:ledger
+ * @param {number} ledger - Ledger sequence number to scan
+ * @returns {object} 200 - Sandwich analysis results
+ * @returns {number} 200.ledgerSeq - Analyzed ledger sequence
+ * @returns {number} 200.txsScanned - Total transactions scanned
+ * @returns {number} 200.patternsDetected - Number of sandwich patterns found
+ * @returns {number} 200.elapsedMs - Analysis time in milliseconds
+ * @returns {Array} 200.patterns - Array of detected sandwich patterns
+ * @returns {string} 200.patterns[].type - Pattern type (simple_sandwich, multi_hop, etc.)
+ * @returns {number} 200.patterns[].confidence - Confidence score (0-100)
+ * @returns {object} 404 - No transactions found
+ * @returns {object} 400 - Invalid ledger parameter
+ * @example
+ * // Request
+ * GET /api/v1/mev/sandwich/scan/1000
+ *
+ * // Response (200)
+ * {
+ *   "ledgerSeq": 1000,
+ *   "txsScanned": 250,
+ *   "patternsDetected": 3,
+ *   "elapsedMs": 142,
+ *   "patterns": [
+ *     {
+ *       "type": "simple_sandwich",
+ *       "confidence": 85,
+ *       "attackerAddress": "GAA...",
+ *       "victimAddress": "GBB..."
+ *     }
+ *   ]
+ * }
+ */
 sandwichRouter.get(
   '/scan/:ledger',
   asyncHandler(async (req: Request, res: Response) => {
@@ -130,6 +165,51 @@ const patternsQuerySchema = paginationSchema.extend({
   ledgerMax: z.coerce.number().int().min(0).optional(),
 });
 
+/**
+ * List detected sandwich patterns with optional filtering and pagination.
+ *
+ * @route {GET} /api/v1/mev/sandwich/patterns
+ * @queryparam {string} [type] - Filter by pattern type (simple_sandwich, multi_hop, etc.)
+ * @queryparam {string} [attacker] - Filter by attacker address
+ * @queryparam {string} [victim] - Filter by victim address
+ * @queryparam {number} [minConfidence=0] - Minimum confidence score (0-100)
+ * @queryparam {number} [ledgerMin] - Minimum ledger sequence (inclusive)
+ * @queryparam {number} [ledgerMax] - Maximum ledger sequence (inclusive)
+ * @queryparam {number} [page=1] - Page number (1-based)
+ * @queryparam {number} [limit=20] - Items per page (1-100)
+ * @returns {object} 200 - List of sandwich events
+ * @returns {Array} 200.data - Array of MEV events
+ * @returns {string} 200.data[].txHash - Transaction hash
+ * @returns {number} 200.data[].ledgerSeq - Ledger sequence
+ * @returns {string} 200.data[].mevType - MEV event type
+ * @returns {number} 200.data[].profitUsd - Estimated profit in USD
+ * @returns {number} 200.data[].confidence - Confidence score (0-1)
+ * @returns {number} 200.total - Total matching events
+ * @returns {number} 200.page - Current page
+ * @returns {number} 200.limit - Items per page
+ * @returns {number} 200.pages - Total pages
+ * @returns {object} 400 - Invalid query parameters
+ * @example
+ * // Request
+ * GET /api/v1/mev/sandwich/patterns?type=simple_sandwich&minConfidence=70&limit=10
+ *
+ * // Response (200)
+ * {
+ *   "data": [
+ *     {
+ *       "txHash": "0x1234...",
+ *       "ledgerSeq": 1000,
+ *       "mevType": "sandwich",
+ *       "profitUsd": 1234.56,
+ *       "confidence": 0.85
+ *     }
+ *   ],
+ *   "total": 45,
+ *   "page": 1,
+ *   "limit": 10,
+ *   "pages": 5
+ * }
+ */
 sandwichRouter.get(
   '/patterns',
   asyncHandler(async (req: Request, res: Response) => {
@@ -191,6 +271,31 @@ const landscapeQuerySchema = z.object({
   period: z.enum(['1h', '24h', '7d', '30d']).default('24h'),
 });
 
+/**
+ * Get MEV landscape statistics for a specified time period.
+ *
+ * @route {GET} /api/v1/mev/sandwich/landscape
+ * @queryparam {string} [period=24h] - Time period (1h, 24h, 7d, 30d)
+ * @returns {object} 200 - MEV landscape data
+ * @returns {number} 200.totalExtractedUsd - Total MEV extracted in USD
+ * @returns {object} 200.byType - MEV breakdown by type
+ * @returns {Array} 200.topAttackers - Top 10 MEV attackers
+ * @returns {Array} 200.mostVictimizedProtocols - Top 10 victimized protocols
+ * @returns {number} 200.mevConcentration - HHI concentration index (0-1)
+ * @returns {number} 200.eventCount - Total events in period
+ * @example
+ * // Request
+ * GET /api/v1/mev/sandwich/landscape?period=24h
+ *
+ * // Response (200)
+ * {
+ *   "totalExtractedUsd": 50000,
+ *   "byType": { "sandwich": { "count": 10, "totalUsd": 30000 }, ... },
+ *   "topAttackers": [...],
+ *   "mostVictimizedProtocols": [...],
+ *   "mevConcentration": 0.25
+ * }
+ */
 sandwichRouter.get(
   '/landscape',
   asyncHandler(async (req: Request, res: Response) => {
@@ -293,6 +398,36 @@ const fairnessParamsSchema = z.object({
   protocol: stellarAddress,
 });
 
+/**
+ * Calculate fairness score for a DEX protocol based on sandwich attack frequency.
+ *
+ * @route {GET} /api/v1/mev/sandwich/fairness/:protocol
+ * @param {string} protocol - Protocol contract address
+ * @returns {object} 200 - Fairness analysis
+ * @returns {string} 200.protocol - Analyzed protocol address
+ * @returns {number} 200.fairnessScore - Overall fairness score (0-100)
+ * @returns {number} 200.sandwichRate - Sandwich attacks per 1000 transactions
+ * @returns {number} 200.unfairOrderingRate - Rate of unfair ordering (0-1)
+ * @returns {number} 200.mevExtractedPct - MEV extracted as % of volume
+ * @returns {number} 200.txCount - Total transactions analyzed (7d)
+ * @returns {number} 200.attackCount - Total sandwich attacks (7d)
+ * @returns {number} 200.totalLossUsd - Total user losses in USD
+ * @returns {string} 200.period - Analysis period
+ * @returns {object} 400 - Invalid protocol address
+ * @example
+ * // Request
+ * GET /api/v1/mev/sandwich/fairness/CXXX
+ *
+ * // Response (200)
+ * {
+ *   "protocol": "CXXX...",
+ *   "fairnessScore": 75,
+ *   "sandwichRate": 2.5,
+ *   "unfairOrderingRate": 0.025,
+ *   "mevExtractedPct": 0.15,
+ *   "period": "7d"
+ * }
+ */
 sandwichRouter.get(
   '/fairness/:protocol',
   asyncHandler(async (req: Request, res: Response) => {
@@ -351,6 +486,34 @@ const riskQuerySchema = z.object({
   amount: z.coerce.number().min(0, 'Amount must be non-negative'),
 });
 
+/**
+ * Estimate sandwich attack risk for a proposed transaction.
+ *
+ * @route {GET} /api/v1/mev/sandwich/risk
+ * @queryparam {string} protocol - Target protocol address
+ * @queryparam {number} amount - Transaction amount in USD
+ * @returns {object} 200 - Risk assessment
+ * @returns {string} 200.protocol - Analyzed protocol
+ * @returns {number} 200.amountUsd - Input transaction amount
+ * @returns {number} 200.riskScore - Risk score (0-100)
+ * @returns {number} 200.sandwichProbability - Estimated sandwich probability (0-1)
+ * @returns {number} 200.estimatedLossUsd - Expected loss if sandwiched
+ * @returns {string} 200.riskLevel - Risk level (low, medium, high)
+ * @returns {object} 400 - Invalid parameters
+ * @example
+ * // Request
+ * GET /api/v1/mev/sandwich/risk?protocol=CXXX&amount=10000
+ *
+ * // Response (200)
+ * {
+ *   "protocol": "CXXX...",
+ *   "amountUsd": 10000,
+ *   "riskScore": 65,
+ *   "sandwichProbability": 0.35,
+ *   "estimatedLossUsd": 150,
+ *   "riskLevel": "medium"
+ * }
+ */
 sandwichRouter.get(
   '/risk',
   asyncHandler(async (req: Request, res: Response) => {
@@ -391,6 +554,30 @@ sandwichRouter.get(
 );
 
 // ── GET /mev/sandwich/alerts (SSE) ────────────────────────────────────────────
+/**
+ * Real-time Server-Sent Events stream of sandwich attack alerts.
+ *
+ * @route {GET} /api/v1/mev/sandwich/alerts
+ * @returns {stream} 200 - Server-Sent Events stream
+ * @returns {object} stream - Sandwich pattern object every 30 seconds (or on new detection)
+ * @returns {string} stream.type - Pattern type (simple_sandwich, multi_hop, etc.)
+ * @returns {number} stream.confidence - Confidence score (0-100)
+ * @returns {string} stream.attackerAddress - Detected attacker address
+ * @returns {string} stream.victimAddress - Detected victim address
+ * @returns {string} stream.protocolAddress - Target protocol address
+ * @returns {number} stream.profitEstimateUsd - Estimated profit in USD
+ * @example
+ * // Request
+ * GET /api/v1/mev/sandwich/alerts
+ *
+ * // Response (200, SSE Stream)
+ * // Connection keeps open, sending events as they occur
+ * data: {"type":"simple_sandwich","confidence":85,"attackerAddress":"GAA...","profitEstimateUsd":1234.56}
+ *
+ * data: {"type":"multi_hop_sandwich","confidence":72,"attackerAddress":"GBB...","profitEstimateUsd":567.89}
+ *
+ * @note Clients must support SSE and will receive heartbeat comments every 30s
+ */
 sandwichRouter.get('/alerts', (req: Request, res: Response) => {
   res.setHeader('Content-Type', 'text/event-stream');
   res.setHeader('Cache-Control', 'no-cache');

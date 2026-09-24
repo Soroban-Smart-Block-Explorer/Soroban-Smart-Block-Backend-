@@ -4,6 +4,9 @@ import { z } from 'zod';
 import https from 'https';
 import http from 'http';
 import { requireAuth, requireRole } from '../auth/middleware';
+import { asyncHandler } from '../middleware/asyncHandler';
+import { logger } from '../logger';
+import { uuidv7 } from '../utils/uuidv7';
 
 export const alertConfigRouter = Router();
 
@@ -27,11 +30,12 @@ alertConfigRouter.post(
   '/',
   requireAuth,
   requireRole('admin'),
-  async (req: Request, res: Response) => {
+  asyncHandler(async (req: Request, res: Response) => {
     try {
       const data = createAlertSchema.parse(req.body);
       const alert = await prismaWrite.alertConfiguration.create({
         data: {
+          id: uuidv7(),
           userId: data.userId,
           name: data.name,
           contractAddress: data.contractAddress,
@@ -45,29 +49,32 @@ alertConfigRouter.post(
     } catch (err: any) {
       res.status(400).json({ error: err.message ?? String(err) });
     }
-  },
+  }),
 );
 
 // GET /emergency/alerts
-alertConfigRouter.get('/', async (req: Request, res: Response) => {
-  try {
-    const userId = req.query.userId as string | undefined;
-    const alerts = await prismaRead.alertConfiguration.findMany({
-      where: { ...(userId ? { userId } : {}), isActive: true },
-      orderBy: { createdAt: 'desc' },
-    });
-    res.json({ data: alerts, total: alerts.length });
-  } catch (err) {
-    res.status(500).json({ error: String(err) });
-  }
-});
+alertConfigRouter.get(
+  '/',
+  asyncHandler(async (req: Request, res: Response) => {
+    try {
+      const userId = req.query.userId as string | undefined;
+      const alerts = await prismaRead.alertConfiguration.findMany({
+        where: { ...(userId ? { userId } : {}), isActive: true },
+        orderBy: { createdAt: 'desc' },
+      });
+      res.json({ data: alerts, total: alerts.length });
+    } catch (err) {
+      res.status(500).json({ error: String(err) });
+    }
+  }),
+);
 
 // PATCH /emergency/alerts/:id  [privileged]
 alertConfigRouter.patch(
   '/:id',
   requireAuth,
   requireRole('admin'),
-  async (req: Request, res: Response) => {
+  asyncHandler(async (req: Request, res: Response) => {
     try {
       const patch = z
         .object({
@@ -96,7 +103,7 @@ alertConfigRouter.patch(
       if (err.code === 'P2025') return res.status(404).json({ error: 'Not found' });
       res.status(400).json({ error: String(err) });
     }
-  },
+  }),
 );
 
 // DELETE /emergency/alerts/:id  [privileged]
@@ -104,7 +111,7 @@ alertConfigRouter.delete(
   '/:id',
   requireAuth,
   requireRole('admin'),
-  async (req: Request, res: Response) => {
+  asyncHandler(async (req: Request, res: Response) => {
     try {
       await prismaWrite.alertConfiguration.update({
         where: { id: req.params.id },
@@ -115,7 +122,7 @@ alertConfigRouter.delete(
       if (err.code === 'P2025') return res.status(404).json({ error: 'Not found' });
       res.status(500).json({ error: String(err) });
     }
-  },
+  }),
 );
 
 // POST /emergency/alerts/:id/test  [privileged]
@@ -123,7 +130,7 @@ alertConfigRouter.post(
   '/:id/test',
   requireAuth,
   requireRole('admin'),
-  async (req: Request, res: Response) => {
+  asyncHandler(async (req: Request, res: Response) => {
     try {
       const alert = await prismaRead.alertConfiguration.findUnique({
         where: { id: req.params.id },
@@ -151,7 +158,7 @@ alertConfigRouter.post(
     } catch (err) {
       res.status(500).json({ error: String(err) });
     }
-  },
+  }),
 );
 
 /** Fire alerts for a pause event — called by the emergency indexer */
@@ -235,7 +242,7 @@ async function deliverAlert(
     case 'telegram':
     case 'pagerduty':
       // Log only — external integrations require API keys not available in this env
-      console.info(`[Alert] ${channel.type} delivery: ${JSON.stringify(payload)}`);
+      logger.info(`[Alert] ${channel.type} delivery: ${JSON.stringify(payload)}`);
       break;
   }
 }

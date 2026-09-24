@@ -15,9 +15,9 @@ import { cacheGet, cacheSet } from '../../cache';
 import { logger } from '../../logger';
 
 // Cache TTLs
-const DASHBOARD_TTL_SECONDS = 300;      // 5 min — dashboard widgets
-const SUMMARY_TTL_SECONDS = 60;         // 1 min — real-time summaries
-const LEADERBOARD_TTL_SECONDS = 600;    // 10 min — top-N lists
+const DASHBOARD_TTL_SECONDS = 300; // 5 min — dashboard widgets
+const SUMMARY_TTL_SECONDS = 60; // 1 min — real-time summaries
+const LEADERBOARD_TTL_SECONDS = 600; // 10 min — top-N lists
 
 // ── PostgreSQL materialized view DDL ─────────────────────────────────────────
 
@@ -164,19 +164,20 @@ async function cachedQuery<T>(
 // ── Public cached data accessors ──────────────────────────────────────────────
 
 /** Top N contracts by daily active users (past 30 days). */
-export async function getTopContractsByDAU(limit = 10): Promise<
+export async function getTopContractsByDAU(
+  limit = 10,
+): Promise<
   Array<{ contract_id: string; daily_active_users: number; tx_count: number; activity_date: Date }>
 > {
-  return cachedQuery(
-    `analytics:top_contracts_dau:${limit}`,
-    LEADERBOARD_TTL_SECONDS,
-    async () => {
-      const rows = await prismaRead.$queryRaw<Array<{
+  return cachedQuery(`analytics:top_contracts_dau:${limit}`, LEADERBOARD_TTL_SECONDS, async () => {
+    const rows = await prismaRead.$queryRaw<
+      Array<{
         contract_id: string;
         daily_active_users: bigint;
         tx_count: bigint;
         activity_date: Date;
-      }>>`
+      }>
+    >`
         SELECT contract_id,
                daily_active_users,
                tx_count,
@@ -186,30 +187,33 @@ export async function getTopContractsByDAU(limit = 10): Promise<
         ORDER BY daily_active_users DESC
         LIMIT ${limit}
       `;
-      return rows.map((r) => ({
-        ...r,
-        daily_active_users: Number(r.daily_active_users),
-        tx_count: Number(r.tx_count),
-      }));
-    },
-  );
+    return rows.map((r) => ({
+      ...r,
+      daily_active_users: Number(r.daily_active_users),
+      tx_count: Number(r.tx_count),
+    }));
+  });
 }
 
 /** Gas price percentile distribution over the last N days. */
-export async function getGasDistribution(days = 30): Promise<
+export async function getGasDistribution(
+  days = 30,
+): Promise<
   Array<{ activity_date: Date; p10_fee: number; p50_fee: number; p90_fee: number; p99_fee: number }>
 > {
   return cachedQuery(
     `analytics:gas_distribution:${days}`,
     DASHBOARD_TTL_SECONDS,
     () =>
-      prismaRead.$queryRaw<Array<{
-        activity_date: Date;
-        p10_fee: number;
-        p50_fee: number;
-        p90_fee: number;
-        p99_fee: number;
-      }>>`
+      prismaRead.$queryRaw<
+        Array<{
+          activity_date: Date;
+          p10_fee: number;
+          p50_fee: number;
+          p90_fee: number;
+          p99_fee: number;
+        }>
+      >`
         SELECT activity_date, p10_fee, p50_fee, p90_fee, p99_fee
         FROM mv_contract_daily_activity
         WHERE activity_date >= NOW() - INTERVAL '${days} days'
@@ -219,26 +223,24 @@ export async function getGasDistribution(days = 30): Promise<
 }
 
 /** New wallet creation rate by week. */
-export async function getWalletCreationRate(weeks = 52): Promise<
-  Array<{ week_start: Date; new_wallets: number }>
-> {
-  return cachedQuery(
-    `analytics:wallet_creation:${weeks}`,
-    DASHBOARD_TTL_SECONDS,
-    async () => {
-      const rows = await prismaRead.$queryRaw<Array<{ week_start: Date; new_wallets: bigint }>>`
+export async function getWalletCreationRate(
+  weeks = 52,
+): Promise<Array<{ week_start: Date; new_wallets: number }>> {
+  return cachedQuery(`analytics:wallet_creation:${weeks}`, DASHBOARD_TTL_SECONDS, async () => {
+    const rows = await prismaRead.$queryRaw<Array<{ week_start: Date; new_wallets: bigint }>>`
         SELECT week_start, new_wallets
         FROM mv_wallet_creation_weekly
         ORDER BY week_start DESC
         LIMIT ${weeks}
       `;
-      return rows.map((r) => ({ ...r, new_wallets: Number(r.new_wallets) }));
-    },
-  );
+    return rows.map((r) => ({ ...r, new_wallets: Number(r.new_wallets) }));
+  });
 }
 
 /** Hourly token transfer volume for heatmap (last 7 days). */
-export async function getTokenTransferHeatmap(tokenContract?: string): Promise<
+export async function getTokenTransferHeatmap(
+  tokenContract?: string,
+): Promise<
   Array<{ hour_bucket: Date; token_contract: string; transfer_count: number; total_volume: string }>
 > {
   const key = `analytics:token_heatmap:${tokenContract ?? 'all'}`;
@@ -281,31 +283,29 @@ export async function getProtocolMonthlySummary(months = 12): Promise<
     active_contracts: number;
   }>
 > {
-  return cachedQuery(
-    `analytics:protocol_monthly:${months}`,
-    SUMMARY_TTL_SECONDS,
-    async () => {
-      const rows = await prismaRead.$queryRaw<Array<{
+  return cachedQuery(`analytics:protocol_monthly:${months}`, SUMMARY_TTL_SECONDS, async () => {
+    const rows = await prismaRead.$queryRaw<
+      Array<{
         month_start: Date;
         tx_count: bigint;
         unique_wallets: bigint;
         total_fees_stroops: bigint;
         active_contracts: bigint;
-      }>>`
+      }>
+    >`
         SELECT month_start, tx_count, unique_wallets, total_fees_stroops, active_contracts
         FROM mv_protocol_monthly_summary
         ORDER BY month_start DESC
         LIMIT ${months}
       `;
-      return rows.map((r) => ({
-        ...r,
-        tx_count: Number(r.tx_count),
-        unique_wallets: Number(r.unique_wallets),
-        total_fees_stroops: String(r.total_fees_stroops),
-        active_contracts: Number(r.active_contracts),
-      }));
-    },
-  );
+    return rows.map((r) => ({
+      ...r,
+      tx_count: Number(r.tx_count),
+      unique_wallets: Number(r.unique_wallets),
+      total_fees_stroops: String(r.total_fees_stroops),
+      active_contracts: Number(r.active_contracts),
+    }));
+  });
 }
 
 /** Invalidate all cached analytics keys (called after view refresh). */

@@ -1,6 +1,7 @@
 import { Router, Request, Response } from 'express';
 import { z } from 'zod';
 import { validateAddressParam } from '../../middleware/sanitize';
+import { asyncHandler } from '../../middleware/asyncHandler';
 import {
   getUnifiedAccountView,
   getAccountTrustlines,
@@ -20,49 +21,49 @@ const paginationSchema = z.object({
 accountsRouter.get(
   '/:address',
   validateAddressParam('address'),
-  async (req: Request, res: Response) => {
+  asyncHandler(async (req: Request, res: Response) => {
     try {
       const view = await getUnifiedAccountView(req.params.address);
       res.json(view);
     } catch (e) {
       res.status(500).json({ error: String(e) });
     }
-  },
+  }),
 );
 
 // GET /api/v1/stellar/accounts/:address/trustlines
 accountsRouter.get(
   '/:address/trustlines',
   validateAddressParam('address'),
-  async (req: Request, res: Response) => {
+  asyncHandler(async (req: Request, res: Response) => {
     try {
       const data = await getAccountTrustlines(req.params.address);
       res.json(data);
     } catch (e) {
       res.status(500).json({ error: String(e) });
     }
-  },
+  }),
 );
 
 // GET /api/v1/stellar/accounts/:address/signers
 accountsRouter.get(
   '/:address/signers',
   validateAddressParam('address'),
-  async (req: Request, res: Response) => {
+  asyncHandler(async (req: Request, res: Response) => {
     try {
       const data = await getAccountSigners(req.params.address);
       res.json(data);
     } catch (e) {
       res.status(500).json({ error: String(e) });
     }
-  },
+  }),
 );
 
 // GET /api/v1/stellar/accounts/:address/transactions
 accountsRouter.get(
   '/:address/transactions',
   validateAddressParam('address'),
-  async (req: Request, res: Response) => {
+  asyncHandler(async (req: Request, res: Response) => {
     try {
       const { page, limit } = paginationSchema.parse(req.query);
       const data = await getUnifiedTransactions(req.params.address, page, limit);
@@ -70,14 +71,14 @@ accountsRouter.get(
     } catch (e) {
       res.status(400).json({ error: String(e) });
     }
-  },
+  }),
 );
 
 // GET /api/v1/stellar/accounts/:address/transactions/cross-domain
 accountsRouter.get(
   '/:address/transactions/cross-domain',
   validateAddressParam('address'),
-  async (req: Request, res: Response) => {
+  asyncHandler(async (req: Request, res: Response) => {
     try {
       const { page, limit } = paginationSchema.parse(req.query);
       const data = await getUnifiedTransactions(req.params.address, page, limit, true);
@@ -85,14 +86,14 @@ accountsRouter.get(
     } catch (e) {
       res.status(400).json({ error: String(e) });
     }
-  },
+  }),
 );
 
 // GET /api/v1/stellar/accounts/:address/balance-history
 accountsRouter.get(
   '/:address/balance-history',
   validateAddressParam('address'),
-  async (req: Request, res: Response) => {
+  asyncHandler(async (req: Request, res: Response) => {
     try {
       const days = z.coerce.number().min(1).max(365).default(30).parse(req.query.days);
       const data = await getBalanceHistory(req.params.address, days);
@@ -100,5 +101,5 @@ accountsRouter.get(
     } catch (e) {
       res.status(400).json({ error: String(e) });
     }
-  },
+  }),
 );

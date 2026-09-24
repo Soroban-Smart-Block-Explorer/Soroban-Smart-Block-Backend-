@@ -13,6 +13,17 @@ vi.mock('@aws-sdk/client-s3', () => ({
 vi.mock('../src/logger', () => ({
   logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
 }));
+vi.mock('../src/middleware/errorHandler', () => {
+  class AppError extends Error {
+    statusCode: number;
+    constructor(statusCode: number, message: string) {
+      super(message);
+      this.name = 'AppError';
+      this.statusCode = statusCode;
+    }
+  }
+  return { AppError };
+});
 vi.mock('prom-client', () => {
   const make = () => ({ observe: vi.fn(), inc: vi.fn(), set: vi.fn() });
   return {
@@ -28,6 +39,7 @@ import {
   isColdStorageRequest,
   getColdStorageType,
   getColdStorageConfig,
+  setCurrentLedger,
 } from '../src/middleware/coldStorageRouter';
 
 function makeReq(overrides: Partial<Request> = {}): Request {
@@ -44,6 +56,8 @@ describe('coldStorageRouter middleware', () => {
 
   beforeEach(() => {
     next = vi.fn();
+    // Threshold = currentLedger - recentLedgerCount; without this, everything looks "hot".
+    setCurrentLedger(100_000);
   });
 
   it('calls next with no ledger in request', () => {
@@ -121,6 +135,13 @@ describe('getColdStorageConfig', () => {
 
 // ── Security: injection in ledger param ──────────────────────────────────────
 describe('security', () => {
+  let next: NextFunction;
+
+  beforeEach(() => {
+    next = vi.fn();
+    setCurrentLedger(100_000);
+  });
+
   it('ignores SQL injection attempt in ledger query param', () => {
     const res = makeRes();
     const req = makeReq({ query: { ledger: '1; DROP TABLE transactions;--' } });

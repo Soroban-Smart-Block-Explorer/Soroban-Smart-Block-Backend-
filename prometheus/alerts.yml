@@ -1,0 +1,146 @@
+# prometheus/alerts.yml
+#
+# Prometheus alerting rules for the Soroban Smart Block Explorer backend.
+#
+# Issues:
+#   #908 — Prometheus alert rules for HTTP 5xx surge, indexer lag, DB status, replica lag
+#   #909 — Redis cache fallback alert
+#
+# Validate with: promtool check rules prometheus/alerts.yml
+# CI step: .github/workflows/ci.yml → prometheus-lint job
+
+groups:
+  - name: soroban_explorer_api
+    interval: 30s
+    rules:
+      # ── HTTP 5xx Surge ───────────────────────────────────────────────────────
+      # Fires when the rolling 5xx ratio reported by the metrics middleware
+      # exceeds the 1% threshold. This gauge is updated by src/middleware/
+      # metricsMiddleware.ts and exposed at GET /metrics.
+      - alert: HTTP5xxSurgeRatio
+        expr: http_5xx_surge_ratio > 0.01
+        for: 2m
+        labels:
+          severity: critical
+          team: platform
+        annotations:
+          summary: "High HTTP 5xx error rate on {{ $labels.instance }}"
+          description: >
+            The HTTP 5xx surge ratio is {{ $value | humanizePercentage }} (threshold: 1%).
+            This means more than 1% of requests are returning 5xx responses over
+            the last 5-minute window. Check application logs and recent deployments.
+          runbook_url: "https://github.com/Soroban-Smart-Block-Explorer/runbooks/blob/main/http-5xx-surge.md"
+
+      # ── Indexer Ingestion Lag ────────────────────────────────────────────────
+      # Warns when the indexer falls more than 50 ledgers behind the chain tip
+      # (degraded SLA), and pages at 200 ledgers (severe lag — roughly 16 min).
+      - alert: IndexerIngestionLagWarning
+        expr: indexer_ingestion_lag_ledgers > 50
+        for: 5m
+        labels:
+          severity: warning
+          team: platform
+        annotations:
+          summary: "Indexer lagging behind chain tip on {{ $labels.instance }}"
+          description: >
+            The indexer is {{ $value }} ledgers behind the chain tip (warning threshold: 50).
+            At ~5 second block times this is {{ $value | humanizeDuration }} of lag.
+            Check indexer logs and RPC connectivity.
+          runbook_url: "https://github.com/Soroban-Smart-Block-Explorer/runbooks/blob/main/indexer-lag.md"
+
+      - alert: IndexerIngestionLagCritical
+        expr: indexer_ingestion_lag_ledgers > 200
+        for: 2m
+        labels:
+          severity: critical
+          team: platform
+        annotations:
+          summary: "Critical indexer lag on {{ $labels.instance }}"
+          description: >
+            The indexer is {{ $value }} ledgers behind the chain tip (critical threshold: 200).
+            This indicates the indexer may be stalled. Immediate investigation required.
+          runbook_url: "https://github.com/Soroban-Smart-Block-Explorer/runbooks/blob/main/indexer-lag.md"
+
+  - name: soroban_explorer_database
+    interval: 30s
+    rules:
+      # ── Database Connection Down ─────────────────────────────────────────────
+      # Fires when the db_connection_status gauge drops to 0.
+      # This gauge is set to 1 on successful startup and 0 on graceful shutdown
+      # or connection failure (src/index.ts, src/health.ts).
+      - alert: DatabaseConnectionDown
+        expr: db_connection_status == 0
+        for: 1m
+        labels:
+          severity: critical
+          team: platform
+        annotations:
+          summary: "Database connection is down on {{ $labels.instance }}"
+          description: >
+            The database connection status metric is 0, indicating the primary
+            PostgreSQL connection is unavailable. The API cannot serve read or
+            write requests. Check DATABASE_URL, pg connection pool, and RDS/pg health.
+          runbook_url: "https://github.com/Soroban-Smart-Block-Explorer/runbooks/blob/main/database-down.md"
+
+      # ── Replica Lag Check Errors ─────────────────────────────────────────────
+      # Fires when the replica lag checker encounters repeated errors, which
+      # causes the application to fall back to the primary for all reads
+      # (increased primary load, reduced read scalability).
+      - alert: ReplicaLagCheckErrors
+        expr: increase(replica_lag_check_errors_total[5m]) > 0
+        for: 0m
+        labels:
+          severity: warning
+          team: platform
+        annotations:
+          summary: "Replica lag check errors on {{ $labels.instance }}"
+          description: >
+            {{ $value }} replica lag-check error(s) in the last 5 minutes.
+            The application is falling back to the primary database for reads,
+            increasing load on the write primary. Check read replica connectivity
+            and TESTNET_DATABASE_URL configuration.
+          runbook_url: "https://github.com/Soroban-Smart-Block-Explorer/runbooks/blob/main/replica-lag.md"
+
+  - name: soroban_explorer_cache
+    interval: 30s
+    rules:
+      # ── Redis Cache Fallback (Issue #909) ────────────────────────────────────
+      # Fires when the cache backend falls back to the in-memory store because
+      # Redis is unavailable. In-memory cache is not shared across replicas and
+      # does not survive restarts, causing increased DB load and cache misses.
+      #
+      # This gauge is set by src/cache.ts:
+      #   1 = Redis (or Sentinel) connected and healthy
+      #   0 = Fallback to in-memory store (Redis unavailable or not configured
+      #       when REDIS_ENABLED=true / CACHE_URL is a redis:// URL)
+      - alert: CacheBackendFallback
+        expr: cache_backend_status == 0
+        for: 2m
+        labels:
+          severity: warning
+          team: platform
+        annotations:
+          summary: "Cache has fallen back to in-memory on {{ $labels.instance }}"
+          description: >
+            The cache_backend_status metric is 0, meaning the application is
+            operating in in-memory fallback mode. Redis is either unavailable or
+            could not be reached. Rate limiting and caching are degraded: cache
+            entries are not shared across API replicas and will not survive restarts.
+            Check REDIS_URL / CACHE_URL, Redis service health, and network connectivity.
+          runbook_url: "https://github.com/Soroban-Smart-Block-Explorer/runbooks/blob/main/redis-fallback.md"
+
+      # ── Redis Sustained Fallback (escalation) ───────────────────────────────
+      # Escalates to critical if Redis has been unavailable for more than 15 min.
+      - alert: CacheBackendFallbackCritical
+        expr: cache_backend_status == 0
+        for: 15m
+        labels:
+          severity: critical
+          team: platform
+        annotations:
+          summary: "Redis has been unavailable for >15 min on {{ $labels.instance }}"
+          description: >
+            Redis has been unreachable for over 15 minutes. The in-memory fallback
+            does not persist data across restarts or share state between replicas.
+            Rate limiting is operating per-instance. Immediate action required.
+          runbook_url: "https://github.com/Soroban-Smart-Block-Explorer/runbooks/blob/main/redis-fallback.md"

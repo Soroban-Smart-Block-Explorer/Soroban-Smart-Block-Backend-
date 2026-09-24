@@ -7,6 +7,7 @@
 
 import { detectSpikes } from './spikeDetector';
 import { prismaWrite } from '../db';
+import { logger } from '../logger';
 
 /**
  * Run spike detection and persist any new alerts.
@@ -40,8 +41,8 @@ export async function runVolumeAlerts(
  * @param intervalMs How often to run (default: every 5 minutes).
  */
 export function startVolumeAlertScheduler(intervalMs = 5 * 60 * 1000): NodeJS.Timeout {
-  runVolumeAlerts().catch((err) => console.error('[volumeAlerts] initial run failed:', err));
+  runVolumeAlerts().catch((err) => logger.error('[volumeAlerts] initial run failed:', err));
   return setInterval(() => {
-    runVolumeAlerts().catch((err) => console.error('[volumeAlerts] scheduled run failed:', err));
+    runVolumeAlerts().catch((err) => logger.error('[volumeAlerts] scheduled run failed:', err));
   }, intervalMs);
 }

@@ -5,11 +5,7 @@
  * Issue #307
  */
 
-import {
-  type CallGraph,
-  type CallGraphVertex,
-  type CallGraphEdge,
-} from './types';
+import { type CallGraph, type CallGraphVertex, type CallGraphEdge } from './types';
 
 // ── Call trace input types ───────────────────────────────────────────────────
 

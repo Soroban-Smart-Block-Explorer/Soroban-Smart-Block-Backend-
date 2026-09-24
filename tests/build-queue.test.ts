@@ -2,11 +2,7 @@
  * Tests for #489: Build queue resource exhaustion protection.
  */
 import { describe, it, expect, beforeEach } from 'vitest';
-import {
-  getConcurrencyLimit,
-  getResourceQuota,
-  pushBuildJob,
-} from '../src/api/build-queue';
+import { getConcurrencyLimit, getResourceQuota, pushBuildJob } from '../src/api/build-queue';
 
 describe('Build Queue - Resource Quotas', () => {
   beforeEach(() => {

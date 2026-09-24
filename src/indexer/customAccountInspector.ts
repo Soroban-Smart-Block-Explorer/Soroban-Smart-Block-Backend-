@@ -1,5 +1,6 @@
 import { xdr, StrKey } from '@stellar/stellar-sdk';
 import { scValToJson } from './xdr-parser';
+import { logger } from '../logger';
 
 /**
  * Inspect a transaction envelope for Soroban Custom Account "__check_auth"
@@ -99,9 +100,9 @@ export async function inspectCustomAccount(
 
         // Log concise structured result for downstream consumption
         try {
-          console.info('[custom-account-inspector]', JSON.stringify(result));
+          logger.info('[custom-account-inspector]', JSON.stringify(result));
         } catch {
-          console.info('[custom-account-inspector]', result);
+          logger.info('[custom-account-inspector]', result);
         }
 
         break outer;
@@ -109,7 +110,7 @@ export async function inspectCustomAccount(
     }
   } catch (err) {
     // Non-fatal — do not block indexing
-    console.warn(
+    logger.warn(
       `[custom-account-inspector] parse failed for ${txHash}:`,
       err instanceof Error ? err.message : String(err),
     );

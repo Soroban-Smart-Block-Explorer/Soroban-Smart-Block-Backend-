@@ -8,6 +8,7 @@
 
 import { computeAssetMetrics } from './assetTracker';
 import { prismaWrite } from '../db';
+import { logger } from '../logger';
 
 /**
  * Scan all SAC-mapped assets, compute fiat valuations, and persist a snapshot.
@@ -39,10 +40,10 @@ export async function runPortfolioScan(): Promise<void> {
  * @param intervalMs How often to run (default: every 15 minutes).
  */
 export function startPortfolioScanner(intervalMs = 15 * 60 * 1000): NodeJS.Timeout {
-  runPortfolioScan().catch((err) => console.error('[portfolioScanner] initial run failed:', err));
+  runPortfolioScan().catch((err) => logger.error('[portfolioScanner] initial run failed:', err));
   return setInterval(() => {
     runPortfolioScan().catch((err) =>
-      console.error('[portfolioScanner] scheduled run failed:', err),
+      logger.error('[portfolioScanner] scheduled run failed:', err),
     );
   }, intervalMs);
 }

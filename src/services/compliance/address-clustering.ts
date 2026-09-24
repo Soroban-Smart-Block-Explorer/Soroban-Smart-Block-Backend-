@@ -26,9 +26,10 @@ export async function getCluster(address: string): Promise<{
   clusterSize: number;
   allAddresses: string[];
 }> {
-  const cluster = KNOWN_CLUSTERS.find(
-    c => c.addresses.some(a => a.toLowerCase() === address.toLowerCase()),
-  ) ?? null;
+  const cluster =
+    KNOWN_CLUSTERS.find((c) =>
+      c.addresses.some((a) => a.toLowerCase() === address.toLowerCase()),
+    ) ?? null;
 
   return {
     address,
@@ -43,7 +44,7 @@ export async function getHighRiskClusters(
   offset: number = 0,
 ): Promise<{ clusters: AddressCluster[]; total: number }> {
   const highRisk = KNOWN_CLUSTERS.filter(
-    c => c.riskLevel === 'high' || c.riskLevel === 'critical',
+    (c) => c.riskLevel === 'high' || c.riskLevel === 'critical',
   );
 
   return {

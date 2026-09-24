@@ -1,7 +1,12 @@
 import WebSocket from 'ws';
 import { xdr } from '@stellar/stellar-sdk';
-import { prismaWrite as prisma } from '../db';
+import { prismaRead, prismaWrite, prismaWrite as prisma } from '../db';
 import { config } from '../config';
+import {
+  indexerPipelineStageDuration,
+  indexerPipelineStageLag,
+  indexerPipelineStageProcessedTotal,
+} from '../metrics';
 import {
   fetchEvents,
   getLatestLedger,
@@ -10,6 +15,7 @@ import {
   getTransactionFromHorizon,
   type LedgerEvent,
   fetchLedgerMetadata,
+  fetchLedgerMetadataBatch,
 } from './rpc';
 import { decodeTransaction, decodeEvent } from './decoder';
 import { decodeZkpVerification, recordZkpVerification } from './zkp-verifier';
@@ -17,90 +23,192 @@ import { processAaTransaction } from './aa-indexer';
 import { feedOrchestrator } from '../feed/orchestrator';
 import { enqueueInitialAudit } from './audit-pipeline';
 import { amIResponsibleFor, getRangeCursor, isP2pEnabled, setRangeCursor } from '../p2p';
+import { logger } from '../logger';
+import { uuidv7 } from '../utils/uuidv7';
 
 const BATCH = config.indexerBatchSize;
 const WORKERS = config.indexerCatchupWorkers;
 
 // ---------------------------------------------------------------------------
-// IndexerState helpers
-//
-// In single-node mode (P2P_ENABLED unset/false — the default, zero behavior
-// change) these delegate to the singleton IndexerState row exactly as
-// before. In P2P mode they delegate to per-range cursors (IndexerRangeClaim)
-// instead: getLastIndexedLedger() returns the furthest-behind cursor among
-// ranges this node currently owns, and setLastIndexedLedger(ledger) advances
-// the cursor of whichever range `ledger` falls in. See
-// docs/P2P_INDEXER_DESIGN.md §3.
+// IndexerState helpers & High Availability (HA) Leader Election
 // ---------------------------------------------------------------------------
 
-export async function getLastIndexedLedger(): Promise<number> {
+const getActiveNetwork = (): string => process.env.STELLAR_NETWORK ?? 'mainnet';
+
+export async function getLastIndexedLedger(network = getActiveNetwork()): Promise<number> {
   if (isP2pEnabled()) {
     return getLastIndexedLedgerP2p();
   }
-  const state = await prisma.indexerState.upsert({
-    where: { id: 'singleton' },
-    update: {},
-    create: { id: 'singleton', lastLedger: config.indexerStartLedger },
+  const state = await prisma.indexerState.findFirst({
+    where: { network, id: 'singleton' },
   });
+  if (!state) {
+    const created = await prisma.indexerState.create({
+      data: {
+        id: 'singleton',
+        network,
+        lastLedger: config.indexerStartLedger,
+        version: 0,
+      },
+    });
+    return created.lastLedger;
+  }
   return state.lastLedger;
 }
 
 async function getLastIndexedLedgerP2p(): Promise<number> {
-  // Probe from the configured start ledger: the cursor of whichever range it
-  // falls in tells us where this node last left off for that range. Ranges
-  // this node doesn't own report their own cursor too (harmless — the
-  // per-ledger responsibility check in processLedgerRange skips them), so we
-  // simply use the probe range's cursor as the resume point for the main
-  // sequential loop, same shape as the single-node singleton cursor.
   return getRangeCursor(config.indexerStartLedger);
 }
 
-export async function setLastIndexedLedger(ledger: number): Promise<void> {
+export async function setLastIndexedLedger(
+  ledger: number,
+  network = getActiveNetwork(),
+): Promise<void> {
   if (isP2pEnabled()) {
     await setRangeCursor(ledger, ledger);
     return;
   }
-  await prisma.indexerState.upsert({
-    where: { id: 'singleton' },
-    update: { lastLedger: ledger },
-    create: { id: 'singleton', lastLedger: ledger },
+
+  // Optimistic concurrency CAS guard
+  const existing = await prisma.indexerState.findFirst({
+    where: { network, id: 'singleton' },
+  });
+
+  if (!existing) {
+    await prisma.indexerState.create({
+      data: {
+        id: 'singleton',
+        network,
+        lastLedger: ledger,
+        version: 1,
+      },
+    });
+    return;
+  }
+
+  // Compare-and-swap update
+  const updated = await prisma.indexerState.updateMany({
+    where: {
+      network,
+      id: 'singleton',
+      version: existing.version,
+    },
+    data: {
+      lastLedger: ledger,
+      version: existing.version + 1,
+    },
+  });
+
+  if (updated.count === 0) {
+    logger.warn(
+      `[IndexerState] Optimistic concurrency lock conflict detected for network '${network}' when setting cursor to ${ledger}. Retrying update...`,
+    );
+    // Fallback upsert on conflict
+    await prisma.indexerState.updateMany({
+      where: { network, id: 'singleton' },
+      data: { lastLedger: ledger, version: { increment: 1 } },
+    });
+  }
+}
+
+/**
+ * Acquire leader lease for HA multi-instance deployments.
+ */
+export async function acquireLeaderLease(
+  nodeId: string,
+  network = getActiveNetwork(),
+  ttlMs = 30000,
+): Promise<boolean> {
+  const now = new Date();
+  const leaseExpiresAt = new Date(now.getTime() + ttlMs);
+
+  // Read state
+  const state = await prisma.indexerState.findFirst({
+    where: { network, id: 'singleton' },
+  });
+
+  if (!state) {
+    await prisma.indexerState.create({
+      data: {
+        id: 'singleton',
+        network,
+        lastLedger: config.indexerStartLedger,
+        leaderId: nodeId,
+        leaderLeaseExpiresAt: leaseExpiresAt,
+        version: 1,
+      },
+    });
+    return true;
+  }
+
+  // Check if current lease is expired or owned by nodeId
+  const isExpired = !state.leaderLeaseExpiresAt || state.leaderLeaseExpiresAt < now;
+  const isSelf = state.leaderId === nodeId;
+
+  if (isExpired || isSelf) {
+    const res = await prisma.indexerState.updateMany({
+      where: {
+        network,
+        id: 'singleton',
+        version: state.version,
+      },
+      data: {
+        leaderId: nodeId,
+        leaderLeaseExpiresAt: leaseExpiresAt,
+        version: state.version + 1,
+      },
+    });
+    return res.count > 0;
+  }
+
+  return false;
+}
+
+/** Release leader lease */
+export async function releaseLeaderLease(
+  nodeId: string,
+  network = getActiveNetwork(),
+): Promise<void> {
+  await prisma.indexerState.updateMany({
+    where: { network, id: 'singleton', leaderId: nodeId },
+    data: { leaderId: null, leaderLeaseExpiresAt: null },
   });
 }
 
 export async function rollbackLedgers(sequences: number[]) {
-  console.log(`⚠️ Rollback triggered for ledgers: ${sequences.join(', ')}`);
+  logger.info(`⚠️ Rollback triggered for ledgers: ${sequences.join(', ')}`);
 
-  await prisma.$transaction([
+  await prismaWrite.$transaction([
     // Delete SessionAuthorizations related to these ledgers
-    prisma.sessionAuthorization.deleteMany({
+    prismaWrite.sessionAuthorization.deleteMany({
       where: {
         startLedger: { in: sequences },
       },
     }),
 
     // Delete Events for these ledgers
-    prisma.event.deleteMany({
+    prismaWrite.event.deleteMany({
       where: {
         ledgerSequence: { in: sequences },
       },
     }),
 
     // Delete Transactions for these ledgers
-    prisma.transaction.deleteMany({
+    prismaWrite.transaction.deleteMany({
       where: {
         ledgerSequence: { in: sequences },
       },
     }),
 
     // Delete WasmUpgradeHistory for these ledgers
-    prisma.wasmUpgradeHistory.deleteMany({
+    prismaWrite.wasmUpgradeHistory.deleteMany({
       where: {
         ledgerSequence: { in: sequences },
       },
     }),
 
     // Delete Ledgers themselves
-    prisma.ledger.deleteMany({
+    prismaWrite.ledger.deleteMany({
       where: {
         sequence: { in: sequences },
       },
@@ -113,48 +221,110 @@ export async function processLedgerRange(
   end: number,
   opts: { force?: boolean } = {},
 ) {
-  console.log(`Indexing ledgers ${start} → ${end}`);
+  logger.info(`Indexing ledgers ${start} → ${end}`);
 
-  // 1. Fetch metadata and check reorgs sequentially for all ledgers in the range first
+  // Stage lag metrics update
+  try {
+    const latestTip = await getLatestLedger().catch(() => end);
+    const lag = Math.max(0, latestTip - end);
+    indexerPipelineStageLag.set({ stage: 'fetch' }, lag);
+    indexerPipelineStageLag.set({ stage: 'decode' }, lag);
+    indexerPipelineStageLag.set({ stage: 'persist' }, lag);
+    indexerPipelineStageLag.set({ stage: 'enrich' }, lag);
+  } catch (err) {
+    // Non-blocking metrics gauge catch
+  }
+
+  // Stage 1: FETCH metadata & Reorg check
+  const stopFetchTimer = indexerPipelineStageDuration.startTimer({ stage: 'fetch' });
+
+  // #913 — prefetch ledger metadata for this worker's sequences with bounded
+  // concurrency instead of awaiting one RPC/Horizon round-trip per ledger.
+  // Downstream reorg-check/persist logic below still runs strictly in order.
+  const responsibleSeqs: number[] = [];
   for (let seq = start; seq <= end; seq++) {
-    if (!opts.force && !(await amIResponsibleFor(seq))) {
-      // Not one of this range's rendezvous-hash owners (P2P mode only — see
-      // docs/P2P_INDEXER_DESIGN.md §1.2/§3). Another replica indexes it;
-      // skip without writing so we don't do redundant RPC/DB work outside
-      // our assigned ranges. opts.force bypasses this for on-the-fly
-      // graceful-degradation indexing (indexSingleLedger below), where we
-      // explicitly want to index a ledger regardless of steady-state
-      // ownership because no reachable owner had it.
-      continue;
+    if (opts.force || (await amIResponsibleFor(seq))) {
+      responsibleSeqs.push(seq);
     }
-    const ledgerMeta = await fetchLedgerMetadata(seq);
+  }
+  const prefetchedMeta = await fetchLedgerMetadataBatch(responsibleSeqs);
 
-    // Reorg check
+  for (const seq of responsibleSeqs) {
+    const ledgerMeta = prefetchedMeta.get(seq) ?? (await fetchLedgerMetadata(seq));
+
+    // Deep Reorg Check & Extended Backtracking
     const prevSeq = seq - 1;
-    const prevLedger = await prisma.ledger.findUnique({ where: { sequence: prevSeq } });
+    const prevLedger = await prismaRead.ledger.findUnique({ where: { sequence: prevSeq } });
+
     if (prevLedger && prevLedger.hash !== ledgerMeta.previousLedgerHash) {
-      console.warn(
-        `🚨 REORG DETECTED at ledger ${seq}! Expected prev hash ${prevLedger.hash}, but network says ${ledgerMeta.previousLedgerHash}`,
+      logger.warn(
+        `🚨 REORG DETECTED at ledger ${seq}! Local hash ${prevLedger.hash} vs network expected ${ledgerMeta.previousLedgerHash}`,
       );
 
-      await prisma.reorgEvent.create({
+      const maxDepth = config.indexerReorgProtectionDepth || 100;
+      const rolledBackSequences: number[] = [prevSeq];
+      let commonAncestorFound = false;
+      let commonAncestorSeq = prevSeq - 1;
+
+      // Backtrack up to maxDepth ledgers to locate common ancestor
+      for (let depth = 1; depth < maxDepth; depth++) {
+        const checkSeq = prevSeq - depth;
+        if (checkSeq <= 0) break;
+
+        const localCheckLedger = await prismaRead.ledger.findUnique({
+          where: { sequence: checkSeq },
+        });
+        if (!localCheckLedger) break;
+
+        let remoteCheckMeta = null;
+        try {
+          remoteCheckMeta = await fetchLedgerMetadata(checkSeq);
+        } catch (e) {
+          logger.error(
+            `Failed to fetch remote metadata for deep reorg check at ledger ${checkSeq}`,
+            e,
+          );
+          break;
+        }
+
+        if (localCheckLedger.hash === remoteCheckMeta.hash) {
+          commonAncestorFound = true;
+          commonAncestorSeq = checkSeq;
+          logger.info(`Found common ancestor at ledger sequence ${checkSeq} (depth: ${depth})`);
+          break;
+        } else {
+          rolledBackSequences.push(checkSeq);
+        }
+      }
+
+      if (!commonAncestorFound) {
+        logger.error(
+          `🚨 DEEP REORG EXCEEDS SAFETY THRESHOLD (${maxDepth} ledgers). Performing safety rollback for ${rolledBackSequences.length} ledgers.`,
+        );
+      }
+
+      // Record Reorg event and perform atomic single DB transaction rollback
+      await prismaWrite.reorgEvent.create({
         data: {
           ledgerSequence: seq,
           expectedHash: prevLedger.hash,
           actualHash: ledgerMeta.previousLedgerHash,
           previousHash: prevLedger.previousLedgerHash ?? '',
-          rolledBackLedgers: [prevSeq],
+          rolledBackLedgers: rolledBackSequences,
         },
       });
 
-      await rollbackLedgers([prevSeq]);
-      await setLastIndexedLedger(prevSeq - 1);
+      await rollbackLedgers(rolledBackSequences);
+      await setLastIndexedLedger(commonAncestorSeq);
 
-      throw new Error(`Reorg detected at ledger ${seq}. Rolled back ${prevSeq}.`);
+      throw new Error(
+        `Reorg detected at ledger ${seq}. Rolled back ${rolledBackSequences.length} ledgers (${rolledBackSequences.join(', ')}). Resuming from common ancestor ${commonAncestorSeq}.`,
+      );
     }
 
-    // Save/upsert Ledger record
-    await prisma.ledger.upsert({
+    // Persist Ledger record
+    const stopPersistLedgerTimer = indexerPipelineStageDuration.startTimer({ stage: 'persist' });
+    await prismaWrite.ledger.upsert({
       where: { sequence: seq },
       update: {
         hash: ledgerMeta.hash,
@@ -170,28 +340,41 @@ export async function processLedgerRange(
         txCount: ledgerMeta.txCount,
       },
     });
+    stopPersistLedgerTimer();
+    indexerPipelineStageProcessedTotal.inc({ stage: 'persist', status: 'success' });
   }
 
-  // 2. Fetch events for the range and process them normally
+  // Complete Stage 1 (Fetch)
+  stopFetchTimer();
+  indexerPipelineStageProcessedTotal.inc({ stage: 'fetch', status: 'success' });
+
+  // Stage 2 & 3: FETCH events & DECODE / PERSIST / ENRICH events and transactions
+  const stopEventsFetchTimer = indexerPipelineStageDuration.startTimer({ stage: 'fetch' });
   const events = await fetchEvents(start, end);
+  stopEventsFetchTimer();
 
   for (const event of events) {
-    await prisma.contract.upsert({
+    const stopPersistContractTimer = indexerPipelineStageDuration.startTimer({ stage: 'persist' });
+    await prismaWrite.contract.upsert({
       where: { address: event.contractId },
       update: {},
       create: { address: event.contractId },
     });
+    stopPersistContractTimer();
 
-    // Queue an initial audit for newly discovered contracts (fires after 5 min)
+    // Enrich Stage: Queue initial audit
+    const stopEnrichAuditTimer = indexerPipelineStageDuration.startTimer({ stage: 'enrich' });
     enqueueInitialAudit(event.contractId);
+    stopEnrichAuditTimer();
+    indexerPipelineStageProcessedTotal.inc({ stage: 'enrich', status: 'success' });
 
     const existingTx = await prisma.transaction.findUnique({
       where: { hash: event.transactionHash },
     });
-    const existingTx = await prisma.transaction.findUnique({
-      where: { hash: event.transactionHash },
-    });
+
     if (!existingTx) {
+      // Decode Stage
+      const stopDecodeTxTimer = indexerPipelineStageDuration.startTimer({ stage: 'decode' });
       const txResult = await getTransaction(event.transactionHash).catch(() =>
         getTransactionFromHorizon(event.transactionHash).catch(() => null),
       );
@@ -204,11 +387,16 @@ export async function processLedgerRange(
             functionArgs: null,
             humanReadable: null,
           };
+      stopDecodeTxTimer();
+      indexerPipelineStageProcessedTotal.inc({ stage: 'decode', status: 'success' });
 
-      const transaction = await prisma.transaction.upsert({
+      // Persist Stage
+      const stopPersistTxTimer = indexerPipelineStageDuration.startTimer({ stage: 'persist' });
+      const transaction = await prismaWrite.transaction.upsert({
         where: { hash: event.transactionHash },
         update: {},
         create: {
+          id: uuidv7(),
           hash: event.transactionHash,
           ledgerSequence: event.ledgerSequence,
           ledgerCloseTime: event.ledgerCloseTime,
@@ -222,11 +410,11 @@ export async function processLedgerRange(
           feeCharged: String((txResult as any)?.feeCharged ?? ''),
         },
       });
+      stopPersistTxTimer();
+      indexerPipelineStageProcessedTotal.inc({ stage: 'persist', status: 'success' });
 
-      // Record ZKP verifier invocations when the invoked function looks like
-      // a proof verification entry point (verify_proof / verify_snark /
-      // verify_stark / verify_groth16). Best-effort: a failure here must
-      // never disrupt the main indexing loop.
+      // Enrich Stage: ZKP & AA & Feeds
+      const stopEnrichTxTimer = indexerPipelineStageDuration.startTimer({ stage: 'enrich' });
       try {
         if (rawXdr && decoded.functionName && decoded.contractAddress) {
           const envelope = xdr.TransactionEnvelope.fromXDR(rawXdr, 'base64');
@@ -250,10 +438,9 @@ export async function processLedgerRange(
           }
         }
       } catch (zkpErr) {
-        console.error('ZKP recording error:', zkpErr);
+        logger.error('ZKP recording error:', zkpErr);
       }
 
-      // Trigger Account Abstraction processing (non-blocking)
       try {
         void processAaTransaction(
           transaction.hash,
@@ -264,19 +451,28 @@ export async function processLedgerRange(
           transaction.feeCharged ?? undefined,
         );
       } catch (err) {
-        console.error('AA processing error:', err);
+        logger.error('AA processing error:', err);
       }
 
-      // Publish to feed
-      await feedOrchestrator.publishTransaction(transaction).catch(console.error);
+      await feedOrchestrator
+        .publishTransaction(transaction)
+        .catch((err) => logger.error('publishTransaction error:', err));
+
+      stopEnrichTxTimer();
+      indexerPipelineStageProcessedTotal.inc({ stage: 'enrich', status: 'success' });
     }
 
+    // Decode & Persist Event
+    const stopDecodeEventTimer = indexerPipelineStageDuration.startTimer({ stage: 'decode' });
     const { eventType, decoded } = decodeEvent(event.topics, event.data);
-    // Include paging token (unique per event position) to prevent ID collisions
-    // when a single transaction emits multiple events with the same first topic.
+    stopDecodeEventTimer();
+    indexerPipelineStageProcessedTotal.inc({ stage: 'decode', status: 'success' });
+
     const positionKey = event.pagingToken || `${event.ledgerSequence}-${events.indexOf(event)}`;
     const eventId = `${event.transactionHash}-${positionKey}`;
-    const savedEvent = await prisma.event.upsert({
+
+    const stopPersistEventTimer = indexerPipelineStageDuration.startTimer({ stage: 'persist' });
+    const savedEvent = await prismaWrite.event.upsert({
       where: { id: eventId },
       update: {},
       create: {
@@ -291,11 +487,18 @@ export async function processLedgerRange(
         ledgerCloseTime: event.ledgerCloseTime,
       },
     });
+    stopPersistEventTimer();
+    indexerPipelineStageProcessedTotal.inc({ stage: 'persist', status: 'success' });
 
-    // Publish event to feed
-    await feedOrchestrator.publishEvent(savedEvent).catch(console.error);
+    // Enrich Event: Feeds & Session Authorization
+    const stopEnrichEventTimer = indexerPipelineStageDuration.startTimer({ stage: 'enrich' });
+    await feedOrchestrator
+      .publishEvent(savedEvent)
+      .catch((err) => logger.error('publishEvent error:', err));
 
     await processSessionAuthorization(event, eventType, decoded, eventId);
+    stopEnrichEventTimer();
+    indexerPipelineStageProcessedTotal.inc({ stage: 'enrich', status: 'success' });
   }
 }
 
@@ -309,7 +512,7 @@ export async function indexSingleLedger(ledgerSeq: number): Promise<void> {
 }
 
 // ---------------------------------------------------------------------------
-// Parallel catch-up
+// Parallel catch-up with per-batch checkpointing (issue #881)
 // ---------------------------------------------------------------------------
 
 /**
@@ -326,20 +529,131 @@ function chunkRange(from: number, to: number, n: number): Array<[number, number]
 }
 
 /**
+ * Persist a CatchUpCheckpoint row for a worker's chunk.
+ *
+ * Uses upsert so a crash-then-restart path finds the existing row and reads
+ * `lastCommittedLedger` to resume mid-batch instead of re-fetching from
+ * `rangeStart`.
+ */
+async function upsertCheckpoint(
+  rangeStart: number,
+  rangeEnd: number,
+  lastCommittedLedger: number | null,
+  completed: boolean,
+): Promise<void> {
+  const db = prismaWrite as any;
+  try {
+    await db.catchUpCheckpoint.upsert({
+      where: { rangeStart_rangeEnd: { rangeStart, rangeEnd } },
+      create: {
+        id: uuidv7(),
+        rangeStart,
+        rangeEnd,
+        lastCommittedLedger,
+        completed,
+      },
+      update: {
+        lastCommittedLedger,
+        completed,
+      },
+    });
+  } catch (err) {
+    // Best-effort: checkpoint failure must not abort the indexing work
+    logger.warn(`[catch-up] checkpoint upsert failed for ${rangeStart}-${rangeEnd}: ${err}`);
+  }
+}
+
+/**
+ * Look up the resume cursor for a chunk from a persisted checkpoint.
+ * Returns the last committed ledger + 1 (i.e. where to resume from), or
+ * `rangeStart` if no checkpoint exists yet.
+ */
+async function getChunkResumeCursor(rangeStart: number, rangeEnd: number): Promise<number> {
+  const db = prismaWrite as any;
+  try {
+    const row: { lastCommittedLedger: number | null; completed: boolean } | null =
+      await db.catchUpCheckpoint.findUnique({
+        where: { rangeStart_rangeEnd: { rangeStart, rangeEnd } },
+        select: { lastCommittedLedger: true, completed: true },
+      });
+    if (!row) return rangeStart;
+    if (row.completed) {
+      logger.info(`[catch-up] chunk ${rangeStart}-${rangeEnd} already completed — skipping`);
+      return rangeEnd + 1; // signals "nothing to do"
+    }
+    if (row.lastCommittedLedger !== null) {
+      const resume = row.lastCommittedLedger + 1;
+      if (resume <= rangeEnd) {
+        logger.info(
+          `[catch-up] resuming chunk ${rangeStart}-${rangeEnd} from ledger ${resume} ` +
+            `(last committed: ${row.lastCommittedLedger})`,
+        );
+        return resume;
+      }
+    }
+  } catch (err) {
+    logger.warn(`[catch-up] checkpoint read failed for ${rangeStart}-${rangeEnd}: ${err}`);
+  }
+  return rangeStart;
+}
+
+/**
+ * Process a single worker chunk [rangeStart, rangeEnd] with intra-chunk
+ * checkpointing every BATCH ledgers.
+ *
+ * After each BATCH-ledger sub-range completes, the progress is persisted to
+ * CatchUpCheckpoint.  On crash-restart `getChunkResumeCursor` picks up the
+ * last committed position so at most BATCH ledgers are re-processed.
+ */
+async function processChunkWithCheckpointing(rangeStart: number, rangeEnd: number): Promise<void> {
+  // Resume from last checkpoint rather than rangeStart
+  const resumeFrom = await getChunkResumeCursor(rangeStart, rangeEnd);
+  if (resumeFrom > rangeEnd) {
+    // Chunk already completed in a previous run
+    return;
+  }
+
+  // Write an initial "in-progress" checkpoint so a crash before the first
+  // sub-batch flush is also detectable (lastCommittedLedger = null means
+  // "started but nothing committed yet").
+  await upsertCheckpoint(
+    rangeStart,
+    rangeEnd,
+    resumeFrom > rangeStart ? resumeFrom - 1 : null,
+    false,
+  );
+
+  // Process in BATCH-sized sub-ranges, persisting progress after each one
+  for (let subStart = resumeFrom; subStart <= rangeEnd; subStart += BATCH) {
+    const subEnd = Math.min(subStart + BATCH - 1, rangeEnd);
+    await processLedgerRange(subStart, subEnd);
+    // Flush checkpoint after each successful sub-batch
+    await upsertCheckpoint(rangeStart, rangeEnd, subEnd, subEnd >= rangeEnd);
+    logger.debug(
+      `[catch-up] checkpoint flushed for chunk ${rangeStart}-${rangeEnd}: committed ${subEnd}`,
+    );
+  }
+}
+
+/**
  * Run parallel workers over [from, to], then advance IndexerState to `to`.
- * Workers process non-overlapping chunks concurrently; the state write is
- * serialised after all workers succeed so a partial failure leaves the
- * cursor unchanged and the whole round retries safely (upserts are idempotent).
+ * Workers process non-overlapping chunks concurrently, each with its own
+ * intra-chunk checkpoint.  The global cursor write is serialised after all
+ * workers succeed so a partial failure leaves the cursor unchanged and the
+ * whole round retries safely (upserts are idempotent).
+ *
+ * On restart after a crash, each worker resumes from its last persisted
+ * CatchUpCheckpoint rather than re-fetching from the chunk start.
  */
 async function catchUp(from: number, to: number): Promise<void> {
   const chunks = chunkRange(from, to, WORKERS);
-  console.log(
+  logger.info(
     `[catch-up] ${chunks.length} worker(s) covering ledgers ${from}–${to} ` +
       `(chunk size ~${chunks[0][1] - chunks[0][0] + 1})`,
   );
-  await Promise.all(chunks.map(([s, e]) => processLedgerRange(s, e)));
+  await Promise.all(chunks.map(([s, e]) => processChunkWithCheckpointing(s, e)));
   await setLastIndexedLedger(to);
-  console.log(`[catch-up] done — cursor advanced to ${to}`);
+  logger.info(`[catch-up] done — cursor advanced to ${to}`);
 }
 
 async function processSessionAuthorization(
@@ -368,7 +682,7 @@ async function processSessionAuthorization(
 
   const allocatedBlocks = Math.max(0, expiryLedger - startLedger);
 
-  await prisma.sessionAuthorization.upsert({
+  await prismaWrite.sessionAuthorization.upsert({
     where: { eventId },
     update: {
       hotSigner,
@@ -524,7 +838,7 @@ export class SorobanEventWorker {
   }
 
   async start() {
-    console.log('🔍 Soroban event worker starting...');
+    logger.info('🔍 Soroban event worker starting...');
     this.connectWebsocket();
 
     while (!this.shouldStop) {
@@ -537,7 +851,7 @@ export class SorobanEventWorker {
         const latest = await getLatestLedger();
         await this.syncToLatest(latest);
       } catch (err) {
-        console.error('Indexer error:', err);
+        logger.error('Indexer error:', err);
         await sleep(config.indexerPollIntervalMs);
       }
     }
@@ -556,12 +870,12 @@ export class SorobanEventWorker {
         if (last < targetLedger - 1) {
           const gapStart = last + 1;
           const gapEnd = targetLedger - 1;
-          console.warn(
+          logger.warn(
             `⚠️ Ledger gap detected: expected next ledger to be ${targetLedger}, but last indexed is ${last}. Gap range: ${gapStart} → ${gapEnd}`,
           );
 
           // Record LedgerGap in the database
-          await prisma.ledgerGap.create({
+          await prismaWrite.ledgerGap.create({
             data: {
               startSequence: gapStart,
               endSequence: gapEnd,
@@ -571,7 +885,7 @@ export class SorobanEventWorker {
 
           // Attempt to backfill the gap
           try {
-            console.log(`🔄 Attempting to backfill gap ${gapStart} → ${gapEnd}...`);
+            logger.info(`🔄 Attempting to backfill gap ${gapStart} → ${gapEnd}...`);
             if (gapEnd - gapStart >= BATCH && WORKERS > 1) {
               await catchUp(gapStart, gapEnd);
             } else {
@@ -580,7 +894,7 @@ export class SorobanEventWorker {
             }
 
             // Mark the gap as resolved
-            await prisma.ledgerGap.updateMany({
+            await prismaWrite.ledgerGap.updateMany({
               where: {
                 startSequence: gapStart,
                 endSequence: gapEnd,
@@ -588,11 +902,11 @@ export class SorobanEventWorker {
               },
               data: { resolved: true },
             });
-            console.log(
+            logger.info(
               `✅ Ledger gap ${gapStart} → ${gapEnd} successfully backfilled and resolved.`,
             );
           } catch (backfillErr) {
-            console.error(`❌ Failed to backfill ledger gap ${gapStart} → ${gapEnd}:`, backfillErr);
+            logger.error(`❌ Failed to backfill ledger gap ${gapStart} → ${gapEnd}:`, backfillErr);
             throw backfillErr;
           }
 
@@ -626,7 +940,7 @@ export class SorobanEventWorker {
     }
 
     const url = getRpcWebsocketUrl();
-    console.log(`Connecting Soroban RPC websocket to ${url}`);
+    logger.info(`Connecting Soroban RPC websocket to ${url}`);
     try {
       this.websocket = new WebSocket(url);
       this.websocket.on('open', () => this.handleWsOpen());
@@ -634,13 +948,13 @@ export class SorobanEventWorker {
       this.websocket.on('close', (code, reason) => this.handleWsClose(code, reason.toString()));
       this.websocket.on('error', (error) => this.handleWsError(error));
     } catch (error) {
-      console.error('Failed to establish websocket connection:', error);
+      logger.error('Failed to establish websocket connection:', error);
       this.scheduleReconnect();
     }
   }
 
   private handleWsOpen() {
-    console.log('Soroban RPC websocket connected');
+    logger.info('Soroban RPC websocket connected');
     this.reconnectDelayMs = 1000;
     this.subscribeLedgerClose();
   }
@@ -661,15 +975,16 @@ export class SorobanEventWorker {
     const payload = this.dataToString(data);
     if (!payload) return;
     try {
-      const message = JSON.parse(payload) as any;
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const message: any = JSON.parse(payload);
       const ledgerNumber = this.extractLedgerNumber(message);
       if (typeof ledgerNumber === 'number') {
         this.onLedgerClose(ledgerNumber).catch((err) =>
-          console.error('Ledger close handler failed:', err),
+          logger.error('Ledger close handler failed:', err),
         );
       }
     } catch (error) {
-      console.warn('Failed to parse websocket event payload:', error);
+      logger.warn('Failed to parse websocket event payload:', error);
     }
   }
 
@@ -687,17 +1002,17 @@ export class SorobanEventWorker {
 
   private async onLedgerClose(ledger: number) {
     if (this.isProcessing) return;
-    console.log(`Ledger close event received for ledger ${ledger}`);
+    logger.info(`Ledger close event received for ledger ${ledger}`);
     await this.syncToLatest(ledger);
   }
 
   private handleWsClose(code: number, reason: string) {
-    console.warn(`Soroban RPC websocket closed (${code}) ${reason}`);
+    logger.warn(`Soroban RPC websocket closed (${code}) ${reason}`);
     this.scheduleReconnect();
   }
 
   private handleWsError(error: Error) {
-    console.error('Soroban RPC websocket error:', error.message ?? error);
+    logger.error('Soroban RPC websocket error:', error.message ?? error);
     this.websocket?.close();
   }
 

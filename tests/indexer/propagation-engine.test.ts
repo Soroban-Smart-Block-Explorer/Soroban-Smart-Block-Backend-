@@ -24,11 +24,15 @@ vi.mock('../../src/db', () => {
 
 vi.mock('../../src/db/graph', () => ({
   getGraphDb: () => ({
-    executeCypher: vi.fn().mockResolvedValue({ data: [], executionTime: 0, nodeCount: 0, edgeCount: 0 }),
+    executeCypher: vi
+      .fn()
+      .mockResolvedValue({ data: [], executionTime: 0, nodeCount: 0, edgeCount: 0 }),
     healthCheck: vi.fn().mockResolvedValue(true),
     upsertNode: vi.fn().mockResolvedValue(undefined),
     upsertEdge: vi.fn().mockResolvedValue(undefined),
-    getGraphStats: vi.fn().mockResolvedValue({ nodeCount: 0, edgeCount: 0, nodeLabels: [], edgeLabels: [] }),
+    getGraphStats: vi
+      .fn()
+      .mockResolvedValue({ nodeCount: 0, edgeCount: 0, nodeLabels: [], edgeLabels: [] }),
   }),
   resetGraphDb: vi.fn(),
 }));
@@ -47,7 +51,9 @@ vi.mock('../../src/logger', () => ({
 
 vi.mock('../../src/indexer/dependencyGraphCompiler', () => ({
   buildContractDependencyGraph: vi.fn().mockResolvedValue({
-    nodes: [], edges: [], metadata: { totalNodes: 0, totalEdges: 0, maxDepth: 0, generatedAt: '' },
+    nodes: [],
+    edges: [],
+    metadata: { totalNodes: 0, totalEdges: 0, maxDepth: 0, generatedAt: '' },
   }),
   generateDependencyGraphSVG: vi.fn().mockReturnValue('<svg/>'),
 }));
@@ -190,9 +196,7 @@ describe('GET /api/v1/graph/contracts/:address/downstream', () => {
     const rows = buildChain(20);
     mockFindMany(rows);
     const app = buildApp();
-    const res = await request(app).get(
-      `/api/v1/graph/contracts/${addr(0)}/downstream?maxDepth=3`,
-    );
+    const res = await request(app).get(`/api/v1/graph/contracts/${addr(0)}/downstream?maxDepth=3`);
 
     expect(res.status).toBe(200);
     expect(res.body.totalNodes).toBe(4); // seed + 3 hops
@@ -204,9 +208,7 @@ describe('GET /api/v1/graph/contracts/:address/downstream', () => {
     const rows = buildFanOut(3, 500);
     mockFindMany(rows);
     const app = buildApp();
-    const res = await request(app).get(
-      `/api/v1/graph/contracts/${addr(0)}/downstream?maxNodes=5`,
-    );
+    const res = await request(app).get(`/api/v1/graph/contracts/${addr(0)}/downstream?maxNodes=5`);
 
     expect(res.status).toBe(200);
     expect(res.body.truncated).toBe(true);
@@ -297,9 +299,7 @@ describe('GET /api/v1/graph/contracts/:address/upstream', () => {
     const rows = buildChain(20);
     mockFindMany(rows);
     const app = buildApp();
-    const res = await request(app).get(
-      `/api/v1/graph/contracts/${addr(19)}/upstream?maxDepth=3`,
-    );
+    const res = await request(app).get(`/api/v1/graph/contracts/${addr(19)}/upstream?maxDepth=3`);
 
     expect(res.status).toBe(200);
     expect(res.body.totalNodes).toBe(4);
@@ -311,9 +311,7 @@ describe('GET /api/v1/graph/contracts/:address/upstream', () => {
     const rows = buildChain(50);
     mockFindMany(rows);
     const app = buildApp();
-    const res = await request(app).get(
-      `/api/v1/graph/contracts/${addr(49)}/upstream?maxNodes=5`,
-    );
+    const res = await request(app).get(`/api/v1/graph/contracts/${addr(49)}/upstream?maxNodes=5`);
 
     expect(res.status).toBe(200);
     expect(res.body.truncated).toBe(true);
@@ -368,9 +366,7 @@ describe('BFS edge cases', () => {
     ];
     mockFindMany(diamond);
     const app = buildApp();
-    const res = await request(app).get(
-      `/api/v1/graph/contracts/${addr(0)}/downstream?maxDepth=5`,
-    );
+    const res = await request(app).get(`/api/v1/graph/contracts/${addr(0)}/downstream?maxDepth=5`);
 
     expect(res.status).toBe(200);
     // 4 unique nodes: A, B, C, D
@@ -390,9 +386,7 @@ describe('BFS edge cases', () => {
     ];
     mockFindMany(diamond);
     const app = buildApp();
-    const res = await request(app).get(
-      `/api/v1/graph/contracts/${addr(3)}/upstream?maxDepth=5`,
-    );
+    const res = await request(app).get(`/api/v1/graph/contracts/${addr(3)}/upstream?maxDepth=5`);
 
     expect(res.status).toBe(200);
     // 4 unique nodes reachable from D upstream: D, B, C, A
@@ -407,9 +401,7 @@ describe('BFS edge cases', () => {
     const rows = buildChain(3);
     mockFindMany(rows);
     const app = buildApp();
-    const res = await request(app).get(
-      `/api/v1/graph/contracts/${addr(0)}/downstream?maxDepth=5`,
-    );
+    const res = await request(app).get(`/api/v1/graph/contracts/${addr(0)}/downstream?maxDepth=5`);
 
     expect(res.status).toBe(200);
     expect(res.body.edges[0]).toHaveProperty('source');

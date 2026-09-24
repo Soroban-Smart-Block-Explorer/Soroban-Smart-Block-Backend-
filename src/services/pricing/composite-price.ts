@@ -3,6 +3,7 @@ import { discoverDexPrice } from './dex-price-source';
 import { discoverExternalPrice } from './external-api-source';
 import { getStablecoinInfo } from './stablecoin-peg';
 import { cacheGet, cacheSet } from '../../cache';
+import { uuidv7 } from '../../utils/uuidv7';
 
 export interface CompositePrice {
   priceUsd: number;
@@ -106,7 +107,8 @@ export async function computeCompositePrice(
     breakdown,
   };
 
-  await cacheSet(cacheKey, result, 5);
+  // #917 — TTL resolved from the per-route registry (composite_price → 5s).
+  await cacheSet(cacheKey, result);
 
   if (selectedPrice > 0) {
     await persistPrice(tokenAddress, result, selectedSource);
@@ -171,6 +173,7 @@ async function persistPrice(
   if (shouldRecord) {
     await prismaWrite.tokenPriceHistory.create({
       data: {
+        id: uuidv7(),
         tokenAddress,
         priceUsd: price.priceUsd,
         priceXlm: price.priceXlm,

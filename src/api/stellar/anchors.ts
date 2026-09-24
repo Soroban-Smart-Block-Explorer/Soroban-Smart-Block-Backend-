@@ -30,99 +30,131 @@ const registerSchema = z.object({
 });
 
 // GET /api/v1/stellar/anchors
-anchorsRouter.get('/', async (req: Request, res: Response) => {
-  try {
-    const data = await listAnchors({
-      region: req.query.region as string | undefined,
-      asset: req.query.asset as string | undefined,
-      sep: req.query.sep as string | undefined,
-      status: req.query.status as string | undefined,
-    });
-    res.json(data);
-  } catch (e) {
-    res.status(500).json({ error: String(e) });
-  }
-});
+anchorsRouter.get(
+  '/',
+  asyncHandler(async (req: Request, res: Response) => {
+    try {
+      const data = await listAnchors({
+        region: req.query.region as string | undefined,
+        asset: req.query.asset as string | undefined,
+        sep: req.query.sep as string | undefined,
+        status: req.query.status as string | undefined,
+      });
+      res.json(data);
+    } catch (e) {
+      res.status(500).json({ error: String(e) });
+    }
+  }),
+);
 
 // POST /api/v1/stellar/anchors/register
-anchorsRouter.post('/register', requireAdminAuth, async (req: Request, res: Response) => {
-  try {
-    const body = registerSchema.parse(req.body);
-    const anchor = await registerAnchor(body);
-    res.status(201).json(anchor);
-  } catch (e) {
-    res.status(400).json({ error: String(e) });
-  }
-});
+anchorsRouter.post(
+  '/register',
+  requireAdminAuth,
+  asyncHandler(async (req: Request, res: Response) => {
+    try {
+      const body = registerSchema.parse(req.body);
+      const anchor = await registerAnchor(body);
+      res.status(201).json(anchor);
+    } catch (e) {
+      res.status(400).json({ error: String(e) });
+    }
+  }),
+);
 
 // GET /api/v1/stellar/anchors/:address
-anchorsRouter.get('/:address', async (req: Request, res: Response) => {
-  try {
-    const anchor = await getAnchorByAddress(req.params.address);
-    if (!anchor) return res.status(404).json({ error: 'Anchor not found' });
-    res.json(anchor);
-  } catch (e) {
-    res.status(500).json({ error: String(e) });
-  }
-});
+anchorsRouter.get(
+  '/:address',
+  asyncHandler(async (req: Request, res: Response) => {
+    try {
+      const anchor = await getAnchorByAddress(req.params.address);
+      if (!anchor) return res.status(404).json({ error: 'Anchor not found' });
+      res.json(anchor);
+    } catch (e) {
+      res.status(500).json({ error: String(e) });
+    }
+  }),
+);
 
 // PUT /api/v1/stellar/anchors/:address
-anchorsRouter.put('/:address', requireAdminAuth, async (req: Request, res: Response) => {
-  try {
-    const anchor = await updateAnchor(req.params.address, req.body);
-    res.json(anchor);
-  } catch (e) {
-    res.status(400).json({ error: String(e) });
-  }
-});
+anchorsRouter.put(
+  '/:address',
+  requireAdminAuth,
+  asyncHandler(async (req: Request, res: Response) => {
+    try {
+      const anchor = await updateAnchor(req.params.address, req.body);
+      res.json(anchor);
+    } catch (e) {
+      res.status(400).json({ error: String(e) });
+    }
+  }),
+);
 
 // GET /api/v1/stellar/anchors/:address/reviews
-anchorsRouter.get('/:address/reviews', async (req: Request, res: Response) => {
-  try {
-    const data = await getAnchorReviews(req.params.address);
-    res.json(data);
-  } catch (e) {
-    res.status(500).json({ error: String(e) });
-  }
-});
+anchorsRouter.get(
+  '/:address/reviews',
+  asyncHandler(async (req: Request, res: Response) => {
+    try {
+      const data = await getAnchorReviews(req.params.address);
+      res.json(data);
+    } catch (e) {
+      res.status(500).json({ error: String(e) });
+    }
+  }),
+);
 
 // POST /api/v1/stellar/anchors/:address/reviews
-anchorsRouter.post('/:address/reviews', requireWalletAuth, async (req: Request, res: Response) => {
-  try {
-    const body = reviewSchema.parse(req.body);
-    const wallet = (req as Request & { walletAddress: string }).walletAddress;
-    const review = await submitAnchorReview(req.params.address, wallet, body.rating, body.comment);
-    res.status(201).json(review);
-  } catch (e) {
-    res.status(400).json({ error: String(e) });
-  }
-});
+anchorsRouter.post(
+  '/:address/reviews',
+  requireWalletAuth,
+  asyncHandler(async (req: Request, res: Response) => {
+    try {
+      const body = reviewSchema.parse(req.body);
+      const wallet = (req as Request & { walletAddress: string }).walletAddress;
+      const review = await submitAnchorReview(
+        req.params.address,
+        wallet,
+        body.rating,
+        body.comment,
+      );
+      res.status(201).json(review);
+    } catch (e) {
+      res.status(400).json({ error: String(e) });
+    }
+  }),
+);
 
 // GET /api/v1/stellar/anchors/:address/transactions
-anchorsRouter.get('/:address/transactions', async (req: Request, res: Response) => {
-  try {
-    const data = await getAnchorTransactionAnalytics(req.params.address);
-    res.json(data);
-  } catch (e) {
-    res.status(500).json({ error: String(e) });
-  }
-});
+anchorsRouter.get(
+  '/:address/transactions',
+  asyncHandler(async (req: Request, res: Response) => {
+    try {
+      const data = await getAnchorTransactionAnalytics(req.params.address);
+      res.json(data);
+    } catch (e) {
+      res.status(500).json({ error: String(e) });
+    }
+  }),
+);
 
 // GET /api/v1/stellar/anchors/:address/sep24/info
-anchorsRouter.get('/:address/sep24/info', async (req: Request, res: Response) => {
-  try {
-    const anchor = await getAnchorByAddress(req.params.address);
-    if (!anchor) return res.status(404).json({ error: 'Anchor not found' });
-    const supportsSep24 = anchor.supportedSeps?.includes('SEP-24');
-    res.json({
-      supported: supportsSep24,
-      transferServer: supportsSep24 ? `https://${anchor.homeDomain}/sep24` : null,
-      kycRequired: anchor.kycRequired,
-    });
-  } catch (e) {
-    res.status(500).json({ error: String(e) });
-  }
-});
+anchorsRouter.get(
+  '/:address/sep24/info',
+  asyncHandler(async (req: Request, res: Response) => {
+    try {
+      const anchor = await getAnchorByAddress(req.params.address);
+      if (!anchor) return res.status(404).json({ error: 'Anchor not found' });
+      const supportsSep24 = anchor.supportedSeps?.includes('SEP-24');
+      res.json({
+        supported: supportsSep24,
+        transferServer: supportsSep24 ? `https://${anchor.homeDomain}/sep24` : null,
+        kycRequired: anchor.kycRequired,
+      });
+    } catch (e) {
+      res.status(500).json({ error: String(e) });
+    }
+  }),
+);
 
 // POST /api/v1/stellar/anchors/:address/sep24/deposit
 anchorsRouter.post(

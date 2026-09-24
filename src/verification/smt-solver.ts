@@ -1,4 +1,4 @@
-import { spawn, type ChildProcess } from 'child_process';
+import { spawn, spawnSync, type ChildProcess } from 'child_process';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
@@ -47,6 +47,56 @@ export class SmtSolver {
 
   getCompiler(): SpecCompiler {
     return this.compiler;
+  }
+
+  /**
+   * Synchronously check whether an SMT-LIB2 formula is satisfiable.
+   *
+   * Runs the configured backend (default z3) with the query on stdin and
+   * parses the result. Throws when the backend is unavailable or rejects the
+   * input (e.g. an ill-sorted / type-mismatched formula).
+   */
+  isSatisfiable(smtLib2: string): boolean {
+    const binary = this.resolveBinary();
+    const timeoutSec = Math.max(1, Math.ceil(this.config.timeoutMs / 1000));
+
+    // z3 only reports a verdict for an explicit (check-sat) command; make the
+    // helper forgiving of queries that omit it.
+    const query = /\s*\(check-sat\)\s*$/.test(smtLib2)
+      ? smtLib2
+      : `${smtLib2.trim()}\n(check-sat)\n`;
+
+    const res = spawnSync(binary, ['-in', `-T:${timeoutSec}`], {
+      input: query,
+      encoding: 'utf8',
+      timeout: this.config.timeoutMs + 5000,
+    });
+
+    if (res.error) {
+      if ((res.error as NodeJS.ErrnoException).code === 'ENOENT') {
+        throw new Error(
+          `Solver binary "${binary}" not found. Install ${this.config.backend}:\n` +
+            `  $ brew install ${this.config.backend}\n` +
+            `  $ apt-get install ${this.config.backend}`,
+        );
+      }
+      throw res.error;
+    }
+    if (res.status !== 0 && res.status !== null) {
+      throw new Error(`Solver ${binary} exited with code ${res.status}: ${res.stderr}`);
+    }
+
+    const stdout = res.stdout ?? '';
+    const stderr = res.stderr ?? '';
+
+    // z3 reports ill-sorted (type-mismatched) formulas as errors.
+    if (/error/i.test(stderr) || /^\s*error\b/i.test(stdout)) {
+      throw new Error(`Solver rejected formula: ${(stderr || stdout).trim()}`);
+    }
+
+    if (/\bsat\b/.test(stdout) && !/\bunsat\b/.test(stdout)) return true;
+    if (/\bunsat\b/.test(stdout)) return false;
+    throw new Error(`Solver returned unknown: ${stdout.trim() || stderr.trim()}`);
   }
 
   async solve(smtLib2: string, timeoutMs?: number): Promise<SolverResult> {

@@ -102,7 +102,8 @@ export class StripeRampAdapter implements RampProviderAdapter {
       const quote = session.transaction_details;
       const cryptoAmount = parseFloat(quote?.destination_exchange_amount ?? '0');
       const rate = cryptoAmount > 0 ? fiatAmount / cryptoAmount : 0;
-      const providerFee = parseFloat(quote?.fees?.network_fee_monetary ?? '0') +
+      const providerFee =
+        parseFloat(quote?.fees?.network_fee_monetary ?? '0') +
         parseFloat(quote?.fees?.transaction_fee_monetary ?? '0');
       const platformFee = fiatAmount * PLATFORM_FEE_PCT;
       const totalCost = fiatAmount + providerFee + platformFee;

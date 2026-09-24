@@ -5,19 +5,19 @@ import { httpRequestDuration, httpRequestTotal } from '../metrics';
  * Express middleware that records HTTP request duration and total count
  * using Prometheus histograms/counters.
  */
-export function metricsMiddleware(req: Request, res: Response, next: NextFunction) {
-  const start = process.hrtime.bigint();
+export function metricsMiddleware(req: Request, res: Response, next: NextFunction): void {
+  const start: bigint = process.hrtime.bigint();
 
   res.on('finish', () => {
-    const durationMs = Number(process.hrtime.bigint() - start) / 1e9;
+    const durationSeconds: number = Number(process.hrtime.bigint() - start) / 1e9;
     // Normalise dynamic path segments to avoid high-cardinality label explosion
-    const route = normaliseRoute(req.route?.path ?? req.path);
+    const route: string = normaliseRoute(req.route?.path ?? req.path);
     const labels = {
       method: req.method,
       route,
       status_code: String(res.statusCode),
     };
-    httpRequestDuration.observe(labels, durationMs);
+    httpRequestDuration.observe(labels, durationSeconds);
     httpRequestTotal.inc(labels);
   });
 

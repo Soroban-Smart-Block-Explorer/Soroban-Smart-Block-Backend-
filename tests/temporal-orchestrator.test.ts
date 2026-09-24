@@ -142,7 +142,10 @@ describe('detectTimerType', () => {
 
 describe('detectTimerTypeFromAbi', () => {
   it('detects ABSOLUTE from Timestamp type', () => {
-    const result = detectTimerTypeFromAbi([{ name: 'amount', type: 'i128' }, { name: 'expire', type: 'Timestamp' }]);
+    const result = detectTimerTypeFromAbi([
+      { name: 'amount', type: 'i128' },
+      { name: 'expire', type: 'Timestamp' },
+    ]);
     expect(result).toBe('ABSOLUTE');
   });
 
@@ -162,7 +165,10 @@ describe('detectTimerTypeFromAbi', () => {
   });
 
   it('returns null for non-temporal params', () => {
-    const result = detectTimerTypeFromAbi([{ name: 'amount', type: 'i128' }, { name: 'recipient', type: 'address' }]);
+    const result = detectTimerTypeFromAbi([
+      { name: 'amount', type: 'i128' },
+      { name: 'recipient', type: 'address' },
+    ]);
     expect(result).toBeNull();
   });
 

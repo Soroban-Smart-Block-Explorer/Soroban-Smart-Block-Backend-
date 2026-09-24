@@ -12,11 +12,7 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import express from 'express';
 import http, { type Server } from 'node:http';
 import { AddressInfo } from 'node:net';
-import {
-  setIndexerFailed,
-  setIndexerHealthy,
-  getIndexerStatus,
-} from '../src/indexer-state';
+import { setIndexerFailed, setIndexerHealthy, getIndexerStatus } from '../src/indexer-state';
 
 // Reset to a known-healthy state before every test
 beforeEach(() => {

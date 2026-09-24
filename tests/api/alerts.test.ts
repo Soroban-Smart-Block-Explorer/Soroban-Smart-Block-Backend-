@@ -8,7 +8,7 @@ vi.mock('../../src/db', () => ({
     contract: { findFirst: vi.fn() },
     priceAlert: { findMany: vi.fn(), findUnique: vi.fn(), findFirst: vi.fn() },
     tokenPriceHistory: { findFirst: vi.fn(), findMany: vi.fn() },
-    tokenMarketData: { findUnique: vi.fn() },
+    token: { findUnique: vi.fn() },
     tokenPrice: { findUnique: vi.fn() },
   },
   prismaWrite: {

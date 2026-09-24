@@ -113,9 +113,7 @@ describe('archive captureStateChangesForTransaction', () => {
     const { prisma } = await import('../src/db');
     vi.mocked(prisma.contractStateChange.create).mockClear();
 
-    await captureStateChangesForTransaction('C', 'TX', 1, new Date(), [
-      { key: 'k', after: 'v' },
-    ]);
+    await captureStateChangesForTransaction('C', 'TX', 1, new Date(), [{ key: 'k', after: 'v' }]);
 
     expect(prisma.contractStateChange.create).toHaveBeenCalledWith(
       expect.objectContaining({ data: expect.objectContaining({ operation: 'create' }) }),

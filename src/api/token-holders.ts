@@ -64,6 +64,14 @@ tokenHoldersRouter.get(
         orderBy: { balanceRaw: 'desc' },
         take: limit,
         skip: offset,
+        select: {
+          holderAddress: true,
+          balance: true,
+          percentage: true,
+          rank: true,
+          firstSeenAt: true,
+          lastUpdatedAt: true,
+        },
       }),
       prismaRead.tokenHolder.count({ where }),
     ]);
@@ -97,6 +105,7 @@ tokenHoldersRouter.get(
       where: { contractAddress: address },
       orderBy: { balanceRaw: 'desc' },
       take: n,
+      select: { holderAddress: true, balance: true, percentage: true },
     });
 
     const totalHolders = await prismaRead.tokenHolder.count({
@@ -197,6 +206,15 @@ tokenHoldersRouter.get(
       where: { contractAddress: address },
       orderBy: { cohortStart: 'desc' },
       take: 12,
+      select: {
+        cohortPeriod: true,
+        cohortStart: true,
+        initialHolders: true,
+        retainedAt30d: true,
+        retainedAt60d: true,
+        retainedAt90d: true,
+        avgHoldTime: true,
+      },
     });
 
     const holders = await prismaRead.tokenHolder.findMany({
@@ -288,6 +306,17 @@ tokenHoldersRouter.get(
       },
       orderBy: { detectedAt: 'desc' },
       take: limit,
+      select: {
+        id: true,
+        holderAddress: true,
+        alertType: true,
+        oldBalance: true,
+        newBalance: true,
+        changeAmt: true,
+        changePct: true,
+        txHash: true,
+        detectedAt: true,
+      },
     });
 
     res.json({

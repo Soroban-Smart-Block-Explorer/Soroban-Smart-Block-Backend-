@@ -58,15 +58,15 @@ const DEFAULT_CONFIG: NATSConfig = {
     maxMsgSize: 10_000_000, // 10 MB
     maxAge: '24h',
     replicas: 3,
-    discard: 'old'
-  }
+    discard: 'old',
+  },
 };
 
 const TOPICS = {
   RAW_LEDGERS: 'soroban.raw-ledgers',
   DECODED_TRANSACTIONS: 'soroban.decoded-transactions',
   ENRICHED_EVENTS: 'soroban.enriched-events',
-  BACKFILL_LEDGERS: 'soroban.backfill-ledgers'
+  BACKFILL_LEDGERS: 'soroban.backfill-ledgers',
 };
 
 export class NATSQueueService {
@@ -80,8 +80,8 @@ export class NATSQueueService {
       ...DEFAULT_CONFIG,
       jetstream: {
         ...DEFAULT_CONFIG.jetstream,
-        ...config.jetstream
-      }
+        ...config.jetstream,
+      },
     };
   }
 
@@ -94,7 +94,7 @@ export class NATSQueueService {
         servers: this.config.servers,
         reconnectDelayHandler: () => {
           return Math.min(1000 * Math.pow(2, this.nc?.stats().reconnects || 0), 30000);
-        }
+        },
       });
 
       this.js = this.nc.jetstream();
@@ -119,25 +119,25 @@ export class NATSQueueService {
     // Stream 1: Raw Ledgers
     await this.setupStream(TOPICS.RAW_LEDGERS, {
       description: 'Raw ledger XDR data',
-      retention: 'work' // keep until acknowledged
+      retention: 'work', // keep until acknowledged
     });
 
     // Stream 2: Decoded Transactions
     await this.setupStream(TOPICS.DECODED_TRANSACTIONS, {
       description: 'Decoded transaction data',
-      retention: 'work'
+      retention: 'work',
     });
 
     // Stream 3: Enriched Events
     await this.setupStream(TOPICS.ENRICHED_EVENTS, {
       description: 'Fully enriched events',
-      retention: 'limits' // keep for 24 hours
+      retention: 'limits', // keep for 24 hours
     });
 
     // Stream 4: Backfill Queue
     await this.setupStream(TOPICS.BACKFILL_LEDGERS, {
       description: 'Ledgers to be backfilled',
-      retention: 'work'
+      retention: 'work',
     });
 
     logger.info('JetStream streams initialized');
@@ -169,7 +169,7 @@ export class NATSQueueService {
         num_replicas: this.config.jetstream.replicas,
         discard: this.config.jetstream.discard as any,
         duplicate_window: nats.parseDuration('10m'),
-        storage: 'file'
+        storage: 'file',
       });
 
       logger.info(`Created JetStream: ${streamName}`, { subject });
@@ -204,7 +204,7 @@ export class NATSQueueService {
       const sub = await this.js.pull('soroban-raw-ledgers', {
         batch: 100,
         max_timeout: nats.parseDuration('30s'),
-        idle_heartbeat: nats.parseDuration('10s')
+        idle_heartbeat: nats.parseDuration('10s'),
       });
 
       logger.info('Subscribed to raw ledgers');
@@ -245,14 +245,16 @@ export class NATSQueueService {
   /**
    * Subscribe to decoded transactions (for enrichment workers)
    */
-  async subscribeToDecodedTransactions(callback: (msg: DecodedTransactionMessage) => Promise<void>): Promise<void> {
+  async subscribeToDecodedTransactions(
+    callback: (msg: DecodedTransactionMessage) => Promise<void>,
+  ): Promise<void> {
     if (!this.js) throw new Error('JetStream not initialized');
 
     try {
       const sub = await this.js.pull('soroban-decoded-transactions', {
         batch: 50,
         max_timeout: nats.parseDuration('30s'),
-        idle_heartbeat: nats.parseDuration('10s')
+        idle_heartbeat: nats.parseDuration('10s'),
       });
 
       logger.info('Subscribed to decoded transactions');

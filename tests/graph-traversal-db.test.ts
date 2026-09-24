@@ -12,7 +12,7 @@ const prismaMock = vi.hoisted(() => ({
   },
 }));
 
-vi.mock('../src/db', () => ({ prisma: prismaMock }));
+vi.mock('../src/db', () => ({ prismaRead: prismaMock, prismaWrite: prismaMock }));
 
 describe('traverseUpstream', () => {
   beforeEach(() => {

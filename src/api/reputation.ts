@@ -21,6 +21,7 @@ import { buildTrustGraph, findTrustPath, weightedEndorsements } from '../reputat
 import { calculateDelegatedVotingPower } from '../reputation/governance';
 import { createArbitrationCase, resolveArbitrationCase } from '../reputation/arbitration';
 import { ChainReputationData, EndorsementInput, LinkedIdentityInput } from '../reputation/types';
+import { uuidv7 } from '../utils/uuidv7';
 
 /**
  * @swagger
@@ -71,7 +72,7 @@ function handleAsync(handler: (req: Request, res: Response) => Promise<unknown>)
 
 /**
  * @swagger
- * /api/v1/reputation/leaderboard:
+ * /reputation/leaderboard:
  *   get:
  *     summary: Get reputation leaderboard (overall)
  *     description: >
@@ -96,7 +97,7 @@ function handleAsync(handler: (req: Request, res: Response) => Promise<unknown>)
  *                   type: array
  *                   items:
  *                     $ref: '#/components/schemas/LeaderboardEntry'
- * /api/v1/reputation/leaderboard/{category}:
+ * /reputation/leaderboard/{category}:
  *   get:
  *     summary: Get reputation leaderboard for a specific category
  *     tags: [Reputation]
@@ -131,28 +132,20 @@ reputationRouter.get(
     const limit = Math.min(100, Math.max(1, Number(req.query.limit ?? 10)));
 
     // Load all profiles from DB
-    const profiles = await prismaRead.reputationProfile.findMany();
+    const profiles = await prismaRead.reputationProfile.findMany({ select: { address: true } });
 
-    // Transform profiles back to ChainReputationData for calculation
-    const mockChainData: ChainReputationData[] = [];
-    for (const p of profiles) {
-      mockChainData.push({
-        chainId: p.chain,
-        address: p.address,
-        transactionCount: 10,
-        successfulTransactionCount: 10,
-        sybilRisk: p.combinedScore && p.combinedScore < 300 ? 0.8 : 0.1,
-      });
-    }
+    // Fetch real on-chain data for every address in parallel
+    const chainDataArrays = await Promise.all(profiles.map((p) => fetchProfileData(p.address)));
+    const allChainData: ChainReputationData[] = chainDataArrays.flat();
 
-    const leaderboard = createLeaderboard(mockChainData, category, limit);
+    const leaderboard = createLeaderboard(allChainData, category, limit);
     return res.json({ category, leaderboard });
   }),
 );
 
 /**
  * @swagger
- * /api/v1/reputation/search:
+ * /reputation/search:
  *   get:
  *     summary: Search reputation profiles by address or domain
  *     tags: [Reputation]
@@ -209,7 +202,7 @@ reputationRouter.get(
 
 /**
  * @swagger
- * /api/v1/reputation/{address}:
+ * /reputation/{address}:
  *   get:
  *     summary: Compute and return the full reputation score for an address
  *     description: >
@@ -244,7 +237,7 @@ reputationRouter.get(
 
 /**
  * @swagger
- * /api/v1/reputation/{address}/summary:
+ * /reputation/{address}/summary:
  *   get:
  *     summary: Get a brief reputation summary for an address
  *     description: Returns the composite score and earned badges without the full breakdown.
@@ -286,7 +279,7 @@ reputationRouter.get(
 
 /**
  * @swagger
- * /api/v1/reputation/{address}/history:
+ * /reputation/{address}/history:
  *   get:
  *     summary: Get reputation score history for an address
  *     description: >
@@ -342,7 +335,7 @@ reputationRouter.get(
 
 /**
  * @swagger
- * /api/v1/reputation/{address}/signals:
+ * /reputation/{address}/signals:
  *   get:
  *     summary: Get the raw signal breakdown for an address
  *     description: Returns the per-signal breakdown array from a freshly computed score.
@@ -382,7 +375,7 @@ reputationRouter.get(
 
 /**
  * @swagger
- * /api/v1/reputation/{address}/badges:
+ * /reputation/{address}/badges:
  *   get:
  *     summary: Get earned reputation badges for an address
  *     tags: [Reputation]
@@ -420,7 +413,7 @@ reputationRouter.get(
 
 /**
  * @swagger
- * /api/v1/reputation/{address}/cross-chain:
+ * /reputation/{address}/cross-chain:
  *   get:
  *     summary: Get per-chain reputation scores for an address
  *     tags: [Reputation]
@@ -463,7 +456,7 @@ reputationRouter.get(
 
 /**
  * @swagger
- * /api/v1/reputation/{address}/attest:
+ * /reputation/{address}/attest:
  *   post:
  *     summary: Submit an on-chain or off-chain attestation for an address
  *     description: >
@@ -574,7 +567,7 @@ reputationRouter.post(
 
 /**
  * @swagger
- * /api/v1/reputation/{address}/attestations:
+ * /reputation/{address}/attestations:
  *   get:
  *     summary: List all stored attestations for an address
  *     tags: [Reputation]
@@ -614,7 +607,7 @@ reputationRouter.get(
 
 /**
  * @swagger
- * /api/v1/reputation/{address}/attestations/{id}/verify:
+ * /reputation/{address}/attestations/{id}/verify:
  *   get:
  *     summary: Verify a stored attestation by its uid
  *     description: Checks whether the attestation has a valid on-chain tx hash or signature.
@@ -685,7 +678,7 @@ reputationRouter.get(
 
 /**
  * @swagger
- * /api/v1/reputation/{address}/credentials:
+ * /reputation/{address}/credentials:
  *   post:
  *     summary: Submit a W3C Verifiable Credential for an address
  *     description: >
@@ -799,7 +792,7 @@ reputationRouter.post(
 
 /**
  * @swagger
- * /api/v1/reputation/{address}/credentials:
+ * /reputation/{address}/credentials:
  *   get:
  *     summary: List stored verifiable credentials for an address
  *     tags: [Reputation]
@@ -839,7 +832,7 @@ reputationRouter.get(
 
 /**
  * @swagger
- * /api/v1/reputation/credentials/verify:
+ * /reputation/credentials/verify:
  *   post:
  *     summary: Check whether a JSON payload matches the W3C VC format
  *     description: >
@@ -879,7 +872,7 @@ reputationRouter.post(
 
 /**
  * @swagger
- * /api/v1/reputation/{address}/sybil-score:
+ * /reputation/{address}/sybil-score:
  *   get:
  *     summary: Get the Sybil risk assessment for an address
  *     tags: [Reputation]
@@ -909,7 +902,7 @@ reputationRouter.get(
 
 /**
  * @swagger
- * /api/v1/reputation/verify-cross-chain:
+ * /reputation/verify-cross-chain:
  *   post:
  *     summary: Record a verified cross-chain reputation signal for an address
  *     description: Creates a ReputationSignal record and re-scores the profile.
@@ -997,7 +990,7 @@ reputationRouter.post(
 
 /**
  * @swagger
- * /api/v1/reputation/link:
+ * /reputation/link:
  *   post:
  *     summary: Link a cross-chain address to a canonical reputation profile
  *     description: >
@@ -1102,7 +1095,7 @@ reputationRouter.post(
 
 /**
  * @swagger
- * /api/v1/reputation/{address}/links:
+ * /reputation/{address}/links:
  *   get:
  *     summary: List all linked cross-chain identities for an address
  *     tags: [Reputation]
@@ -1140,7 +1133,7 @@ reputationRouter.get(
 
 /**
  * @swagger
- * /api/v1/reputation/link/{id}:
+ * /reputation/link/{id}:
  *   delete:
  *     summary: Remove a linked cross-chain identity by its record id
  *     description: >
@@ -1194,7 +1187,7 @@ reputationRouter.delete(
 
 /**
  * @swagger
- * /api/v1/reputation/trust-network/{address}:
+ * /reputation/trust-network/{address}:
  *   get:
  *     summary: Get the trust graph for an address
  *     description: Builds a graph of trust edges derived from on-chain profile data.
@@ -1241,7 +1234,7 @@ reputationRouter.get(
 
 /**
  * @swagger
- * /api/v1/reputation/trust-network/{address}/path/{target}:
+ * /reputation/trust-network/{address}/path/{target}:
  *   get:
  *     summary: Find the shortest trust path between two addresses
  *     description: >
@@ -1280,7 +1273,7 @@ reputationRouter.get(
 
 /**
  * @swagger
- * /api/v1/reputation/trust-network/influence/{address}:
+ * /reputation/trust-network/influence/{address}:
  *   get:
  *     summary: Get the influence score for an address in the trust network
  *     description: >
@@ -1324,7 +1317,7 @@ reputationRouter.get(
 
 /**
  * @swagger
- * /api/v1/reputation/endorse:
+ * /reputation/endorse:
  *   post:
  *     summary: Record an endorsement from one address to another
  *     tags: [Reputation]
@@ -1391,7 +1384,7 @@ reputationRouter.post(
 
 /**
  * @swagger
- * /api/v1/reputation/{address}/endorsements/received:
+ * /reputation/{address}/endorsements/received:
  *   get:
  *     summary: List endorsements received by an address
  *     tags: [Reputation]
@@ -1429,7 +1422,7 @@ reputationRouter.get(
 
 /**
  * @swagger
- * /api/v1/reputation/disputes:
+ * /reputation/disputes:
  *   post:
  *     summary: Open a reputation dispute against an address
  *     tags: [Reputation]
@@ -1511,7 +1504,7 @@ reputationRouter.post(
 
 /**
  * @swagger
- * /api/v1/reputation/disputes/{id}:
+ * /reputation/disputes/{id}:
  *   get:
  *     summary: Get a dispute by id, including all votes
  *     tags: [Reputation]
@@ -1551,7 +1544,7 @@ reputationRouter.get(
 
 /**
  * @swagger
- * /api/v1/reputation/disputes/{id}/vote:
+ * /reputation/disputes/{id}/vote:
  *   post:
  *     summary: Cast a vote on a reputation dispute
  *     tags: [Reputation]
@@ -1624,7 +1617,7 @@ reputationRouter.post(
 
 /**
  * @swagger
- * /api/v1/reputation/disputes/{id}/resolve:
+ * /reputation/disputes/{id}/resolve:
  *   post:
  *     summary: Resolve a dispute by tallying its votes
  *     description: >
@@ -1715,7 +1708,7 @@ reputationRouter.post(
 
 /**
  * @swagger
- * /api/v1/reputation/oracle/query:
+ * /reputation/oracle/query:
  *   post:
  *     summary: Query the reputation oracle for a full response
  *     description: Computes and returns the complete oracle response including attestations, credentials, sybil assessment, and proof.
@@ -1759,7 +1752,7 @@ reputationRouter.post(
 
 /**
  * @swagger
- * /api/v1/reputation/oracle/proof:
+ * /reputation/oracle/proof:
  *   get:
  *     summary: Get the verifiable proof for an address's reputation score
  *     tags: [Reputation]
@@ -1803,7 +1796,7 @@ reputationRouter.get(
 
 /**
  * @swagger
- * /api/v1/reputation/governance/delegate:
+ * /reputation/governance/delegate:
  *   post:
  *     summary: Delegate voting power to another address
  *     description: Upserts a delegation record keyed by delegator address.
@@ -1869,7 +1862,7 @@ reputationRouter.post(
 
 /**
  * @swagger
- * /api/v1/reputation/governance/voting-power/{address}:
+ * /reputation/governance/voting-power/{address}:
  *   get:
  *     summary: Get the effective voting power for an address
  *     description: >
@@ -1902,8 +1895,12 @@ reputationRouter.get(
     const address = canonicalAddress(req.params.address);
 
     // Fetch all balances and delegations
-    const delegations = await prismaRead.reputationDelegation.findMany();
-    const profiles = await prismaRead.reputationProfile.findMany();
+    const delegations = await prismaRead.reputationDelegation.findMany({
+      select: { delegator: true, delegatee: true, amount: true },
+    });
+    const profiles = await prismaRead.reputationProfile.findMany({
+      select: { address: true, combinedScore: true },
+    });
 
     const accounts = profiles.map((p) => ({
       address: p.address,
@@ -1931,7 +1928,7 @@ reputationRouter.get(
 
 /**
  * @swagger
- * /api/v1/reputation/governance/vote:
+ * /reputation/governance/vote:
  *   post:
  *     summary: Cast or update a governance vote for a proposal
  *     description: Upserts a vote keyed by (proposalId, voter). The Prisma model stores the vote in a "vote" column; the "support" field in the request maps to that column.
@@ -2003,7 +2000,7 @@ reputationRouter.post(
 
 /**
  * @swagger
- * /api/v1/reputation/nfts/mint/{badgeType}:
+ * /reputation/nfts/mint/{badgeType}:
  *   post:
  *     summary: Mint a Soulbound reputation NFT for an address
  *     description: Creates a ReputationNft record with a deterministic tokenId and a random mintedTxHash placeholder.
@@ -2065,7 +2062,7 @@ reputationRouter.post(
 
 /**
  * @swagger
- * /api/v1/reputation/nfts/{address}:
+ * /reputation/nfts/{address}:
  *   get:
  *     summary: List all reputation NFTs for an address
  *     tags: [Reputation]
@@ -2098,7 +2095,7 @@ reputationRouter.get(
 
 /**
  * @swagger
- * /api/v1/reputation/nfts/{address}/{badgeType}/verify:
+ * /reputation/nfts/{address}/{badgeType}/verify:
  *   get:
  *     summary: Verify whether an address holds a specific Soulbound NFT badge
  *     tags: [Reputation]
@@ -2147,7 +2144,7 @@ reputationRouter.get(
 
 /**
  * @swagger
- * /api/v1/reputation/sdk/js:
+ * /reputation/sdk/js:
  *   get:
  *     summary: Download the Reputation JavaScript SDK
  *     description: Returns a minimal ES module client as application/javascript.
@@ -2183,7 +2180,7 @@ export class ReputationClient {
 
 /**
  * @swagger
- * /api/v1/reputation/sdk/register:
+ * /reputation/sdk/register:
  *   post:
  *     summary: Register a dApp to receive a Reputation SDK API key
  *     tags: [Reputation]
@@ -2228,7 +2225,7 @@ reputationRouter.post(
     const apiKey = `rep-sdk-${rawKey}`;
     const keyHash = createHash('sha256').update(apiKey).digest('hex');
     const dapp = await prismaWrite.registeredDapp.create({
-      data: { name, apiKey: keyHash },
+      data: { id: uuidv7(), name, apiKey: keyHash },
     });
 
     return res.json({ ...dapp, apiKey });
@@ -2241,7 +2238,7 @@ reputationRouter.post(
 
 /**
  * @swagger
- * /api/v1/reputation/score:
+ * /reputation/score:
  *   post:
  *     summary: Compute a reputation score (legacy stateless endpoint)
  *     description: >
@@ -2294,7 +2291,7 @@ reputationRouter.post(
 
 /**
  * @swagger
- * /api/v1/reputation/identity/score:
+ * /reputation/identity/score:
  *   post:
  *     summary: Compute a cross-identity reputation score (legacy stateless endpoint)
  *     description: >
@@ -2365,7 +2362,7 @@ reputationRouter.post(
 
 /**
  * @swagger
- * /api/v1/reputation/identity/link:
+ * /reputation/identity/link:
  *   post:
  *     summary: Verify a set of cross-chain identity links (legacy stateless endpoint)
  *     description: >
@@ -2430,7 +2427,7 @@ reputationRouter.post(
 
 /**
  * @swagger
- * /api/v1/reputation/leaderboards/{category}:
+ * /reputation/leaderboards/{category}:
  *   get:
  *     summary: Get a leaderboard from inline chain data (legacy stateless endpoint)
  *     description: >
@@ -2487,7 +2484,7 @@ reputationRouter.get(
 
 /**
  * @swagger
- * /api/v1/reputation/badges/{address}:
+ * /reputation/badges/{address}:
  *   get:
  *     summary: Get earned badges from inline chain data (legacy stateless endpoint)
  *     description: >
@@ -2538,7 +2535,7 @@ reputationRouter.get(
 
 /**
  * @swagger
- * /api/v1/reputation/oracle/{address}:
+ * /reputation/oracle/{address}:
  *   get:
  *     summary: Get an oracle response from inline chain data (legacy stateless endpoint)
  *     description: >
@@ -2580,7 +2577,7 @@ reputationRouter.get(
 
 /**
  * @swagger
- * /api/v1/reputation/attestations/{address}:
+ * /reputation/attestations/{address}:
  *   get:
  *     summary: List attestations from inline chain data (legacy stateless endpoint)
  *     description: >
@@ -2643,7 +2640,7 @@ reputationRouter.get(
 
 /**
  * @swagger
- * /api/v1/reputation/credentials/{address}:
+ * /reputation/credentials/{address}:
  *   get:
  *     summary: List verifiable credentials from inline chain data (legacy stateless endpoint)
  *     description: >
@@ -2704,7 +2701,7 @@ reputationRouter.get(
 
 /**
  * @swagger
- * /api/v1/reputation/sybil/{address}:
+ * /reputation/sybil/{address}:
  *   get:
  *     summary: Get Sybil risk from inline chain data (legacy stateless endpoint)
  *     description: >
@@ -2746,7 +2743,7 @@ reputationRouter.get(
 
 /**
  * @swagger
- * /api/v1/reputation/trust/path:
+ * /reputation/trust/path:
  *   post:
  *     summary: Find a trust path from inline chain data (legacy stateless endpoint)
  *     description: >
@@ -2807,7 +2804,7 @@ reputationRouter.post(
 
 /**
  * @swagger
- * /api/v1/reputation/endorsements:
+ * /reputation/endorsements:
  *   post:
  *     summary: Compute weighted endorsements from inline data (legacy stateless endpoint)
  *     description: >
@@ -2876,7 +2873,7 @@ reputationRouter.post(
 
 /**
  * @swagger
- * /api/v1/reputation/oracle-counts/{address}:
+ * /reputation/oracle-counts/{address}:
  *   get:
  *     summary: Count valid attestations and credentials from inline chain data (legacy stateless endpoint)
  *     description: >

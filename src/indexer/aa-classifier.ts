@@ -39,13 +39,7 @@ const PASSKEY_INDICATORS = ['webauthn', 'fido2', 'passkey', 'secp256r1', 'p256']
 // ── Result types ──────────────────────────────────────────────────────────────
 
 export type WalletType =
-  | 'multi_sig'
-  | 'social_recovery'
-  | 'session_key'
-  | 'sponsored'
-  | 'passkey'
-  | 'hybrid'
-  | 'custom';
+  'multi_sig' | 'social_recovery' | 'session_key' | 'sponsored' | 'passkey' | 'hybrid' | 'custom';
 
 export interface WalletClassification {
   walletType: WalletType;

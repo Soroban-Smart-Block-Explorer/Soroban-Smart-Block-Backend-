@@ -2,7 +2,7 @@ import { classifyContract, ClassificationResult } from './heuristic-classifier';
 import { detectAnomalies, AnomalyReport } from './anomaly-detector';
 import { analyzeContractWasm, WasmAnalysis } from './wasm-analyzer';
 import { getLlmDescription } from './llm-provider';
-import { prisma } from '../db';
+import { prismaRead } from '../db';
 
 export interface IntelligenceReport {
   address: string;
@@ -27,7 +27,11 @@ export async function buildIntelligenceReport(
   const functionNames = analysis?.rawFunctionNames ?? [];
 
   const classification = classifyContract(functionNames);
-  const anomalies = await detectAnomalies(address, functionNames, analysis?.hasContractSpec ?? false);
+  const anomalies = await detectAnomalies(
+    address,
+    functionNames,
+    analysis?.hasContractSpec ?? false,
+  );
 
   let llm: IntelligenceReport['llm'] = null;
   if (useLlm && functionNames.length > 0) {
@@ -51,8 +55,10 @@ export async function buildIntelligenceReport(
 export async function findSimilarContracts(
   address: string,
   myFunctions: string[],
-): Promise<{ address: string; name: string | null; similarity: number; sharedFunctions: string[] }[]> {
-  const others = await prisma.contract.findMany({
+): Promise<
+  { address: string; name: string | null; similarity: number; sharedFunctions: string[] }[]
+> {
+  const others = await prismaRead.contract.findMany({
     where: { address: { not: address }, abi: { not: undefined } },
     select: { address: true, name: true, abi: true },
     take: 100,
@@ -66,7 +72,12 @@ export async function findSimilarContracts(
         : [];
       const shared = myFunctions.filter((f) => otherFns.includes(f));
       const similarity = shared.length / Math.max(1, Math.max(myFunctions.length, otherFns.length));
-      return { address: c.address, name: c.name, similarity: Math.round(similarity * 100), sharedFunctions: shared };
+      return {
+        address: c.address,
+        name: c.name,
+        similarity: Math.round(similarity * 100),
+        sharedFunctions: shared,
+      };
     })
     .filter((c) => c.similarity >= 30)
     .sort((a, b) => b.similarity - a.similarity)

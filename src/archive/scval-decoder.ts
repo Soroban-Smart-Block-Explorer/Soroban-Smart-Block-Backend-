@@ -12,12 +12,18 @@ export function decodeScValXdr(base64: string): string {
 export function humanReadableScVal(val: xdr.ScVal): string {
   const type = val.switch().name;
   switch (type) {
-    case 'scvVoid': return 'null';
-    case 'scvBool': return String(val.b());
-    case 'scvU32': return String(val.u32());
-    case 'scvI32': return String(val.i32());
-    case 'scvU64': return val.u64().toBigInt().toString();
-    case 'scvI64': return val.i64().toBigInt().toString();
+    case 'scvVoid':
+      return 'null';
+    case 'scvBool':
+      return String(val.b());
+    case 'scvU32':
+      return String(val.u32());
+    case 'scvI32':
+      return String(val.i32());
+    case 'scvU64':
+      return val.u64().toBigInt().toString();
+    case 'scvI64':
+      return val.i64().toBigInt().toString();
     case 'scvU128': {
       const u = val.u128();
       return ((u.hi().toBigInt() << 64n) | u.lo().toBigInt()).toString();
@@ -28,9 +34,12 @@ export function humanReadableScVal(val: xdr.ScVal): string {
       const lo = i.lo().toBigInt();
       return (hi < 0n ? (hi << 64n) - lo : (hi << 64n) | lo).toString();
     }
-    case 'scvString': return `"${val.str().toString('utf8')}"`;
-    case 'scvSymbol': return val.sym().toString();
-    case 'scvBytes': return '0x' + val.bytes().toString('hex');
+    case 'scvString':
+      return `"${val.str().toString('utf8')}"`;
+    case 'scvSymbol':
+      return val.sym().toString();
+    case 'scvBytes':
+      return '0x' + val.bytes().toString('hex');
     case 'scvAddress': {
       try {
         return Address.fromScVal(val).toString();

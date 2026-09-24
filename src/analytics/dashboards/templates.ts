@@ -94,8 +94,7 @@ ORDER BY date ASC
   {
     id: 'wallet_creation_rate',
     name: 'New Wallet Creation Rate by Network',
-    description:
-      'Counts wallets that appear for the first time in each week, grouped by network.',
+    description: 'Counts wallets that appear for the first time in each week, grouped by network.',
     sql: `
 WITH first_seen AS (
     SELECT
@@ -125,8 +124,7 @@ ORDER BY week_start ASC
   {
     id: 'token_transfer_heatmap',
     name: 'Token Transfer Volume Heatmap (Hourly)',
-    description:
-      'Hour-of-day × day-of-week heatmap of transfer volume for a given token contract.',
+    description: 'Hour-of-day × day-of-week heatmap of transfer volume for a given token contract.',
     sql: `
 SELECT
     EXTRACT(DOW  FROM CAST(ledger_close_time AS TIMESTAMP))  AS day_of_week,  -- 0=Sun
@@ -208,9 +206,7 @@ export function interpolateTemplate(
     if (!/^\w+$/.test(key)) continue;
     const placeholder = new RegExp(`:${key}\\b`, 'g');
     const safe =
-      typeof value === 'number'
-        ? String(value)
-        : `'${String(value).replace(/'/g, "''")}'`;
+      typeof value === 'number' ? String(value) : `'${String(value).replace(/'/g, "''")}'`;
     sql = sql.replace(placeholder, safe);
   }
 

@@ -81,6 +81,9 @@ describe('/readyz — fully ready', () => {
     mod.markReady('cache');
     mod.markReady('indexer');
     mod.markReady('coldStorage');
+    // rpc is a readiness dependency too (see src/readiness.ts); p2p/worker
+    // default to ready, so marking these five makes isFullyReady() true.
+    mod.markReady('rpc');
     const res = await request(buildReadyzApp(mod)).get('/readyz');
     expect(res.status).toBe(200);
     expect(res.body.status).toBe('ready');
@@ -92,6 +95,9 @@ describe('/readyz — fully ready', () => {
     mod.markReady('cache');
     mod.markReady('indexer');
     mod.markReady('coldStorage');
+    // rpc is a readiness dependency too (see src/readiness.ts); p2p/worker
+    // default to ready, so marking these five makes isFullyReady() true.
+    mod.markReady('rpc');
     const res = await request(buildReadyzApp(mod)).get('/readyz');
     const { dependencies } = res.body as { dependencies: Record<DependencyName, boolean> };
     expect(dependencies.db).toBe(true);
@@ -130,6 +136,7 @@ describe('/readyz — readiness transitions', () => {
     mod.markReady('cache');
     mod.markReady('indexer');
     mod.markReady('coldStorage');
+    mod.markReady('rpc');
 
     res = await request(app).get('/readyz');
     expect(res.status).toBe(200);
@@ -141,6 +148,7 @@ describe('/readyz — readiness transitions', () => {
     mod.markReady('cache');
     mod.markReady('indexer');
     mod.markReady('coldStorage');
+    mod.markReady('rpc');
 
     const app = buildReadyzApp(mod);
 
@@ -164,6 +172,7 @@ describe('/readyz — readiness transitions', () => {
     mod.markReady('cache');
     mod.markReady('indexer');
     mod.markReady('coldStorage');
+    mod.markReady('rpc');
 
     const app = buildReadyzApp(mod);
 

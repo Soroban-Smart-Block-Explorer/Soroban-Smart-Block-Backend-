@@ -1,8 +1,6 @@
 import { Chain, ChainProviderConfig, BridgeEvent, BridgeStatus, BridgeProtocol } from './types';
 import { CHAIN_PROVIDERS, BRIDGE_SCANNER_URLS } from './config';
-import {
-  getChainProvider,
-} from './chain-providers';
+import { getChainProvider } from './chain-providers';
 import { prismaWrite as prisma } from '../db';
 import { logger } from '../logger';
 

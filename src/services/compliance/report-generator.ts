@@ -177,7 +177,7 @@ export async function listReports(
 }
 
 export async function getReport(id: string): Promise<any> {
-  const report = await prismaWrite.complianceReport.findUnique({ where: { id } });
+  const report = await prismaRead.complianceReport.findUnique({ where: { id } });
   if (!report) {
     throw new Error(`Report not found: ${id}`);
   }

@@ -8,7 +8,7 @@ vi.mock('../src/db', () => ({
   prismaWrite: {},
 }));
 vi.mock('../src/logger', () => ({ logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn() } }));
-vi.mock('../src/ws/eventBroadcaster', () => ({ broadcastEmergencyEvent: vi.fn() }));
+vi.mock('../src/ws/websocketServer', () => ({ broadcastEmergencyEvent: vi.fn() }));
 
 import { computeDecentralizationScore, classifyRisk } from '../src/indexer/emergency-indexer';
 

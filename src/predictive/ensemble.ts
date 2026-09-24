@@ -1,5 +1,16 @@
 import { IForecastingModel, ForecastResult } from './models';
 
+/**
+ * SIMULATED ENSEMBLE FORECASTER
+ *
+ * This ensemble performs a simple equal-weighted average of sub-model
+ * predictions. The confidence-interval adjustment (multiply by
+ * confidenceLevel / 0.95) is a heuristic approximation, NOT a real
+ * Bayesian optimization or Gaussian-process fusion.
+ *
+ * Suitable for demo / educational use only.
+ */
+
 export class EnsembleForecaster {
   private models: IForecastingModel[];
 

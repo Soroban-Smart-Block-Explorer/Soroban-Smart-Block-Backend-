@@ -5,6 +5,9 @@ import { Prisma } from '@prisma/client';
 import { prismaWrite, prismaRead } from '../../db';
 import { asyncHandler } from '../../middleware/asyncHandler';
 import { redactSensitiveData } from '../../webhooks/redaction';
+import { encryptSecret, decryptSecret, maskSecret } from '../../webhooks/secretCrypto';
+import { signWebhookBody } from '../../webhooks/webhookVerify';
+import { safePost, assertSafeUrl, SsrfBlockedError } from '../../webhooks/ssrf-guard';
 
 export const devWebhooksRouter = Router();
 
@@ -21,10 +24,7 @@ const isAllowedUrl = (raw: string): boolean => {
   }
 };
 
-const httpsUrl = z
-  .string()
-  .url()
-  .refine(isAllowedUrl, { message: 'Webhook URL must use HTTPS' });
+const httpsUrl = z.string().url().refine(isAllowedUrl, { message: 'Webhook URL must use HTTPS' });
 
 const createWebhookSchema = z.object({
   developerId: z.string(),
@@ -60,17 +60,19 @@ devWebhooksRouter.post(
       data: {
         developerId,
         url,
-        secret,
+        secret: encryptSecret(secret),
         events: events as Prisma.InputJsonValue,
         retryPolicy: retryPolicy
           ? (retryPolicy as unknown as Prisma.InputJsonValue)
           : Prisma.JsonNull,
         headers: headers ? (headers as unknown as Prisma.InputJsonValue) : Prisma.JsonNull,
       },
-      select: { id: true, url: true, events: true, active: true, createdAt: true, secret: true },
+      select: { id: true, url: true, events: true, active: true, createdAt: true },
     });
 
-    res.status(201).json(webhook);
+    // The raw secret is only ever shown once, at creation time — it is not
+    // recoverable from the API afterwards (only a masked last-4 form is).
+    res.status(201).json({ ...webhook, secret });
   }),
 );
 
@@ -91,10 +93,18 @@ devWebhooksRouter.get(
         lastDeliveryAt: true,
         lastDeliveryStatus: true,
         createdAt: true,
+        secret: true,
       },
     });
 
-    res.json({ data: webhooks });
+    // Never return the usable secret in a list response — only enough to
+    // identify which secret is configured on the developer's side.
+    const data = webhooks.map(({ secret, ...rest }) => ({
+      ...rest,
+      secretLast4: maskSecret(decryptSecret(secret)),
+    }));
+
+    res.json({ data });
   }),
 );
 
@@ -165,21 +175,39 @@ devWebhooksRouter.post(
       select: { id: true, eventType: true, createdAt: true },
     });
 
-    // Attempt delivery (non-blocking simulation — real implementation would use a queue)
+    // Attempt delivery via the SSRF-guarded safePost so the test endpoint
+    // is subject to the same URL validation as real deliveries (#893).
+    // Sign with constant-time HMAC and include X-Webhook-Timestamp for
+    // replay-window enforcement on the receiver side (#884).
     try {
-      const { default: axios } = await import('axios');
-      const signature = crypto
-        .createHmac('sha256', webhook.secret)
-        .update(JSON.stringify(payload))
-        .digest('hex');
+      const payloadJson = JSON.stringify(payload);
+      const plainSecret = decryptSecret(webhook.secret);
+      const timestampMs = Date.now();
+      const signature = signWebhookBody(payloadJson, plainSecret);
 
-      const response = await axios.post(webhook.url, payload, {
-        headers: { 'X-Webhook-Signature': signature, 'Content-Type': 'application/json' },
-        timeout: 10000,
-      });
+      // SSRF pre-flight (safePost also validates internally, but we want
+      // a clear 400 back to the developer rather than a generic 500).
+      try {
+        await assertSafeUrl(webhook.url);
+      } catch (ssrfErr) {
+        const reason =
+          ssrfErr instanceof SsrfBlockedError ? ssrfErr.message : 'URL failed SSRF check';
+        return res.status(400).json({ success: false, error: reason, durationMs: 0 });
+      }
+
+      const response = await safePost(
+        webhook.url,
+        payloadJson,
+        {
+          'Content-Type': 'application/json',
+          'X-Webhook-Signature': signature,
+          'X-Webhook-Timestamp': String(timestampMs),
+        },
+        10_000,
+      );
 
       const durationMs = Date.now() - start;
-      const rawResponseBody = String(response.data);
+      const rawResponseBody = String(response.data ?? '');
       const processedResponseBody = webhook.storeResponseBody
         ? redactSensitiveData(rawResponseBody.slice(0, 500))
         : null;
@@ -202,7 +230,7 @@ devWebhooksRouter.post(
         },
       });
 
-      return res.json({ success: true, statusCode: response.status, durationMs });
+      return res.json({ success: response.status < 300, statusCode: response.status, durationMs });
     } catch (err: unknown) {
       const durationMs = Date.now() - start;
       const msg = err instanceof Error ? err.message : String(err);

@@ -7,13 +7,27 @@ import {
   getChallenge,
   incrementAttempts,
   checkChallengeRateLimit,
+  checkAccountLockout,
+  recordFailedVerify,
+  clearAccountLockout,
 } from '../auth/challenge';
 import { issueTokens, hashToken, generateSessionId, REFRESH_TOKEN_TTL } from '../auth/tokens';
 import { getJwks, rotateKeys } from '../auth/keys';
 import { getFeatures, featureList } from '../auth/rbac';
 import { requireAuth, requireRole } from '../auth/middleware';
+import { asyncHandler } from '../middleware/asyncHandler';
+import { uuidv7 } from '../utils/uuidv7';
+import {
+  authRateLimit,
+  checkAccountLockout as checkBruteLockout,
+  recordAccountFailure,
+  clearAccountLockout as clearBruteLockout,
+} from '../auth/bruteForce';
 
 export const authRouter = Router();
+
+// Apply strict rate limiting (10 req/min) to all /auth endpoints (#886)
+authRouter.use(authRateLimit);
 
 // ─── JWKS ────────────────────────────────────────────────────────────────────
 authRouter.get(
@@ -57,9 +71,19 @@ authRouter.post(
     if (!ch) return res.status(400).json({ error: 'Challenge not found or expired' });
     if (ch.address !== address) return res.status(400).json({ error: 'Address mismatch' });
 
+    const bruteLock = await checkBruteLockout(address);
+    if (bruteLock.isLocked || (await checkAccountLockout(address))) {
+      res.setHeader('Retry-After', String(bruteLock.retryAfterSec || 300));
+      return res.status(429).json({
+        error: 'Account temporarily locked due to too many failed attempts',
+        retryAfter: bruteLock.retryAfterSec || 300,
+      });
+    }
+
     const attempts = await incrementAttempts(challengeId);
     if (attempts > 3) {
       await consumeChallenge(challengeId);
+      await recordAccountFailure(address, req.ip);
       return res.status(429).json({ error: 'Too many verification attempts' });
     }
 
@@ -70,19 +94,25 @@ authRouter.post(
       const sigBytes = Buffer.from(signature, 'base64');
       const valid = kp.verify(messageBytes, sigBytes);
       if (!valid) {
+        await recordFailedVerify(address);
+        await recordAccountFailure(address, req.ip);
         return res.status(401).json({ error: 'Invalid signature' });
       }
     } catch {
+      await recordFailedVerify(address);
+      await recordAccountFailure(address, req.ip);
       return res.status(401).json({ error: 'Signature verification failed' });
     }
 
     await consumeChallenge(challengeId);
+    await clearAccountLockout(address);
+    await clearBruteLockout(address);
 
     // Upsert user
     let user = await prisma.walletUser.findUnique({ where: { address } });
     if (!user) {
       user = await prisma.walletUser.create({
-        data: { address, role: 'user', tier: 'free' },
+        data: { id: uuidv7(), address, role: 'user', tier: 'free' },
       });
     } else {
       await prisma.walletUser.update({ where: { id: user.id }, data: { lastLogin: new Date() } });
@@ -229,7 +259,12 @@ authRouter.post(
   requireRole('admin'),
   asyncHandler(async (_req, res) => {
     const kp = await rotateKeys();
-    res.json({ kid: kp.kid, createdAt: new Date(kp.createdAt).toISOString() });
+    res.json({
+      kid: kp.kid,
+      createdAt: new Date(kp.createdAt).toISOString(),
+      warning:
+        'All previously-issued access tokens are now invalid and require re-authentication or a token refresh. Refresh tokens are unaffected.',
+    });
   }),
 );
 

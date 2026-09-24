@@ -102,7 +102,14 @@ export class GraphSyncService {
         logger.warn(`Sync took ${syncDuration}ms (> 1s target)`);
       }
     } catch (error) {
-      await this.logSyncMetrics('incremental', 'multiple', recordsProcessed, startTime, 'error', error instanceof Error ? error.message : String(error));
+      await this.logSyncMetrics(
+        'incremental',
+        'multiple',
+        recordsProcessed,
+        startTime,
+        'error',
+        error instanceof Error ? error.message : String(error),
+      );
       throw error;
     }
   }
@@ -133,11 +140,18 @@ export class GraphSyncService {
 
       const duration = Date.now() - startTime;
       logger.info(`Backfill completed: ${totalRecords} records in ${duration}ms`);
-      
+
       await this.logSyncMetrics('backfill', 'multiple', totalRecords, startTime, 'success');
     } catch (error) {
       logger.error('Backfill failed:', error);
-      await this.logSyncMetrics('backfill', 'multiple', totalRecords, startTime, 'error', error instanceof Error ? error.message : String(error));
+      await this.logSyncMetrics(
+        'backfill',
+        'multiple',
+        totalRecords,
+        startTime,
+        'error',
+        error instanceof Error ? error.message : String(error),
+      );
       throw error;
     }
   }
@@ -176,17 +190,10 @@ export class GraphSyncService {
       });
 
       // Create SENT edge
-      await this.graphDb.upsertEdge(
-        'Wallet',
-        tx.sourceAccount,
-        'SENT',
-        'Transaction',
-        tx.hash,
-        {
-          timestamp: tx.ledgerCloseTime,
-          fee: tx.feeCharged,
-        }
-      );
+      await this.graphDb.upsertEdge('Wallet', tx.sourceAccount, 'SENT', 'Transaction', tx.hash, {
+        timestamp: tx.ledgerCloseTime,
+        fee: tx.feeCharged,
+      });
 
       // Create contract node and CALLS edge if applicable
       if (tx.contractAddress) {
@@ -206,7 +213,7 @@ export class GraphSyncService {
             functionName: tx.functionName,
             gasUsed: tx.sorobanResources?.cpuInstructions || 0,
             success: tx.status === 'SUCCESS',
-          }
+          },
         );
       }
     }
@@ -276,17 +283,10 @@ export class GraphSyncService {
       });
 
       // Create EMITS edge
-      await this.graphDb.upsertEdge(
-        'Contract',
-        event.contractAddress,
-        'EMITS',
-        'Event',
-        event.id,
-        {
-          eventType: event.eventType,
-          topicCount: Array.isArray(event.topics) ? event.topics.length : 0,
-        }
-      );
+      await this.graphDb.upsertEdge('Contract', event.contractAddress, 'EMITS', 'Event', event.id, {
+        eventType: event.eventType,
+        topicCount: Array.isArray(event.topics) ? event.topics.length : 0,
+      });
     }
 
     return events.length;
@@ -372,17 +372,10 @@ export class GraphSyncService {
         fee: tx.feeCharged,
       });
 
-      await this.graphDb.upsertEdge(
-        'Wallet',
-        tx.sourceAccount,
-        'SENT',
-        'Transaction',
-        tx.hash,
-        {
-          timestamp: tx.ledgerCloseTime,
-          fee: tx.feeCharged,
-        }
-      );
+      await this.graphDb.upsertEdge('Wallet', tx.sourceAccount, 'SENT', 'Transaction', tx.hash, {
+        timestamp: tx.ledgerCloseTime,
+        fee: tx.feeCharged,
+      });
 
       if (tx.contractAddress) {
         await this.graphDb.upsertNode('Contract', {
@@ -401,7 +394,7 @@ export class GraphSyncService {
             functionName: tx.functionName,
             gasUsed: tx.sorobanResources?.cpuInstructions || 0,
             success: tx.status === 'SUCCESS',
-          }
+          },
         );
       }
     }
@@ -429,17 +422,10 @@ export class GraphSyncService {
         timestamp: event.ledgerCloseTime,
       });
 
-      await this.graphDb.upsertEdge(
-        'Contract',
-        event.contractAddress,
-        'EMITS',
-        'Event',
-        event.id,
-        {
-          eventType: event.eventType,
-          topicCount: Array.isArray(event.topics) ? event.topics.length : 0,
-        }
-      );
+      await this.graphDb.upsertEdge('Contract', event.contractAddress, 'EMITS', 'Event', event.id, {
+        eventType: event.eventType,
+        topicCount: Array.isArray(event.topics) ? event.topics.length : 0,
+      });
     }
 
     return events.length;
@@ -470,7 +456,7 @@ export class GraphSyncService {
     recordsProcessed: number,
     startTime: number,
     status: 'success' | 'error',
-    errorMessage?: string
+    errorMessage?: string,
   ): Promise<void> {
     try {
       await this.prisma.$executeRaw`
@@ -495,7 +481,7 @@ export class GraphSyncService {
    * Sleep utility
    */
   private sleep(ms: number): Promise<void> {
-    return new Promise(resolve => setTimeout(resolve, ms));
+    return new Promise((resolve) => setTimeout(resolve, ms));
   }
 }
 

@@ -6,6 +6,13 @@ on:
   pull_request:
     branches: [main]
 
+permissions:
+  contents: read
+  # `security-events: write` is required for CodeQL to upload SARIF results;
+  # without it the Security job's CodeQL steps fail with
+  # "Resource not accessible by integration".
+  security-events: write
+
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
@@ -14,16 +21,47 @@ jobs:
   build:
     name: Build
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        # pgvector image: the search_engine migration (20260625000000) creates
+        # the "vector" extension for embeddings, which plain postgres lacks.
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: test
+          POSTGRES_PASSWORD: test
+          POSTGRES_DB: test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U test -d test"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
-      - uses: actions/setup-node@v7
+      - uses: actions/setup-node@v5
         with:
-          node-version: 20
+          node-version: 24
           cache: npm
+
+      - name: Cache Prisma generate
+        uses: actions/cache@v5
+        with:
+          path: node_modules/.prisma
+          key: prisma-${{ hashFiles('prisma/schema.prisma') }}
+          restore-keys: prisma-
 
       - name: Install dependencies
         run: npm ci
+
+      # Issue #899: Verify package-lock.json is in sync with package.json.
+      # `npm ci --dry-run` exits non-zero if the lockfile would need updating.
+      # Runs AFTER `npm ci` because the dry-run still executes lifecycle
+      # scripts (postinstall → `prisma generate`), which need node_modules to
+      # be present to find the prisma binary.
+      - name: Verify package-lock.json is in sync
+        run: npm ci --dry-run
 
       - name: TypeScript build
         run: npm run build
@@ -31,46 +69,231 @@ jobs:
       - name: Prisma field reference validator
         run: npm run validate:prisma
 
+      # Verify the migration history applies cleanly on a fresh database
+      # (this is exactly what the docker-compose migrate-* init containers
+      # run before the API/indexer start). The history was squashed into a
+      # single clean baseline so `migrate deploy` must always succeed here.
+      - name: Verify migrations apply (prisma migrate deploy)
+        run: npx prisma migrate deploy
+        env:
+          DATABASE_URL: postgresql://test:test@localhost:5432/test
+          TESTNET_DATABASE_URL: postgresql://test:test@localhost:5432/test
+
   lint:
     name: Lint
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
-      - uses: actions/setup-node@v7
+      - uses: actions/setup-node@v5
         with:
-          node-version: 20
+          node-version: 24
           cache: npm
+
+      - name: Cache Prisma generate
+        uses: actions/cache@v5
+        with:
+          path: node_modules/.prisma
+          key: prisma-${{ hashFiles('prisma/schema.prisma') }}
+          restore-keys: prisma-
 
       - name: Install dependencies
         run: npm ci
 
-      - name: Lint
-        run: npm run lint
+      # #920: ESLint warning budget ratchet. `npm run lint` alone tolerates up
+      # to 1750 warnings (a flat cap), which makes a genuinely new warning
+      # indistinguishable from the existing debt. The ratchet instead fails the
+      # build as soon as the *blocking* warning count exceeds the checked-in
+      # budget (see scripts/lint-budget.ts), so any new warning fails CI and the
+      # pre-existing pile is paid down incrementally. The noisiest rules
+      # (no-explicit-any, no-phantom-prisma-field) are tracked-but-non-blocking.
+      - name: Lint (warning budget ratchet)
+        run: npm run lint:budget:ci
 
-      - name: Type-check (src)
-        run: npm run build:strict || echo 'Type errors found (pre-existing)'
+      # #696: Prettier formatting check — fails CI if any file is not formatted
+      - name: Check formatting
+        run: npm run format
+
+      - name: Validate prisma imports (must use prismaRead or prismaWrite)
+        run: |
+          RESULT=$(grep -rn "import { prisma } from" --include='*.ts' src/ || true)
+          if [ -n "$RESULT" ]; then
+            echo "ERROR: Found deprecated 'prisma' imports. Use prismaRead or prismaWrite:"
+            echo "$RESULT"
+            exit 1
+          fi
+
+      # Type-error budget ratchet (#896) — fails CI when `tsc --noEmit`
+      # reports more errors than the checked-in budget, i.e. when a *new*
+      # type error is introduced. The large pre-existing backlog is paid
+      # down incrementally rather than blocking every PR; see
+      # scripts/typecheck-budget.ts.
+      - name: Type-check (src, budget 1374)
+        run: npm run typecheck:budget:ci
 
       - name: Type-check (scripts)
         run: npm run typecheck:scripts
 
+      # Orphaned router validation — fails CI if the number of routers in
+      # src/api/ that are neither mounted (directly or transitively) in
+      # router.ts nor allowlisted exceeds the budget. The budget equals the
+      # true orphan count (15) and is lowered as orphans are mounted or
+      # deleted (tracked in docs/orphaned-routes-tracking.md).
+      - name: Validate orphaned routers (budget 15)
+        run: npm run validate-routes:ci
+
+      # #903: Reject unpinned `:latest` image tags in compose manifests.
+      # All images must be pinned to an immutable tag so builds are reproducible
+      # and Dependabot can track upgrades.  This step fails the PR if any
+      # docker-compose*.yml file contains an `image: …:latest` reference.
+      - name: Reject unpinned :latest image tags in compose files
+        run: |
+          RESULT=$(grep -rn "image:.*:latest" --include='docker-compose*.yml' . || true)
+          if [ -n "$RESULT" ]; then
+            echo "ERROR: Unpinned ':latest' image tags found in compose files (#903)."
+            echo "Pin every image to an explicit, immutable tag (e.g. redis:7.2.4-alpine)."
+            echo ""
+            echo "$RESULT"
+            exit 1
+          fi
+          echo "OK: No unpinned :latest tags found in compose files."
+
   test:
     name: Test
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        # pgvector image: the search_engine migration (20260625000000) creates
+        # the "vector" extension for embeddings, which plain postgres lacks.
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: test
+          POSTGRES_PASSWORD: test
+          POSTGRES_DB: test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U test -d test"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
-      - uses: actions/setup-node@v7
+      - uses: actions/setup-node@v5
         with:
-          node-version: 20
+          node-version: 24
+          cache: npm
+
+      - name: Cache Prisma generate
+        uses: actions/cache@v5
+        with:
+          path: node_modules/.prisma
+          key: prisma-${{ hashFiles('prisma/schema.prisma') }}
+          restore-keys: prisma-
+
+      - name: Install dependencies
+        run: npm ci
+
+      # Verification-engine tests exercise SmtSolver.isSatisfiable, which
+      # shells out to a real SMT backend; ubuntu-latest runners don't ship z3.
+      - name: Install z3 solver
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq z3
+
+      # Test-suite coverage guard (#895) — fails CI if the number of test
+      # files vitest would collect drops below the tracked floor, or if
+      # `test:full` stops being a plain `vitest run` (i.e. a hardcoded file
+      # subset sneaks back in). See scripts/verify-test-coverage.ts.
+      - name: Verify no test files are silently omitted
+        run: npm run test:guard
+
+      # Tracked test-suite debt (#911): every suite excluded from the default
+      # run must have a documented record with a reason and re-enable criteria,
+      # and the total number of exclusions is capped. See
+      # docs/test-suite-debt-tracking.md.
+      - name: Verify tracked test-suite exclusions
+        run: npm run test:exclusions
+
+      - name: Run full test suite
+        run: npm run test:full
+        env:
+          DATABASE_URL: postgresql://test:test@localhost:5432/test
+          TESTNET_DATABASE_URL: postgresql://test:test@localhost:5432/test
+          STELLAR_NETWORK: testnet
+
+      # Issue #898: Run coverage with threshold enforcement.
+      # Vitest exits non-zero if any threshold configured in vitest.config.ts
+      # is not met, failing the CI job automatically.
+      - name: Run coverage (with threshold enforcement)
+        run: npm run test:coverage
+        env:
+          DATABASE_URL: postgresql://test:test@localhost:5432/test
+          TESTNET_DATABASE_URL: postgresql://test:test@localhost:5432/test
+          STELLAR_NETWORK: testnet
+          CACHE_URL: memory://
+
+      # Issue #898: Upload coverage artifacts so reports are inspectable in the
+      # GitHub Actions UI for each PR and push. Retained for 30 days.
+      - name: Upload coverage report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report
+          path: coverage/
+          retention-days: 30
+
+  # Issue #908: Validate Prometheus alert rule files with promtool.
+  # promtool ships inside the prom/prometheus Docker image; we install it
+  # directly from the GitHub release to avoid pulling the full image.
+  prometheus-lint:
+    name: Prometheus Rules Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Install promtool
+        run: |
+          PROM_VERSION="2.54.0"
+          curl -sL "https://github.com/prometheus/prometheus/releases/download/v${PROM_VERSION}/prometheus-${PROM_VERSION}.linux-amd64.tar.gz" \
+            | tar -xz --strip-components=1 -C /usr/local/bin \
+                "prometheus-${PROM_VERSION}.linux-amd64/promtool"
+          promtool --version
+
+      - name: Validate Prometheus alert rules
+        run: promtool check rules prometheus/alerts.yml
+
+  security:
+    name: Security
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
           cache: npm
 
       - name: Install dependencies
         run: npm ci
 
-      - name: Run tests
-        run: npm test
-        env:
-          DATABASE_URL: postgresql://test:test@localhost:5432/test
-          TESTNET_DATABASE_URL: postgresql://test:test@localhost:5432/test
-          STELLAR_NETWORK: testnet
+      # npm audit with tracked, expiring exceptions (#897) — fails the build
+      # on any high/critical finding not explicitly documented in
+      # .auditignore. Matches the Dockerfile builder stage's policy. See
+      # scripts/audit-check.js and docs/audit-exceptions-tracking.md.
+      - name: Run npm audit
+        run: npm run audit:ci
+
+      # CodeQL runs inside ci.yml's `security` job (not a dedicated workflow)
+      # so it matches the repository's code-scanning default-setup configuration
+      # (`ci.yml:security` + `javascript`). Analyzing via a different workflow
+      # makes the code-scanning check warn that configurations present on main
+      # were not found, so `languages` must stay exactly `javascript` (the
+      # JavaScript extractor covers TypeScript files too).
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v4
+        with:
+          languages: javascript
+          config-file: .github/codeql/codeql-config.yml
+
+      - name: Perform CodeQL Analysis
+        uses: github/codeql-action/analyze@v4

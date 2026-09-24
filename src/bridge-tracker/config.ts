@@ -1,9 +1,4 @@
-import {
-  Chain,
-  BridgeContractConfig,
-  ChainProviderConfig,
-  AlertConfig,
-} from './types';
+import { Chain, BridgeContractConfig, ChainProviderConfig, AlertConfig } from './types';
 
 export const BRIDGE_CONTRACTS: BridgeContractConfig[] = [
   // Wormhole

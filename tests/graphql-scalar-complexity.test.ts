@@ -188,10 +188,31 @@ vi.mock('../src/db', () => ({
   prismaRead: { webhookSubscription: { findMany: vi.fn().mockResolvedValue([]) } },
 }));
 
-vi.mock('../src/webhooks/ssrf-guard', () => ({
-  assertSafeUrl: vi.fn().mockResolvedValue(undefined),
-  SsrfBlockedError: class SsrfBlockedError extends Error {},
+// Authenticate as a developer-tier caller (webhooksRouter enforces an API key).
+vi.mock('../src/middleware/apiKeyAuth', () => ({
+  apiKeyAuth: (_req: any, _res: any, next: () => void) => {
+    _req.apiKey = { id: 'test-key', tier: 'developer' };
+    next();
+  },
+  requireApiKey: (_req: any, _res: any, next: () => void) => next(),
 }));
+
+vi.mock('../src/middleware/sensitiveReadLog', () => ({
+  sensitiveReadLog: () => (_req: any, _res: any, next: () => void) => next(),
+}));
+
+vi.mock('../src/webhooks/ssrf-guard', () => {
+  class SsrfBlockedError extends Error {}
+  return {
+    SsrfBlockedError,
+    assertSafeUrl: vi.fn(async (url: string) => {
+      if (url.startsWith('http://')) {
+        throw new SsrfBlockedError('HTTPS required');
+      }
+      return undefined;
+    }),
+  };
+});
 
 import { webhooksRouter } from '../src/api/webhooks';
 

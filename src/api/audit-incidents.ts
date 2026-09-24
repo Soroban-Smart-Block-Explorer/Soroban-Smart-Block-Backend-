@@ -12,6 +12,7 @@ import { Router, Request, Response } from 'express';
 import { z } from 'zod';
 import { prismaRead } from '../db';
 import { dispatchIncident, type IncidentTrigger } from '../lib/incident-dispatcher';
+import { asyncHandler } from '../middleware/asyncHandler';
 
 export const auditIncidentsRouter = Router();
 
@@ -25,127 +26,133 @@ const listSchema = z.object({
   since: z.string().optional(),
 });
 
-auditIncidentsRouter.get('/', async (req: Request, res: Response) => {
-  try {
-    const q = listSchema.parse(req.query);
+auditIncidentsRouter.get(
+  '/',
+  asyncHandler(async (req: Request, res: Response) => {
+    try {
+      const q = listSchema.parse(req.query);
 
-    const where: Record<string, unknown> = {
-      eventType: 'vulnerability_discovered',
-      details: {
-        path: ['action'],
-        equals: 'incident_dispatched',
-      },
-    };
-
-    if (q.trigger !== 'all') {
-      where.details = {
-        path: ['trigger'],
-        equals: q.trigger,
-      };
-    }
-
-    if (q.since) {
-      where.timestamp = { gte: new Date(q.since) };
-    }
-
-    const events = await prismaRead.auditEvent.findMany({
-      where,
-      orderBy: { timestamp: 'desc' },
-      take: q.limit,
-      select: {
-        id: true,
-        contractAddress: true,
-        certificateId: true,
-        timestamp: true,
-        details: true,
-      },
-    });
-
-    // Shape the raw AuditEvent details into a clean incident record
-    const incidents = events.map((e) => {
-      const d = e.details as Record<string, unknown>;
-      return {
-        id: e.id,
-        contractAddress: e.contractAddress,
-        certificateId: e.certificateId,
-        timestamp: e.timestamp,
-        trigger: d.trigger,
-        dedupKey: d.dedupKey,
-        overallScore: d.overallScore ?? null,
-        tvlUsd: d.tvlUsd ?? null,
-        findingId: d.findingId ?? null,
-        findingTitle: d.findingTitle ?? null,
-        pagerduty: d.pagerduty,
-        opsgenie: d.opsgenie,
-      };
-    });
-
-    // Aggregate stats
-    const triggered = incidents.filter((i) => {
-      const pd = i.pagerduty as Record<string, unknown>;
-      const og = i.opsgenie as Record<string, unknown>;
-      return pd?.sent || og?.sent;
-    }).length;
-
-    res.json({
-      total: incidents.length,
-      triggered,
-      skipped: incidents.length - triggered,
-      incidents,
-    });
-  } catch (e) {
-    if (e instanceof z.ZodError) return res.status(400).json({ error: e.errors });
-    res.status(500).json({ error: String(e) });
-  }
-});
-
-// ── GET /contracts/:address — incident history for a contract ─────────────────
-
-auditIncidentsRouter.get('/contracts/:address', async (req: Request, res: Response) => {
-  try {
-    const { address } = req.params;
-    const limit = Math.min(parseInt(req.query.limit as string) || 20, 100);
-
-    const events = await prismaRead.auditEvent.findMany({
-      where: {
-        contractAddress: address,
+      const where: Record<string, unknown> = {
         eventType: 'vulnerability_discovered',
         details: {
           path: ['action'],
           equals: 'incident_dispatched',
         },
-      },
-      orderBy: { timestamp: 'desc' },
-      take: limit,
-      select: {
-        id: true,
-        certificateId: true,
-        timestamp: true,
-        details: true,
-      },
-    });
-
-    const incidents = events.map((e) => {
-      const d = e.details as Record<string, unknown>;
-      return {
-        id: e.id,
-        certificateId: e.certificateId,
-        timestamp: e.timestamp,
-        trigger: d.trigger,
-        dedupKey: d.dedupKey,
-        overallScore: d.overallScore ?? null,
-        tvlUsd: d.tvlUsd ?? null,
-        findingTitle: d.findingTitle ?? null,
-        pagerdutyFired: !!(d.pagerduty as Record<string, unknown>)?.sent,
-        opsgenieFired: !!(d.opsgenie as Record<string, unknown>)?.sent,
       };
-    });
 
-    res.json({ contractAddress: address, count: incidents.length, incidents });
-  } catch (e) {
-    res.status(500).json({ error: String(e) });
-  }
-});
+      if (q.trigger !== 'all') {
+        where.details = {
+          path: ['trigger'],
+          equals: q.trigger,
+        };
+      }
+
+      if (q.since) {
+        where.timestamp = { gte: new Date(q.since) };
+      }
+
+      const events = await prismaRead.auditEvent.findMany({
+        where,
+        orderBy: { timestamp: 'desc' },
+        take: q.limit,
+        select: {
+          id: true,
+          contractAddress: true,
+          certificateId: true,
+          timestamp: true,
+          details: true,
+        },
+      });
+
+      // Shape the raw AuditEvent details into a clean incident record
+      const incidents = events.map((e) => {
+        const d = e.details as Record<string, unknown>;
+        return {
+          id: e.id,
+          contractAddress: e.contractAddress,
+          certificateId: e.certificateId,
+          timestamp: e.timestamp,
+          trigger: d.trigger,
+          dedupKey: d.dedupKey,
+          overallScore: d.overallScore ?? null,
+          tvlUsd: d.tvlUsd ?? null,
+          findingId: d.findingId ?? null,
+          findingTitle: d.findingTitle ?? null,
+          pagerduty: d.pagerduty,
+          opsgenie: d.opsgenie,
+        };
+      });
+
+      // Aggregate stats
+      const triggered = incidents.filter((i) => {
+        const pd = i.pagerduty as Record<string, unknown>;
+        const og = i.opsgenie as Record<string, unknown>;
+        return pd?.sent || og?.sent;
+      }).length;
+
+      res.json({
+        total: incidents.length,
+        triggered,
+        skipped: incidents.length - triggered,
+        incidents,
+      });
+    } catch (e) {
+      if (e instanceof z.ZodError) return res.status(400).json({ error: e.errors });
+      res.status(500).json({ error: String(e) });
+    }
+  }),
+);
+
+// ── GET /contracts/:address — incident history for a contract ─────────────────
+
+auditIncidentsRouter.get(
+  '/contracts/:address',
+  asyncHandler(async (req: Request, res: Response) => {
+    try {
+      const { address } = req.params;
+      const limit = Math.min(parseInt(req.query.limit as string) || 20, 100);
+
+      const events = await prismaRead.auditEvent.findMany({
+        where: {
+          contractAddress: address,
+          eventType: 'vulnerability_discovered',
+          details: {
+            path: ['action'],
+            equals: 'incident_dispatched',
+          },
+        },
+        orderBy: { timestamp: 'desc' },
+        take: limit,
+        select: {
+          id: true,
+          certificateId: true,
+          timestamp: true,
+          details: true,
+        },
+      });
+
+      const incidents = events.map((e) => {
+        const d = e.details as Record<string, unknown>;
+        return {
+          id: e.id,
+          certificateId: e.certificateId,
+          timestamp: e.timestamp,
+          trigger: d.trigger,
+          dedupKey: d.dedupKey,
+          overallScore: d.overallScore ?? null,
+          tvlUsd: d.tvlUsd ?? null,
+          findingTitle: d.findingTitle ?? null,
+          pagerdutyFired: !!(d.pagerduty as Record<string, unknown>)?.sent,
+          opsgenieFired: !!(d.opsgenie as Record<string, unknown>)?.sent,
+        };
+      });
+
+      res.json({ contractAddress: address, count: incidents.length, incidents });
+    } catch (e) {
+      res.status(500).json({ error: String(e) });
+    }
+  }),
+);
 
 // ── POST /test — fire a test incident ─────────────────────────────────────────
 
@@ -165,51 +172,54 @@ const testSchema = z.object({
   certHash: z.string().default('test-cert-hash-000000000000000000000000000000'),
 });
 
-auditIncidentsRouter.post('/test', async (req: Request, res: Response) => {
-  try {
-    const data = testSchema.parse(req.body);
+auditIncidentsRouter.post(
+  '/test',
+  asyncHandler(async (req: Request, res: Response) => {
+    try {
+      const data = testSchema.parse(req.body);
 
-    // Require admin key in production
-    const envKey = process.env.AUDIT_ADMIN_KEY;
-    if (envKey && data.adminKey !== envKey) {
-      return res.status(403).json({ error: 'Invalid admin key.' });
-    }
+      // Require admin key in production
+      const envKey = process.env.AUDIT_ADMIN_KEY;
+      if (envKey && data.adminKey !== envKey) {
+        return res.status(403).json({ error: 'Invalid admin key.' });
+      }
 
-    // Only allow in non-production or when TEST_INCIDENTS_ENABLED is set
-    const isProd = process.env.NODE_ENV === 'production';
-    const allowed = !isProd || process.env.TEST_INCIDENTS_ENABLED === 'true';
-    if (!allowed) {
-      return res.status(403).json({
-        error: 'Test incidents are disabled in production.',
-        hint: 'Set TEST_INCIDENTS_ENABLED=true to allow test incidents in production.',
+      // Only allow in non-production or when TEST_INCIDENTS_ENABLED is set
+      const isProd = process.env.NODE_ENV === 'production';
+      const allowed = !isProd || process.env.TEST_INCIDENTS_ENABLED === 'true';
+      if (!allowed) {
+        return res.status(403).json({
+          error: 'Test incidents are disabled in production.',
+          hint: 'Set TEST_INCIDENTS_ENABLED=true to allow test incidents in production.',
+        });
+      }
+
+      const result = await dispatchIncident({
+        trigger: data.trigger as IncidentTrigger,
+        contractAddress: data.contractAddress,
+        certId: data.certId,
+        certHash: data.certHash,
+        overallScore: data.overallScore,
+        tvlUsd: data.tvlUsd,
+        findingId: 'test-finding-id',
+        findingTitle: data.findingTitle,
+        findingSeverity: 'critical',
+        detail: `TEST INCIDENT — trigger: ${data.trigger}`,
       });
+
+      res.json({
+        message: 'Test incident dispatched.',
+        result,
+        note: result.alreadyOpen
+          ? 'Incident was deduplicated (already open within 6 hours). Pass a different contractAddress to bypass.'
+          : `Fired to ${[result.pagerduty.sent && 'PagerDuty', result.opsgenie.sent && 'Opsgenie'].filter(Boolean).join(' + ') || 'no configured platform'}.`,
+      });
+    } catch (e) {
+      if (e instanceof z.ZodError) return res.status(400).json({ error: e.errors });
+      res.status(500).json({ error: String(e) });
     }
-
-    const result = await dispatchIncident({
-      trigger: data.trigger as IncidentTrigger,
-      contractAddress: data.contractAddress,
-      certId: data.certId,
-      certHash: data.certHash,
-      overallScore: data.overallScore,
-      tvlUsd: data.tvlUsd,
-      findingId: 'test-finding-id',
-      findingTitle: data.findingTitle,
-      findingSeverity: 'critical',
-      detail: `TEST INCIDENT — trigger: ${data.trigger}`,
-    });
-
-    res.json({
-      message: 'Test incident dispatched.',
-      result,
-      note: result.alreadyOpen
-        ? 'Incident was deduplicated (already open within 6 hours). Pass a different contractAddress to bypass.'
-        : `Fired to ${[result.pagerduty.sent && 'PagerDuty', result.opsgenie.sent && 'Opsgenie'].filter(Boolean).join(' + ') || 'no configured platform'}.`,
-    });
-  } catch (e) {
-    if (e instanceof z.ZodError) return res.status(400).json({ error: e.errors });
-    res.status(500).json({ error: String(e) });
-  }
-});
+  }),
+);
 
 // ── GET /config — show current incident configuration ─────────────────────────
 

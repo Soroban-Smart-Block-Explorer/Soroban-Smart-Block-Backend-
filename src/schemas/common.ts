@@ -116,6 +116,11 @@ export const usdValueSchema = z.coerce
   .finite()
   .refine((n) => !Number.isNaN(n), 'USD value must be a valid number');
 
+// ── Safe record (prototype-pollution–proof) ───────────────────────────────────
+
+/** A plain object whose keys pass the safeKey check */
+export const safeRecord = z.record(safeKey, z.unknown());
+
 // ── Time range schemas ────────────────────────────────────────────────────────
 
 export const timeRangeSchema = z.object({
@@ -127,10 +132,74 @@ export const periodSchema = z.object({
   period: z.enum(['1h', '24h', '7d', '30d', '90d']).default('24h'),
 });
 
-// ── Safe record (prototype-pollution–proof) ───────────────────────────────────
+// ── Sorting & filtering schemas ───────────────────────────────────────────────
 
-/** A plain object whose keys pass the safeKey check */
-export const safeRecord = z.record(safeKey, z.unknown());
+/** Sort direction */
+export const sortOrderSchema = z.enum(['asc', 'desc']).default('desc');
+
+/** Common filter schemas for query parameters */
+export const filterSchema = z.object({
+  search: safeString.optional(),
+  status: z.string().optional(),
+  type: z.string().optional(),
+  tags: z.string().optional(), // comma-separated
+});
+
+/** Sorting parameters */
+export const sortSchema = z.object({
+  sortBy: z.string().max(50).optional(),
+  sortOrder: sortOrderSchema,
+});
+
+/** Combined query parameters for list endpoints */
+export const listQuerySchema = paginationSchema.merge(filterSchema).merge(sortSchema);
+
+/** Enhanced cursor-based list with filters */
+export const cursorListSchema = cursorPaginationSchema.merge(filterSchema).merge(sortSchema);
+
+// ── Common body schemas ───────────────────────────────────────────────────────
+
+/** Update metadata body: any safe key-value pairs */
+export const updateMetadataSchema = z.object({
+  metadata: safeRecord.optional(),
+  tags: z.array(safeLabel).optional(),
+  description: safeDescription.optional(),
+});
+
+/** Batch operation body */
+export const batchIdsSchema = z.object({
+  ids: z.array(z.string()).min(1).max(100),
+});
+
+/** Date range filter */
+export const dateRangeFilterSchema = z.object({
+  startDate: z.string().datetime({ offset: true }).optional(),
+  endDate: z.string().datetime({ offset: true }).optional(),
+});
+
+// ── Status & health schemas ───────────────────────────────────────────────────
+
+/** Status enum for transactions/events */
+export const statusEnum = z.enum(['pending', 'success', 'failed', 'reverted']);
+
+export const txStatusFilterSchema = z.object({
+  status: statusEnum.optional(),
+  minFeeCharged: usdValueSchema.optional(),
+  maxFeeCharged: usdValueSchema.optional(),
+});
+
+// ── Contract/address filter schemas ───────────────────────────────────────────
+
+export const contractFilterSchema = z.object({
+  contract: stellarAddress.optional(),
+  account: stellarAddress.optional(),
+  token: stellarAddress.optional(),
+});
+
+export const addressFilterSchema = z.object({
+  address: stellarAddress.optional(),
+  addresses: z.array(stellarAddress).max(50).optional(),
+});
 
 // ── Utility: parse query with 400 on failure ──────────────────────────────────
 

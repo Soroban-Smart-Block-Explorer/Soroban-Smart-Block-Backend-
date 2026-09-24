@@ -78,7 +78,7 @@ function fuzzyNameMatch(name: string, entryName?: string, aliases: string[] = []
   const aWords = a.split(/\s+/).filter(Boolean);
   const bWords = b.split(/\s+/).filter(Boolean);
   if (aWords.length > 1 && bWords.length > 1) {
-    const commonWords = aWords.filter(w => bWords.includes(w)).length;
+    const commonWords = aWords.filter((w) => bWords.includes(w)).length;
     const wordSimilarity = (commonWords / Math.max(aWords.length, bWords.length)) * 100;
     if (wordSimilarity > 70) return wordSimilarity * 0.8;
   }
@@ -177,7 +177,9 @@ export async function screenAddress(
           });
           continue;
         }
-      } catch { /* regex error */ }
+      } catch {
+        /* regex error */
+      }
     }
 
     if (entry.name) {
@@ -199,7 +201,7 @@ export async function screenAddress(
     }
   }
 
-  const maxScore = matches.length > 0 ? Math.max(...matches.map(m => m.matchScore)) : 0;
+  const maxScore = matches.length > 0 ? Math.max(...matches.map((m) => m.matchScore)) : 0;
   let status: string;
   if (maxScore >= 95) status = 'blocked';
   else if (maxScore >= 80) status = 'high_risk';
@@ -207,12 +209,16 @@ export async function screenAddress(
   else if (maxScore >= 30) status = 'low_risk';
   else status = 'clear';
 
-  const matchType = matches.length > 0
-    ? (matches.some(m => m.matchType === 'exact') ? 'exact'
-      : matches.some(m => m.matchType === 'fuzzy_address') ? 'fuzzy_address'
-        : matches.some(m => m.matchType === 'fuzzy_name') ? 'fuzzy_name'
-          : 'partial')
-    : 'no_match';
+  const matchType =
+    matches.length > 0
+      ? matches.some((m) => m.matchType === 'exact')
+        ? 'exact'
+        : matches.some((m) => m.matchType === 'fuzzy_address')
+          ? 'fuzzy_address'
+          : matches.some((m) => m.matchType === 'fuzzy_name')
+            ? 'fuzzy_name'
+            : 'partial'
+      : 'no_match';
 
   const durationMs = Date.now() - startTime;
 
@@ -244,7 +250,7 @@ export async function screenAddress(
       riskScore: maxScore,
       matches,
       matchCount: matches.length,
-    }).catch(err => logger.error('Webhook trigger failed', { error: (err as Error).message }));
+    }).catch((err) => logger.error('Webhook trigger failed', { error: (err as Error).message }));
   }
 
   return {
@@ -270,14 +276,14 @@ export async function batchScreen(
   const startTime = Date.now();
   const batch = addresses.slice(0, 1000);
   const results = await Promise.all(
-    batch.map(addr => screenAddress(addr, { ...options, method: 'batch' })),
+    batch.map((addr) => screenAddress(addr, { ...options, method: 'batch' })),
   );
 
   return {
     results,
     totalDurationMs: Date.now() - startTime,
     processedCount: batch.length,
-    matchCount: results.filter(r => r.status !== 'clear').length,
+    matchCount: results.filter((r) => r.status !== 'clear').length,
   };
 }
 
@@ -437,7 +443,7 @@ export async function reviewAlert(
     address: updated.address,
     action,
     reviewerId,
-  }).catch(err => logger.error('Webhook trigger failed', { error: (err as Error).message }));
+  }).catch((err) => logger.error('Webhook trigger failed', { error: (err as Error).message }));
 
   return updated;
 }
@@ -446,26 +452,20 @@ export async function getStats(): Promise<any> {
   const now = new Date();
   const last24h = new Date(now.getTime() - 86400000);
 
-  const [
-    totalScreenings,
-    totalMatches,
-    pendingReviews,
-    last24hScreenings,
-    avgDuration,
-    listCount,
-  ] = await Promise.all([
-    prismaRead.screeningResult.count(),
-    prismaRead.screeningResult.count({ where: { NOT: { status: 'clear' } } }),
-    prismaRead.screeningResult.count({ where: { reviewAction: null, NOT: { status: 'clear' } } }),
-    prismaRead.screeningResult.count({ where: { screenedAt: { gte: last24h } } }),
-    prismaRead.screeningResult.aggregate({ _avg: { durationMs: true } }),
-    prismaRead.sanctionsList.count({ where: { isActive: true } }),
-  ]);
+  const [totalScreenings, totalMatches, pendingReviews, last24hScreenings, avgDuration, listCount] =
+    await Promise.all([
+      prismaRead.screeningResult.count(),
+      prismaRead.screeningResult.count({ where: { NOT: { status: 'clear' } } }),
+      prismaRead.screeningResult.count({ where: { reviewAction: null, NOT: { status: 'clear' } } }),
+      prismaRead.screeningResult.count({ where: { screenedAt: { gte: last24h } } }),
+      prismaRead.screeningResult.aggregate({ _avg: { durationMs: true } }),
+      prismaRead.sanctionsList.count({ where: { isActive: true } }),
+    ]);
 
   return {
     totalScreenings,
     totalMatches,
-    matchRate: totalScreenings > 0 ? (totalMatches / totalScreenings * 100).toFixed(2) : 0,
+    matchRate: totalScreenings > 0 ? ((totalMatches / totalScreenings) * 100).toFixed(2) : 0,
     pendingReviews,
     screeningsLast24h: last24hScreenings,
     last24hMatches: await prismaRead.screeningResult.count({

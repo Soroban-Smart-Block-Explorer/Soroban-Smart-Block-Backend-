@@ -3,6 +3,7 @@
 import { prismaRead, prismaWrite } from '../db';
 import { processPrivacyDetection } from './privacy-detector';
 import { scoreAndUpdatePrivacyTransaction } from './privacy-scorer';
+import { logger } from '../logger';
 
 async function scanRecentTransactions(limit = 200): Promise<number> {
   const txs = await prismaRead.transaction.findMany({
@@ -54,7 +55,7 @@ async function scanRecentTransactions(limit = 200): Promise<number> {
         detected++;
       }
     } catch (err) {
-      console.error(`[privacy-detector] Error processing ${tx.hash}:`, err);
+      logger.error(`[privacy-detector] Error processing ${tx.hash}:`, err);
     }
   }
 
@@ -213,12 +214,10 @@ export async function runPrivacyDetection(): Promise<{
 }
 
 export function startPrivacyDetector(intervalMs = 5 * 60 * 1000): NodeJS.Timeout {
-  runPrivacyDetection().catch((err) =>
-    console.error('[privacy-detector] initial run failed:', err),
-  );
+  runPrivacyDetection().catch((err) => logger.error('[privacy-detector] initial run failed:', err));
   return setInterval(() => {
     runPrivacyDetection().catch((err) =>
-      console.error('[privacy-detector] scheduled run failed:', err),
+      logger.error('[privacy-detector] scheduled run failed:', err),
     );
   }, intervalMs);
 }

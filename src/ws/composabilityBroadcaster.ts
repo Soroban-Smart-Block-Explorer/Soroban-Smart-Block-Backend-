@@ -18,11 +18,7 @@ export function attachComposabilityWebSocket(httpServer: Server): WebSocketServe
     const url = new URL(req.url ?? '', 'http://localhost');
     const contractFilter = url.searchParams.get('contract');
     const minSeverityParam = url.searchParams.get('minSeverity') as
-      | 'low'
-      | 'medium'
-      | 'high'
-      | 'critical'
-      | null;
+      'low' | 'medium' | 'high' | 'critical' | null;
     const minSeverity: 'low' | 'medium' | 'high' | 'critical' = minSeverityParam ?? 'low';
 
     const client: ComposabilityClient = { ws, contractFilter, minSeverity };

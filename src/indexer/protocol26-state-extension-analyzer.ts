@@ -12,6 +12,7 @@
 
 import { xdr, scValToNative } from '@stellar/stellar-sdk';
 import { prismaRead as prisma } from '../db';
+import { logger } from '../logger';
 
 export interface StateExtensionParams {
   extend_to?: bigint;
@@ -327,7 +328,7 @@ export async function analyzeStateExtension(
 
     const durationMs = Date.now() - startMs;
     if (durationMs > 500) {
-      console.warn(
+      logger.warn(
         '[analyzeStateExtension] slow execution: %dms for %s',
         durationMs,
         contractAddress,
@@ -346,7 +347,7 @@ export async function analyzeStateExtension(
       historicalContext,
     };
   } catch (error) {
-    console.error(
+    logger.error(
       '[analyzeStateExtension] error after %dms for %s:',
       Date.now() - startMs,
       contractAddress,
@@ -396,7 +397,7 @@ export async function storeStateExtensionAnalysis(analysis: StateExtensionAnalys
       },
     });
   } catch (error) {
-    console.error('Failed to store state extension analysis:', error);
+    logger.error('Failed to store state extension analysis:', error);
   }
 }
 
@@ -481,7 +482,7 @@ export async function generateStateExtensionMetrics(
       equityScoreDistribution: distribution,
     };
   } catch (error) {
-    console.error('Failed to generate state extension metrics:', error);
+    logger.error('Failed to generate state extension metrics:', error);
     return {
       totalExtensionCalls: 0,
       contractsUsingExtension: 0,
@@ -576,7 +577,7 @@ export async function identifyProblematicContracts(
 
     return results.sort((a, b) => b.violationCount - a.violationCount);
   } catch (error) {
-    console.error('Failed to identify problematic contracts:', error);
+    logger.error('Failed to identify problematic contracts:', error);
     return [];
   }
 }

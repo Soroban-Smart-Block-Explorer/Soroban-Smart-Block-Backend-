@@ -5,6 +5,7 @@
 import axios from 'axios';
 import { createHmac } from 'crypto';
 import { PrismaClient } from '@prisma/client';
+import { logger } from '../logger';
 
 const db = new PrismaClient();
 
@@ -74,7 +75,7 @@ async function sendEmail(to: string, subject: string, body: string): Promise<voi
   if (!process.env.SMTP_HOST) return;
   // nodemailer is not a required dependency; install it and set SMTP_* vars to enable.
   // eslint-disable-next-line no-console
-  console.log(
+  logger.info(
     `[TIP] email skipped (nodemailer not installed): to=${to} subject=${subject} body=${body}`,
   );
 }

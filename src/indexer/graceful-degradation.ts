@@ -13,7 +13,7 @@ export enum LoadLevel {
   NORMAL = 'NORMAL',
   MODERATE = 'MODERATE',
   HIGH = 'HIGH',
-  CRITICAL = 'CRITICAL'
+  CRITICAL = 'CRITICAL',
 }
 
 export interface DegradationConfig {
@@ -44,7 +44,7 @@ const DEGRADATION_CONFIGS: Record<LoadLevel, DegradationConfig> = {
     sampleRate: 1.0,
     priorityFilter: 'all',
     databaseBatchSize: 10,
-    alertThreshold: false
+    alertThreshold: false,
   },
   [LoadLevel.MODERATE]: {
     level: LoadLevel.MODERATE,
@@ -54,7 +54,7 @@ const DEGRADATION_CONFIGS: Record<LoadLevel, DegradationConfig> = {
     sampleRate: 1.0, // process all events
     priorityFilter: 'all',
     databaseBatchSize: 20,
-    alertThreshold: false
+    alertThreshold: false,
   },
   [LoadLevel.HIGH]: {
     level: LoadLevel.HIGH,
@@ -64,7 +64,7 @@ const DEGRADATION_CONFIGS: Record<LoadLevel, DegradationConfig> = {
     sampleRate: 0.8, // process 80% of events
     priorityFilter: 'p0_p1', // only P0 and P1 contracts
     databaseBatchSize: 50,
-    alertThreshold: false
+    alertThreshold: false,
   },
   [LoadLevel.CRITICAL]: {
     level: LoadLevel.CRITICAL,
@@ -74,8 +74,8 @@ const DEGRADATION_CONFIGS: Record<LoadLevel, DegradationConfig> = {
     sampleRate: 0.2, // process 20% of events (only high value)
     priorityFilter: 'p0_only', // only watchlisted/P0 contracts
     databaseBatchSize: 100,
-    alertThreshold: true // alert on-call team
-  }
+    alertThreshold: true, // alert on-call team
+  },
 };
 
 export class GracefulDegradationService {
@@ -132,7 +132,7 @@ export class GracefulDegradationService {
     this.levelChangeTime = Date.now();
 
     logger.warn(`Degradation level changed: ${previousLevel} → ${level}`, {
-      config: this.currentConfig
+      config: this.currentConfig,
     });
 
     // Persist degradation event
@@ -183,7 +183,7 @@ export class GracefulDegradationService {
         VALUES ($1, $2, $3, NOW())
         ON CONFLICT (ledger_id) DO NOTHING
         `,
-        [ledgerId, reason, priority]
+        [ledgerId, reason, priority],
       );
     } catch (error) {
       logger.warn('Failed to record skipped ledger', { error, ledgerId });
@@ -193,7 +193,9 @@ export class GracefulDegradationService {
   /**
    * Get skipped ledgers for backfill
    */
-  async getSkippedLedgersForBackfill(limit: number = 1000): Promise<Array<{ ledgerId: number; priority: string }>> {
+  async getSkippedLedgersForBackfill(
+    limit: number = 1000,
+  ): Promise<Array<{ ledgerId: number; priority: string }>> {
     try {
       const result = await db.query(
         `
@@ -203,12 +205,12 @@ export class GracefulDegradationService {
         ORDER BY priority_level DESC, ledger_id ASC
         LIMIT $1
         `,
-        [limit]
+        [limit],
       );
 
       return result.rows.map((row: any) => ({
         ledgerId: row.ledger_id,
-        priority: row.priority_level
+        priority: row.priority_level,
       }));
     } catch (error) {
       logger.error('Failed to fetch skipped ledgers', { error });
@@ -227,7 +229,7 @@ export class GracefulDegradationService {
         SET backfilled_at = NOW()
         WHERE ledger_id = $1
         `,
-        [ledgerId]
+        [ledgerId],
       );
 
       this.skippedLedgers.delete(ledgerId);
@@ -251,8 +253,8 @@ export class GracefulDegradationService {
     }
 
     logger.info(`Backfilling ${skippedLedgers.length} skipped ledgers`, {
-      highPriority: skippedLedgers.filter(l => l.priority === 'P0').length,
-      mediumPriority: skippedLedgers.filter(l => l.priority === 'P1').length
+      highPriority: skippedLedgers.filter((l) => l.priority === 'P0').length,
+      mediumPriority: skippedLedgers.filter((l) => l.priority === 'P1').length,
     });
 
     // In production: queue these for reprocessing in NATS topic
@@ -282,10 +284,13 @@ export class GracefulDegradationService {
     await this.applyDegradation(level);
 
     // Schedule automatic reset
-    setTimeout(() => {
-      this.currentLevel = LoadLevel.NORMAL;
-      logger.info('Manual degradation override expired, reverting to NORMAL');
-    }, durationMinutes * 60 * 1000);
+    setTimeout(
+      () => {
+        this.currentLevel = LoadLevel.NORMAL;
+        logger.info('Manual degradation override expired, reverting to NORMAL');
+      },
+      durationMinutes * 60 * 1000,
+    );
   }
 
   /**
@@ -310,7 +315,7 @@ export class GracefulDegradationService {
         currentLevel: this.currentLevel,
         levelChangedAt: this.levelChangeTime,
         skippedEventsTotal: parseInt(stats.skipped_events || 0),
-        backfillQueueSize: parseInt(stats.backfill_queue || 0)
+        backfillQueueSize: parseInt(stats.backfill_queue || 0),
       };
     } catch (error) {
       logger.warn('Failed to get degradation stats', { error });
@@ -318,7 +323,7 @@ export class GracefulDegradationService {
         currentLevel: this.currentLevel,
         levelChangedAt: this.levelChangeTime,
         skippedEventsTotal: 0,
-        backfillQueueSize: 0
+        backfillQueueSize: 0,
       };
     }
   }
@@ -326,7 +331,10 @@ export class GracefulDegradationService {
   /**
    * Record degradation event to database
    */
-  private async recordDegradationEvent(newLevel: LoadLevel, previousLevel: LoadLevel): Promise<void> {
+  private async recordDegradationEvent(
+    newLevel: LoadLevel,
+    previousLevel: LoadLevel,
+  ): Promise<void> {
     try {
       await db.query(
         `
@@ -334,7 +342,7 @@ export class GracefulDegradationService {
           (load_level, triggered_at, reason, created_at)
         VALUES ($1, NOW(), $2, NOW())
         `,
-        [newLevel, `Transitioned from ${previousLevel}`]
+        [newLevel, `Transitioned from ${previousLevel}`],
       );
     } catch (error) {
       logger.warn('Failed to record degradation event', { error });

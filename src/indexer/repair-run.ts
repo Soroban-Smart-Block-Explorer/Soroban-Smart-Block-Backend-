@@ -16,6 +16,7 @@
  */
 
 import { runRepairSweep, startRepairLoop } from './repair';
+import { logger } from '../logger';
 
 const args = process.argv.slice(2);
 
@@ -29,27 +30,27 @@ const fromSeq = fromIdx !== -1 ? parseInt(args[fromIdx + 1], 10) : undefined;
 const toSeq = toIdx !== -1 ? parseInt(args[toIdx + 1], 10) : undefined;
 
 if (fromSeq !== undefined && isNaN(fromSeq)) {
-  console.error('[repair] --from requires a numeric ledger sequence');
+  logger.error('[repair] --from requires a numeric ledger sequence');
   process.exit(1);
 }
 
 if (toSeq !== undefined && isNaN(toSeq)) {
-  console.error('[repair] --to requires a numeric ledger sequence');
+  logger.error('[repair] --to requires a numeric ledger sequence');
   process.exit(1);
 }
 
 if (fromSeq !== undefined && toSeq !== undefined && fromSeq > toSeq) {
-  console.error('[repair] --from must be less than or equal to --to');
+  logger.error('[repair] --from must be less than or equal to --to');
   process.exit(1);
 }
 
 if (loop && (fromSeq !== undefined || toSeq !== undefined)) {
-  console.error('[repair] --loop cannot be combined with --from/--to');
+  logger.error('[repair] --loop cannot be combined with --from/--to');
   process.exit(1);
 }
 
 if (dryRun) {
-  console.log('[repair] DRY-RUN mode — no data will be written to the database');
+  logger.info('[repair] DRY-RUN mode — no data will be written to the database');
 }
 
 async function main() {
@@ -57,12 +58,12 @@ async function main() {
     await startRepairLoop();
   } else {
     const result = await runRepairSweep({ dryRun, fromSeq, toSeq });
-    console.log(`[repair] Done. Hard gaps: ${result.hardGaps}, soft gaps: ${result.softGaps}`);
+    logger.info(`[repair] Done. Hard gaps: ${result.hardGaps}, soft gaps: ${result.softGaps}`);
     process.exit(0);
   }
 }
 
 main().catch((err) => {
-  console.error('[repair] Fatal error:', err);
+  logger.error('[repair] Fatal error:', err);
   process.exit(1);
 });

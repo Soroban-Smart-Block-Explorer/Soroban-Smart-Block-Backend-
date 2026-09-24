@@ -147,12 +147,18 @@ export function encodeScVal(input: ScValInput): xdr.ScVal {
 export function decodeScVal(val: xdr.ScVal): unknown {
   const type = val.switch().name;
   switch (type) {
-    case 'scvVoid': return null;
-    case 'scvBool': return val.b();
-    case 'scvU32': return val.u32();
-    case 'scvI32': return val.i32();
-    case 'scvU64': return String(val.u64().toBigInt());
-    case 'scvI64': return String(val.i64().toBigInt());
+    case 'scvVoid':
+      return null;
+    case 'scvBool':
+      return val.b();
+    case 'scvU32':
+      return val.u32();
+    case 'scvI32':
+      return val.i32();
+    case 'scvU64':
+      return String(val.u64().toBigInt());
+    case 'scvI64':
+      return String(val.i64().toBigInt());
     case 'scvU128': {
       const u = val.u128();
       const hi = u.hi().toBigInt();
@@ -166,11 +172,16 @@ export function decodeScVal(val: xdr.ScVal): unknown {
       const raw = (hiSigned << 64n) | (lo & 0xffffffffffffffffn);
       return String(raw);
     }
-    case 'scvString': return val.str().toString('utf8');
-    case 'scvSymbol': return val.sym().toString();
-    case 'scvBytes': return '0x' + val.bytes().toString('hex');
-    case 'scvAddress': return Address.fromScVal(val).toString();
-    case 'scvVec': return (val.vec() ?? []).map(decodeScVal);
+    case 'scvString':
+      return val.str().toString('utf8');
+    case 'scvSymbol':
+      return val.sym().toString();
+    case 'scvBytes':
+      return '0x' + val.bytes().toString('hex');
+    case 'scvAddress':
+      return Address.fromScVal(val).toString();
+    case 'scvVec':
+      return (val.vec() ?? []).map(decodeScVal);
     case 'scvMap': {
       const result: Record<string, unknown> = {};
       for (const entry of val.map() ?? []) {

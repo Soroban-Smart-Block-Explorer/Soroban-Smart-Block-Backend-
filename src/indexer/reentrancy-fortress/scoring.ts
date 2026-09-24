@@ -67,7 +67,8 @@ export function scoreFinding(finding: ReentrancyFinding): number {
 export function computeRiskFactors(
   findings: ReentrancyFinding[],
   maxCallDepth: number,
-): ContractRiskFactors {    const severityCounts: Record<ReentrancySeverity, number> = {
+): ContractRiskFactors {
+  const severityCounts: Record<ReentrancySeverity, number> = {
     LOW: 0,
     MEDIUM: 0,
     HIGH: 0,
@@ -152,9 +153,7 @@ export function computeRiskScore(
 
   // Base score from severity-weighted findings
   let rawScore =
-    factors.criticalFindings * 25 +
-    factors.highFindings * 12 +
-    factors.mediumFindings * 6;
+    factors.criticalFindings * 25 + factors.highFindings * 12 + factors.mediumFindings * 6;
 
   // Confirmed attack bonus
   rawScore += factors.confirmedAttackCount * 15;

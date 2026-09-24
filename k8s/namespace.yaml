@@ -1,0 +1,9 @@
+---
+# Namespace for all Soroban Explorer services
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: soroban
+  labels:
+    app.kubernetes.io/name: soroban-explorer
+    app.kubernetes.io/managed-by: kubectl

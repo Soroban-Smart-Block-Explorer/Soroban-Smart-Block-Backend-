@@ -41,7 +41,16 @@ describe('Scenario 1: DAO-governed bug-fix patch (healthy upgrade)', () => {
   // A small, vote-gated, time-delayed patch touching no critical functions.
   const prev = index({ 'local.get': 40, 'i32.add': 20, call: 10 });
   const next = index({ 'local.get': 41, 'i32.add': 21, call: 10 });
-  const fnDiff = diffFunctions(fns([['transfer', 3], ['balance', 1]]), fns([['transfer', 3], ['balance', 1]]));
+  const fnDiff = diffFunctions(
+    fns([
+      ['transfer', 3],
+      ['balance', 1],
+    ]),
+    fns([
+      ['transfer', 3],
+      ['balance', 1],
+    ]),
+  );
   const opDiff = diffOpcodes(prev, next);
 
   it('classifies as a minor change', () => {
@@ -78,8 +87,14 @@ describe('Scenario 1: DAO-governed bug-fix patch (healthy upgrade)', () => {
 describe('Scenario 2: single-key admin takeover via set_admin (critical)', () => {
   // A single EOA swaps the admin function and pushes it at 02:00 UTC.
   const fnDiff = diffFunctions(
-    fns([['transfer', 3], ['set_admin', 1]]),
-    fns([['transfer', 3], ['set_admin', 2]]), // signature changed
+    fns([
+      ['transfer', 3],
+      ['set_admin', 1],
+    ]),
+    fns([
+      ['transfer', 3],
+      ['set_admin', 2],
+    ]), // signature changed
   );
   const opDiff = diffOpcodes(index({ call: 50 }), index({ call: 70, 'i64.store': 10 }));
 
@@ -114,10 +129,20 @@ describe('Scenario 3: same-day upgrade right after a vulnerability disclosure', 
   // Moderate code change, but the timing relative to a fresh advisory is the
   // signal — even with a reasonable multisig.
   const fnDiff = diffFunctions(
-    fns([['swap', 4], ['quote', 2]]),
-    fns([['swap', 4], ['quote', 2], ['repair', 1]]),
+    fns([
+      ['swap', 4],
+      ['quote', 2],
+    ]),
+    fns([
+      ['swap', 4],
+      ['quote', 2],
+      ['repair', 1],
+    ]),
   );
-  const opDiff = diffOpcodes(index({ call: 100, 'local.get': 80 }), index({ call: 130, 'local.get': 90 }));
+  const opDiff = diffOpcodes(
+    index({ call: 100, 'local.get': 80 }),
+    index({ call: 130, 'local.get': 90 }),
+  );
 
   it('classifies as moderate (new non-critical function, modest churn)', () => {
     expect(fnDiff.criticalChanges).toHaveLength(0);
@@ -130,7 +155,11 @@ describe('Scenario 3: same-day upgrade right after a vulnerability disclosure', 
       criticalFnChanges: [],
       governanceType: 'multisig',
       upgraderAccountAgeLedgers: 2_000_000,
-      recentVulnerability: { id: 'adv-9', title: 'Reentrancy in swap', publishedAt: new Date('2026-04-01T09:00:00Z') },
+      recentVulnerability: {
+        id: 'adv-9',
+        title: 'Reentrancy in swap',
+        publishedAt: new Date('2026-04-01T09:00:00Z'),
+      },
     });
     expect(res.flags).toContain('post_vuln_upgrade');
     expect(res.isSuspicious).toBe(true);
@@ -144,8 +173,15 @@ describe('Scenario 4: brand-new account performs a full contract rewrite', () =>
   const next = index({ 'f64.mul': 120, 'memory.grow': 60, call: 20 });
   const opDiff = diffOpcodes(prev, next);
   const fnDiff = diffFunctions(
-    fns([['deposit', 2], ['withdraw', 2], ['legacy_claim', 1]]),
-    fns([['deposit', 2], ['withdraw', 2]]), // legacy_claim removed
+    fns([
+      ['deposit', 2],
+      ['withdraw', 2],
+      ['legacy_claim', 1],
+    ]),
+    fns([
+      ['deposit', 2],
+      ['withdraw', 2],
+    ]), // legacy_claim removed
   );
 
   it('classifies as major (large rewrite, public function removed)', () => {
@@ -170,10 +206,20 @@ describe('Scenario 4: brand-new account performs a full contract rewrite', () =>
 
 describe('Scenario 5: well-governed multisig timelocked upgrade adding a feature', () => {
   // Moderate change behind a 3-of-5 multisig with a 1-day timelock, no DAO.
-  const opDiff = diffOpcodes(index({ call: 200, 'local.get': 150 }), index({ call: 230, 'local.get': 150, 'i32.eqz': 5 }));
+  const opDiff = diffOpcodes(
+    index({ call: 200, 'local.get': 150 }),
+    index({ call: 230, 'local.get': 150, 'i32.eqz': 5 }),
+  );
   const fnDiff = diffFunctions(
-    fns([['stake', 2], ['unstake', 1]]),
-    fns([['stake', 2], ['unstake', 1], ['claim_rewards', 1]]),
+    fns([
+      ['stake', 2],
+      ['unstake', 1],
+    ]),
+    fns([
+      ['stake', 2],
+      ['unstake', 1],
+      ['claim_rewards', 1],
+    ]),
   );
 
   it('classifies as moderate', () => {
@@ -203,7 +249,13 @@ describe('Scenario 5: well-governed multisig timelocked upgrade adding a feature
 describe('Scenario 6: initial deployment is summarised, not diffed', () => {
   // previous == null path: churn is measured against an empty baseline.
   const opDiff = diffOpcodes(null, index({ call: 10, 'local.get': 30 }));
-  const fnDiff = diffFunctions(null, fns([['initialize', 1], ['transfer', 3]]));
+  const fnDiff = diffFunctions(
+    null,
+    fns([
+      ['initialize', 1],
+      ['transfer', 3],
+    ]),
+  );
 
   it('treats every opcode/function as added', () => {
     expect(opDiff.previousTotal).toBe(0);
@@ -223,13 +275,23 @@ describe('Scenario 6: initial deployment is summarised, not diffed', () => {
 
 describe('Decentralisation score methodology bounds', () => {
   it('clamps to 0..100 and orders postures correctly', () => {
-    const single = computeDecentralizationScore(analyzeGovernance({ signerCount: 1, threshold: 1 }));
-    const multisig = computeDecentralizationScore(analyzeGovernance({ signerCount: 5, threshold: 3 }));
+    const single = computeDecentralizationScore(
+      analyzeGovernance({ signerCount: 1, threshold: 1 }),
+    );
+    const multisig = computeDecentralizationScore(
+      analyzeGovernance({ signerCount: 5, threshold: 3 }),
+    );
     const timelocked = computeDecentralizationScore(
       analyzeGovernance({ signerCount: 5, threshold: 3, timelockSeconds: 3 * 24 * 3600 }),
     );
     const dao = computeDecentralizationScore(
-      analyzeGovernance({ signerCount: 9, threshold: 6, timelockSeconds: 7 * 24 * 3600, daoProposalId: 'p', daoVotes: 300 }),
+      analyzeGovernance({
+        signerCount: 9,
+        threshold: 6,
+        timelockSeconds: 7 * 24 * 3600,
+        daoProposalId: 'p',
+        daoVotes: 300,
+      }),
     );
 
     for (const s of [single, multisig, timelocked, dao]) {

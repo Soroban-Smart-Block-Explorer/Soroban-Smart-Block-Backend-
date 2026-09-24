@@ -79,7 +79,9 @@ describe('encodeScVal', () => {
   });
 
   it('throws on invalid address prefix', () => {
-    expect(() => encodeScVal({ type: 'address', value: 'INVALID123' })).toThrow(ScValValidationError);
+    expect(() => encodeScVal({ type: 'address', value: 'INVALID123' })).toThrow(
+      ScValValidationError,
+    );
   });
 
   it('encodes bytes from hex', () => {
@@ -93,7 +95,13 @@ describe('encodeScVal', () => {
   });
 
   it('encodes vec', () => {
-    const val = encodeScVal({ type: 'vec', items: [{ type: 'u32', value: 1 }, { type: 'u32', value: 2 }] });
+    const val = encodeScVal({
+      type: 'vec',
+      items: [
+        { type: 'u32', value: 1 },
+        { type: 'u32', value: 2 },
+      ],
+    });
     expect(val.switch().name).toBe('scvVec');
     expect(val.vec()?.length).toBe(2);
   });

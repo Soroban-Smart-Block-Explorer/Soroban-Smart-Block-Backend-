@@ -43,9 +43,7 @@ const ADAPTERS: RampProviderAdapter[] = [
   new StripeRampAdapter(),
 ];
 
-const ADAPTER_MAP = new Map<ProviderName, RampProviderAdapter>(
-  ADAPTERS.map((a) => [a.name, a]),
-);
+const ADAPTER_MAP = new Map<ProviderName, RampProviderAdapter>(ADAPTERS.map((a) => [a.name, a]));
 
 // ── Quote aggregation ─────────────────────────────────────────────────────────
 
@@ -81,9 +79,7 @@ export async function aggregateQuotes(
   // Sort: for buy, lowest effectiveRate = cheapest per crypto unit
   //       for sell, highest exchangeRate = best payout
   const sorted = [...quotes].sort((a, b) =>
-    direction === 'buy'
-      ? a.effectiveRate - b.effectiveRate
-      : b.exchangeRate - a.exchangeRate,
+    direction === 'buy' ? a.effectiveRate - b.effectiveRate : b.exchangeRate - a.exchangeRate,
   );
 
   return {
@@ -180,9 +176,7 @@ export async function listProviderAvailability(
   );
 
   return results.map((r, i) =>
-    r.status === 'fulfilled'
-      ? r.value
-      : { provider: ADAPTERS[i].name, available: false },
+    r.status === 'fulfilled' ? r.value : { provider: ADAPTERS[i].name, available: false },
   );
 }
 

@@ -59,9 +59,9 @@ export class GraphAnalyticsPipeline {
       // Capture graph metrics snapshot
       await this.captureMetricsSnapshot();
 
-      logger.info('Daily analytics pipeline completed', { 
+      logger.info('Daily analytics pipeline completed', {
         totalJobs: results.length,
-        successful: results.filter(r => r.status === 'success').length 
+        successful: results.filter((r) => r.status === 'success').length,
       });
 
       return results;
@@ -294,7 +294,7 @@ export class GraphAnalyticsPipeline {
 
       // Calculate additional metrics
       const avgDegree = stats.edgeCount > 0 ? stats.nodeCount / stats.edgeCount : 0;
-      
+
       // Get max degree
       const maxDegreeQuery = `
         MATCH (n)

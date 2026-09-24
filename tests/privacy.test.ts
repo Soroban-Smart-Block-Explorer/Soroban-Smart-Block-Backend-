@@ -119,7 +119,7 @@ const PRIVACY_TX_FIXTURE = {
   privacyScore: 85.5,
   riskScore: 12.3,
   totalValue: '10000',
-  usdValue: 10000.50,
+  usdValue: 10000.5,
   assetType: 'USDC',
   contractAddresses: ['CABCDEF1234567890'],
   participants: ['GABCDEF1234567890', 'G1234567890ABCDEF'],
@@ -177,7 +177,8 @@ describe('GET /api/v1/privacy/overview', () => {
     });
     (prismaRead.privacyAnalytics.findFirst as ReturnType<typeof vi.fn>).mockResolvedValue(null);
     (prismaRead.privacyTransaction.findMany as ReturnType<typeof vi.fn>).mockResolvedValue([
-      PRIVACY_TX_FIXTURE, PRIVACY_TX_2,
+      PRIVACY_TX_FIXTURE,
+      PRIVACY_TX_2,
     ]);
     (prismaRead.privacyTransaction.aggregate as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
       _avg: { privacyScore: 65.25, riskScore: 38.65, anonymitySetSize: 325 },
@@ -199,7 +200,8 @@ describe('GET /api/v1/privacy/overview', () => {
 describe('GET /api/v1/privacy/protocols', () => {
   it('returns all supported privacy protocols', async () => {
     (prismaRead.privacyTransaction.findMany as ReturnType<typeof vi.fn>).mockResolvedValue([
-      PRIVACY_TX_FIXTURE, PRIVACY_TX_2,
+      PRIVACY_TX_FIXTURE,
+      PRIVACY_TX_2,
     ]);
 
     const res = await fetch(`${baseUrl}/api/v1/privacy/protocols`);
@@ -220,7 +222,9 @@ describe('GET /api/v1/privacy/protocols', () => {
 describe('GET /api/v1/privacy/protocols/:protocol', () => {
   it('returns analytics for a specific protocol', async () => {
     (prismaRead.privacyProtocolDetail.findMany as ReturnType<typeof vi.fn>).mockResolvedValue([]);
-    (prismaRead.privacyTransaction.findMany as ReturnType<typeof vi.fn>).mockResolvedValue([PRIVACY_TX_FIXTURE]);
+    (prismaRead.privacyTransaction.findMany as ReturnType<typeof vi.fn>).mockResolvedValue([
+      PRIVACY_TX_FIXTURE,
+    ]);
     (prismaRead.privacyTransaction.count as ReturnType<typeof vi.fn>).mockResolvedValue(1);
     (prismaRead.privacyTransaction.aggregate as ReturnType<typeof vi.fn>).mockResolvedValue({
       _avg: { privacyScore: 85.5, riskScore: 12.3, anonymitySetSize: 150 },
@@ -244,7 +248,9 @@ describe('GET /api/v1/privacy/protocols/:protocol', () => {
 
 describe('GET /api/v1/privacy/transactions', () => {
   it('returns paginated privacy transactions', async () => {
-    (prismaRead.privacyTransaction.findMany as ReturnType<typeof vi.fn>).mockResolvedValue([PRIVACY_TX_FIXTURE]);
+    (prismaRead.privacyTransaction.findMany as ReturnType<typeof vi.fn>).mockResolvedValue([
+      PRIVACY_TX_FIXTURE,
+    ]);
     (prismaRead.privacyTransaction.count as ReturnType<typeof vi.fn>).mockResolvedValue(1);
 
     const res = await fetch(`${baseUrl}/api/v1/privacy/transactions`);
@@ -257,7 +263,9 @@ describe('GET /api/v1/privacy/transactions', () => {
   });
 
   it('filters by protocol', async () => {
-    (prismaRead.privacyTransaction.findMany as ReturnType<typeof vi.fn>).mockResolvedValue([PRIVACY_TX_FIXTURE]);
+    (prismaRead.privacyTransaction.findMany as ReturnType<typeof vi.fn>).mockResolvedValue([
+      PRIVACY_TX_FIXTURE,
+    ]);
     (prismaRead.privacyTransaction.count as ReturnType<typeof vi.fn>).mockResolvedValue(1);
 
     const res = await fetch(`${baseUrl}/api/v1/privacy/transactions?protocol=ZK_SNARK`);
@@ -267,7 +275,9 @@ describe('GET /api/v1/privacy/transactions', () => {
   });
 
   it('filters by address', async () => {
-    (prismaRead.privacyTransaction.findMany as ReturnType<typeof vi.fn>).mockResolvedValue([PRIVACY_TX_FIXTURE]);
+    (prismaRead.privacyTransaction.findMany as ReturnType<typeof vi.fn>).mockResolvedValue([
+      PRIVACY_TX_FIXTURE,
+    ]);
     (prismaRead.privacyTransaction.count as ReturnType<typeof vi.fn>).mockResolvedValue(1);
 
     const res = await fetch(`${baseUrl}/api/v1/privacy/transactions?address=GABCDEF1234567890`);
@@ -278,7 +288,9 @@ describe('GET /api/v1/privacy/transactions', () => {
     (prismaRead.privacyTransaction.findMany as ReturnType<typeof vi.fn>).mockResolvedValue([]);
     (prismaRead.privacyTransaction.count as ReturnType<typeof vi.fn>).mockResolvedValue(0);
 
-    const res = await fetch(`${baseUrl}/api/v1/privacy/transactions?fromDate=2024-01-01&toDate=2024-12-31`);
+    const res = await fetch(
+      `${baseUrl}/api/v1/privacy/transactions?fromDate=2024-01-01&toDate=2024-12-31`,
+    );
     expect(res.status).toBe(200);
   });
 
@@ -292,13 +304,17 @@ describe('GET /api/v1/privacy/transactions', () => {
 
 describe('GET /api/v1/privacy/transactions/:txHash', () => {
   it('returns detailed privacy analysis for known tx', async () => {
-    (prismaRead.privacyTransaction.findUnique as ReturnType<typeof vi.fn>).mockResolvedValue(PRIVACY_TX_FIXTURE);
+    (prismaRead.privacyTransaction.findUnique as ReturnType<typeof vi.fn>).mockResolvedValue(
+      PRIVACY_TX_FIXTURE,
+    );
     (prismaRead.transaction.findUnique as ReturnType<typeof vi.fn>).mockResolvedValue({
       hash: 'abc123priv',
       sourceAccount: 'GABCDEF1234567890',
     });
     (prismaRead.deAnonymizationFinding.findMany as ReturnType<typeof vi.fn>).mockResolvedValue([]);
-    (prismaRead.privacyComplianceReport.findFirst as ReturnType<typeof vi.fn>).mockResolvedValue(null);
+    (prismaRead.privacyComplianceReport.findFirst as ReturnType<typeof vi.fn>).mockResolvedValue(
+      null,
+    );
 
     const res = await fetch(`${baseUrl}/api/v1/privacy/transactions/abc123priv`);
     const body = await res.json();
@@ -342,7 +358,8 @@ describe('GET /api/v1/privacy/history', () => {
 describe('GET /api/v1/privacy/leaderboard', () => {
   it('returns top privacy-using contracts', async () => {
     (prismaRead.privacyTransaction.findMany as ReturnType<typeof vi.fn>).mockResolvedValue([
-      PRIVACY_TX_FIXTURE, PRIVACY_TX_2,
+      PRIVACY_TX_FIXTURE,
+      PRIVACY_TX_2,
     ]);
 
     const res = await fetch(`${baseUrl}/api/v1/privacy/leaderboard`);
@@ -359,10 +376,20 @@ describe('GET /api/v1/privacy/leaderboard', () => {
 describe('GET /api/v1/privacy/anonymity-sets', () => {
   it('returns current anonymity set sizes', async () => {
     (prismaRead.anonymitySetSnapshot.findMany as ReturnType<typeof vi.fn>).mockResolvedValue([
-      { id: '1', protocol: 'SHIELDED_TRANSFER', setSize: 150, effectiveSetSize: 120, timestamp: new Date() },
+      {
+        id: '1',
+        protocol: 'SHIELDED_TRANSFER',
+        setSize: 150,
+        effectiveSetSize: 120,
+        timestamp: new Date(),
+      },
     ]);
     (prismaRead.privacyTransaction.groupBy as ReturnType<typeof vi.fn>).mockResolvedValue([
-      { protocols: ['SHIELDED_TRANSFER'], _max: { anonymitySetSize: 150 }, _avg: { anonymitySetSize: 75 } },
+      {
+        protocols: ['SHIELDED_TRANSFER'],
+        _max: { anonymitySetSize: 150 },
+        _avg: { anonymitySetSize: 75 },
+      },
     ]);
 
     const res = await fetch(`${baseUrl}/api/v1/privacy/anonymity-sets`);
@@ -378,7 +405,9 @@ describe('GET /api/v1/privacy/anonymity-sets', () => {
 
 describe('GET /api/v1/privacy/scores/transactions', () => {
   it('returns transactions ranked by privacy score', async () => {
-    (prismaRead.privacyTransaction.findMany as ReturnType<typeof vi.fn>).mockResolvedValue([PRIVACY_TX_FIXTURE]);
+    (prismaRead.privacyTransaction.findMany as ReturnType<typeof vi.fn>).mockResolvedValue([
+      PRIVACY_TX_FIXTURE,
+    ]);
     (prismaRead.privacyTransaction.count as ReturnType<typeof vi.fn>).mockResolvedValue(1);
 
     const res = await fetch(`${baseUrl}/api/v1/privacy/scores/transactions`);
@@ -390,7 +419,9 @@ describe('GET /api/v1/privacy/scores/transactions', () => {
   });
 
   it('supports sorting by risk score', async () => {
-    (prismaRead.privacyTransaction.findMany as ReturnType<typeof vi.fn>).mockResolvedValue([PRIVACY_TX_2]);
+    (prismaRead.privacyTransaction.findMany as ReturnType<typeof vi.fn>).mockResolvedValue([
+      PRIVACY_TX_2,
+    ]);
     (prismaRead.privacyTransaction.count as ReturnType<typeof vi.fn>).mockResolvedValue(1);
 
     const res = await fetch(`${baseUrl}/api/v1/privacy/scores/transactions?order=risk`);
@@ -404,7 +435,9 @@ describe('GET /api/v1/privacy/scores/transactions', () => {
 
 describe('GET /api/v1/privacy/compliance/:address', () => {
   it('returns compliance report for address', async () => {
-    (prismaRead.privacyComplianceReport.findUnique as ReturnType<typeof vi.fn>).mockResolvedValue(COMPLIANCE_FIXTURE);
+    (prismaRead.privacyComplianceReport.findUnique as ReturnType<typeof vi.fn>).mockResolvedValue(
+      COMPLIANCE_FIXTURE,
+    );
 
     const res = await fetch(`${baseUrl}/api/v1/privacy/compliance/GABCDEF1234567890`);
     const body = await res.json();
@@ -415,7 +448,9 @@ describe('GET /api/v1/privacy/compliance/:address', () => {
   });
 
   it('generates new report when none exists', async () => {
-    (prismaRead.privacyComplianceReport.findUnique as ReturnType<typeof vi.fn>).mockResolvedValue(null);
+    (prismaRead.privacyComplianceReport.findUnique as ReturnType<typeof vi.fn>).mockResolvedValue(
+      null,
+    );
     (prismaRead.privacyTransaction.findMany as ReturnType<typeof vi.fn>).mockResolvedValue([]);
     (prismaWrite.privacyComplianceReport.create as ReturnType<typeof vi.fn>).mockResolvedValue({
       ...COMPLIANCE_FIXTURE,
@@ -451,7 +486,9 @@ describe('GET /api/v1/privacy/compliance/flagged', () => {
 
 describe('GET /api/v1/privacy/de-anonymization/findings', () => {
   it('returns de-anonymization findings', async () => {
-    (prismaRead.deAnonymizationFinding.findMany as ReturnType<typeof vi.fn>).mockResolvedValue([FINDING_FIXTURE]);
+    (prismaRead.deAnonymizationFinding.findMany as ReturnType<typeof vi.fn>).mockResolvedValue([
+      FINDING_FIXTURE,
+    ]);
     (prismaRead.deAnonymizationFinding.count as ReturnType<typeof vi.fn>).mockResolvedValue(1);
 
     const res = await fetch(`${baseUrl}/api/v1/privacy/de-anonymization/findings`);
@@ -463,10 +500,14 @@ describe('GET /api/v1/privacy/de-anonymization/findings', () => {
   });
 
   it('filters by technique', async () => {
-    (prismaRead.deAnonymizationFinding.findMany as ReturnType<typeof vi.fn>).mockResolvedValue([FINDING_FIXTURE]);
+    (prismaRead.deAnonymizationFinding.findMany as ReturnType<typeof vi.fn>).mockResolvedValue([
+      FINDING_FIXTURE,
+    ]);
     (prismaRead.deAnonymizationFinding.count as ReturnType<typeof vi.fn>).mockResolvedValue(1);
 
-    const res = await fetch(`${baseUrl}/api/v1/privacy/de-anonymization/findings?technique=common_input_ownership`);
+    const res = await fetch(
+      `${baseUrl}/api/v1/privacy/de-anonymization/findings?technique=common_input_ownership`,
+    );
     expect(res.status).toBe(200);
   });
 });
@@ -476,8 +517,24 @@ describe('GET /api/v1/privacy/de-anonymization/findings', () => {
 describe('Should-Have Endpoints', () => {
   beforeEach(() => {
     (prismaRead.transaction.findMany as ReturnType<typeof vi.fn>).mockResolvedValue([
-      { hash: 'tx1', sourceAccount: 'GADDR1', contractAddress: null, ledgerSequence: 100, ledgerCloseTime: new Date(), functionName: 'transfer', status: 'success' },
-      { hash: 'tx2', sourceAccount: 'GADDR2', contractAddress: null, ledgerSequence: 101, ledgerCloseTime: new Date(), functionName: 'swap', status: 'success' },
+      {
+        hash: 'tx1',
+        sourceAccount: 'GADDR1',
+        contractAddress: null,
+        ledgerSequence: 100,
+        ledgerCloseTime: new Date(),
+        functionName: 'transfer',
+        status: 'success',
+      },
+      {
+        hash: 'tx2',
+        sourceAccount: 'GADDR2',
+        contractAddress: null,
+        ledgerSequence: 101,
+        ledgerCloseTime: new Date(),
+        functionName: 'swap',
+        status: 'success',
+      },
     ]);
     (prismaRead.privacyTransaction.findMany as ReturnType<typeof vi.fn>).mockResolvedValue([]);
     (prismaRead.privacyTransaction.findUnique as ReturnType<typeof vi.fn>).mockResolvedValue(null);
@@ -503,7 +560,9 @@ describe('Should-Have Endpoints', () => {
   });
 
   it('GET /privacy/de-anonymization/taint/:address', async () => {
-    const res = await fetch(`${baseUrl}/api/v1/privacy/de-anonymization/taint/GABCDEF1234567890?depth=3`);
+    const res = await fetch(
+      `${baseUrl}/api/v1/privacy/de-anonymization/taint/GABCDEF1234567890?depth=3`,
+    );
     expect(res.status).toBe(200);
   });
 
@@ -526,8 +585,12 @@ describe('Should-Have Endpoints', () => {
 
 describe('POST /api/v1/privacy/compliance/flag', () => {
   it('flags an address for compliance', async () => {
-    (prismaRead.privacyComplianceReport.findUnique as ReturnType<typeof vi.fn>).mockResolvedValue(null);
-    (prismaWrite.privacyComplianceReport.create as ReturnType<typeof vi.fn>).mockResolvedValue(COMPLIANCE_FIXTURE);
+    (prismaRead.privacyComplianceReport.findUnique as ReturnType<typeof vi.fn>).mockResolvedValue(
+      null,
+    );
+    (prismaWrite.privacyComplianceReport.create as ReturnType<typeof vi.fn>).mockResolvedValue(
+      COMPLIANCE_FIXTURE,
+    );
 
     const res = await fetch(`${baseUrl}/api/v1/privacy/compliance/flag`, {
       method: 'POST',
@@ -573,9 +636,13 @@ describe('POST /api/v1/privacy/compliance/unflag/:address', () => {
 
 describe('GET /api/v1/privacy/compliance/report/:address/export', () => {
   it('exports compliance report as JSON', async () => {
-    (prismaRead.privacyComplianceReport.findUnique as ReturnType<typeof vi.fn>).mockResolvedValue(COMPLIANCE_FIXTURE);
+    (prismaRead.privacyComplianceReport.findUnique as ReturnType<typeof vi.fn>).mockResolvedValue(
+      COMPLIANCE_FIXTURE,
+    );
 
-    const res = await fetch(`${baseUrl}/api/v1/privacy/compliance/report/GABCDEF1234567890/export?format=json`);
+    const res = await fetch(
+      `${baseUrl}/api/v1/privacy/compliance/report/GABCDEF1234567890/export?format=json`,
+    );
     const body = await res.json();
 
     expect(res.status).toBe(200);
@@ -583,9 +650,13 @@ describe('GET /api/v1/privacy/compliance/report/:address/export', () => {
   });
 
   it('exports compliance report as text', async () => {
-    (prismaRead.privacyComplianceReport.findUnique as ReturnType<typeof vi.fn>).mockResolvedValue(COMPLIANCE_FIXTURE);
+    (prismaRead.privacyComplianceReport.findUnique as ReturnType<typeof vi.fn>).mockResolvedValue(
+      COMPLIANCE_FIXTURE,
+    );
 
-    const res = await fetch(`${baseUrl}/api/v1/privacy/compliance/report/GABCDEF1234567890/export?format=txt`);
+    const res = await fetch(
+      `${baseUrl}/api/v1/privacy/compliance/report/GABCDEF1234567890/export?format=txt`,
+    );
 
     expect(res.status).toBe(200);
     const text = await res.text();
@@ -593,7 +664,9 @@ describe('GET /api/v1/privacy/compliance/report/:address/export', () => {
   });
 
   it('returns 404 for unknown address', async () => {
-    (prismaRead.privacyComplianceReport.findUnique as ReturnType<typeof vi.fn>).mockResolvedValue(null);
+    (prismaRead.privacyComplianceReport.findUnique as ReturnType<typeof vi.fn>).mockResolvedValue(
+      null,
+    );
 
     const res = await fetch(`${baseUrl}/api/v1/privacy/compliance/report/GUNKNOWN/export`);
     expect(res.status).toBe(404);
@@ -605,7 +678,15 @@ describe('GET /api/v1/privacy/compliance/report/:address/export', () => {
 describe('POST /api/v1/privacy/research/graph', () => {
   beforeEach(() => {
     (prismaRead.transaction.findMany as ReturnType<typeof vi.fn>).mockResolvedValue([
-      { hash: 'tx1', sourceAccount: 'GABCDEF1234567890', contractAddress: 'CABC123', ledgerSequence: 100, ledgerCloseTime: new Date(), functionName: 'transfer', status: 'success' },
+      {
+        hash: 'tx1',
+        sourceAccount: 'GABCDEF1234567890',
+        contractAddress: 'CABC123',
+        ledgerSequence: 100,
+        ledgerCloseTime: new Date(),
+        functionName: 'transfer',
+        status: 'success',
+      },
     ]);
     (prismaRead.privacyTransaction.findMany as ReturnType<typeof vi.fn>).mockResolvedValue([]);
   });
@@ -661,8 +742,24 @@ describe('POST /api/v1/privacy/research/graph', () => {
 describe('POST /api/v1/privacy/research/analyze-cluster', () => {
   beforeEach(() => {
     (prismaRead.transaction.findMany as ReturnType<typeof vi.fn>).mockResolvedValue([
-      { hash: 'tx1', sourceAccount: 'GADDR1', contractAddress: 'CABC1', ledgerSequence: 100, ledgerCloseTime: new Date(), functionName: 'transfer', status: 'success' },
-      { hash: 'tx2', sourceAccount: 'GADDR2', contractAddress: 'CABC2', ledgerSequence: 101, ledgerCloseTime: new Date(), functionName: 'swap', status: 'success' },
+      {
+        hash: 'tx1',
+        sourceAccount: 'GADDR1',
+        contractAddress: 'CABC1',
+        ledgerSequence: 100,
+        ledgerCloseTime: new Date(),
+        functionName: 'transfer',
+        status: 'success',
+      },
+      {
+        hash: 'tx2',
+        sourceAccount: 'GADDR2',
+        contractAddress: 'CABC2',
+        ledgerSequence: 101,
+        ledgerCloseTime: new Date(),
+        functionName: 'swap',
+        status: 'success',
+      },
     ]);
     (prismaRead.privacyTransaction.findMany as ReturnType<typeof vi.fn>).mockResolvedValue([]);
   });
@@ -686,7 +783,8 @@ describe('GET /api/v1/privacy/research/datasets', () => {
   it('returns available research datasets', async () => {
     (prismaRead.privacyTransaction.count as ReturnType<typeof vi.fn>).mockResolvedValue(100);
     (prismaRead.privacyTransaction.findMany as ReturnType<typeof vi.fn>).mockResolvedValue([
-      PRIVACY_TX_FIXTURE, PRIVACY_TX_2,
+      PRIVACY_TX_FIXTURE,
+      PRIVACY_TX_2,
     ]);
 
     const res = await fetch(`${baseUrl}/api/v1/privacy/research/datasets`);
@@ -715,7 +813,9 @@ describe('GET /api/v1/privacy/registry', () => {
 
 describe('POST /api/v1/privacy/compliance/screen', () => {
   it('screens an address for compliance', async () => {
-    (prismaRead.privacyTransaction.findMany as ReturnType<typeof vi.fn>).mockResolvedValue([PRIVACY_TX_FIXTURE]);
+    (prismaRead.privacyTransaction.findMany as ReturnType<typeof vi.fn>).mockResolvedValue([
+      PRIVACY_TX_FIXTURE,
+    ]);
 
     const res = await fetch(`${baseUrl}/api/v1/privacy/compliance/screen`, {
       method: 'POST',
@@ -736,7 +836,8 @@ describe('POST /api/v1/privacy/compliance/screen', () => {
 describe('GET /api/v1/privacy/cross-protocol/:address', () => {
   it('analyzes privacy posture across protocols', async () => {
     (prismaRead.privacyTransaction.findMany as ReturnType<typeof vi.fn>).mockResolvedValue([
-      PRIVACY_TX_FIXTURE, PRIVACY_TX_2,
+      PRIVACY_TX_FIXTURE,
+      PRIVACY_TX_2,
     ]);
 
     const res = await fetch(`${baseUrl}/api/v1/privacy/cross-protocol/GABCDEF1234567890`);
@@ -755,7 +856,9 @@ describe('GET /api/v1/privacy/cross-protocol/:address', () => {
 
 describe('GET /api/v1/privacy/zk/verifiers', () => {
   it('returns ZK verifier contracts', async () => {
-    (prismaRead.privacyTransaction.findMany as ReturnType<typeof vi.fn>).mockResolvedValue([PRIVACY_TX_FIXTURE]);
+    (prismaRead.privacyTransaction.findMany as ReturnType<typeof vi.fn>).mockResolvedValue([
+      PRIVACY_TX_FIXTURE,
+    ]);
 
     const res = await fetch(`${baseUrl}/api/v1/privacy/zk/verifiers`);
     const body = await res.json();
@@ -767,7 +870,9 @@ describe('GET /api/v1/privacy/zk/verifiers', () => {
 
 describe('GET /api/v1/privacy/zk/proofs', () => {
   it('returns ZK proofs', async () => {
-    (prismaRead.privacyTransaction.findMany as ReturnType<typeof vi.fn>).mockResolvedValue([PRIVACY_TX_FIXTURE]);
+    (prismaRead.privacyTransaction.findMany as ReturnType<typeof vi.fn>).mockResolvedValue([
+      PRIVACY_TX_FIXTURE,
+    ]);
     (prismaRead.privacyTransaction.count as ReturnType<typeof vi.fn>).mockResolvedValue(1);
 
     const res = await fetch(`${baseUrl}/api/v1/privacy/zk/proofs`);
@@ -780,7 +885,9 @@ describe('GET /api/v1/privacy/zk/proofs', () => {
 
 describe('GET /api/v1/privacy/zk/benchmarks', () => {
   it('returns ZK proof benchmarks', async () => {
-    (prismaRead.privacyTransaction.findMany as ReturnType<typeof vi.fn>).mockResolvedValue([PRIVACY_TX_FIXTURE]);
+    (prismaRead.privacyTransaction.findMany as ReturnType<typeof vi.fn>).mockResolvedValue([
+      PRIVACY_TX_FIXTURE,
+    ]);
 
     const res = await fetch(`${baseUrl}/api/v1/privacy/zk/benchmarks`);
     const body = await res.json();
@@ -816,7 +923,8 @@ describe('GET /api/v1/privacy/defi', () => {
 describe('GET /api/v1/privacy/bridges', () => {
   it('returns cross-chain privacy flow dashboard', async () => {
     (prismaRead.privacyTransaction.findMany as ReturnType<typeof vi.fn>).mockResolvedValue([
-      PRIVACY_TX_FIXTURE, PRIVACY_TX_2,
+      PRIVACY_TX_FIXTURE,
+      PRIVACY_TX_2,
     ]);
 
     const res = await fetch(`${baseUrl}/api/v1/privacy/bridges`);
@@ -851,7 +959,8 @@ describe('GET /api/v1/privacy/history/:protocol', () => {
 describe('GET /api/v1/privacy/leaderboard/users', () => {
   it('returns top privacy-using addresses', async () => {
     (prismaRead.privacyTransaction.findMany as ReturnType<typeof vi.fn>).mockResolvedValue([
-      PRIVACY_TX_FIXTURE, PRIVACY_TX_2,
+      PRIVACY_TX_FIXTURE,
+      PRIVACY_TX_2,
     ]);
 
     const res = await fetch(`${baseUrl}/api/v1/privacy/leaderboard/users`);
@@ -871,7 +980,9 @@ describe('GET /api/v1/privacy/anonymity-sets/:protocol/history', () => {
       { id: '2', protocol: 'SHIELDED_TRANSFER', setSize: 150, timestamp: new Date() },
     ]);
 
-    const res = await fetch(`${baseUrl}/api/v1/privacy/anonymity-sets/SHIELDED_TRANSFER/history?days=30`);
+    const res = await fetch(
+      `${baseUrl}/api/v1/privacy/anonymity-sets/SHIELDED_TRANSFER/history?days=30`,
+    );
     const body = await res.json();
 
     expect(res.status).toBe(200);
@@ -885,7 +996,8 @@ describe('GET /api/v1/privacy/anonymity-sets/:protocol/history', () => {
 describe('GET /api/v1/privacy/scores/contracts', () => {
   it('returns contracts ranked by privacy score', async () => {
     (prismaRead.privacyTransaction.findMany as ReturnType<typeof vi.fn>).mockResolvedValue([
-      PRIVACY_TX_FIXTURE, PRIVACY_TX_2,
+      PRIVACY_TX_FIXTURE,
+      PRIVACY_TX_2,
     ]);
 
     const res = await fetch(`${baseUrl}/api/v1/privacy/scores/contracts`);
@@ -906,7 +1018,9 @@ describe('GET /api/v1/privacy/ml/predict-anonymity', () => {
       { anonymitySetSize: 200, timestamp: new Date(), protocols: ['SHIELDED_TRANSFER'] },
     ]);
 
-    const res = await fetch(`${baseUrl}/api/v1/privacy/ml/predict-anonymity?protocol=SHIELDED_TRANSFER&days=30`);
+    const res = await fetch(
+      `${baseUrl}/api/v1/privacy/ml/predict-anonymity?protocol=SHIELDED_TRANSFER&days=30`,
+    );
     const body = await res.json();
 
     expect(res.status).toBe(200);
@@ -920,7 +1034,9 @@ describe('GET /api/v1/privacy/ml/predict-anonymity', () => {
 
 describe('GET /api/v1/privacy/zk/verifiers/:address', () => {
   it('returns specific verifier analytics', async () => {
-    (prismaRead.privacyTransaction.findMany as ReturnType<typeof vi.fn>).mockResolvedValue([PRIVACY_TX_FIXTURE]);
+    (prismaRead.privacyTransaction.findMany as ReturnType<typeof vi.fn>).mockResolvedValue([
+      PRIVACY_TX_FIXTURE,
+    ]);
 
     const res = await fetch(`${baseUrl}/api/v1/privacy/zk/verifiers/CZKVERIFIER123`);
     const body = await res.json();
@@ -1128,11 +1244,34 @@ describe('Privacy Scoring Engine (unit)', () => {
 describe('Privacy Graph Analysis (unit)', () => {
   beforeEach(() => {
     (prismaRead.transaction.findMany as ReturnType<typeof vi.fn>).mockResolvedValue([
-      { hash: 'tx1', sourceAccount: 'GADDR1', contractAddress: 'CADDR1', ledgerSequence: 100, ledgerCloseTime: new Date(), functionName: 'transfer', status: 'success' },
-      { hash: 'tx2', sourceAccount: 'GADDR2', contractAddress: 'CADDR2', ledgerSequence: 101, ledgerCloseTime: new Date(), functionName: 'swap', status: 'success' },
+      {
+        hash: 'tx1',
+        sourceAccount: 'GADDR1',
+        contractAddress: 'CADDR1',
+        ledgerSequence: 100,
+        ledgerCloseTime: new Date(),
+        functionName: 'transfer',
+        status: 'success',
+      },
+      {
+        hash: 'tx2',
+        sourceAccount: 'GADDR2',
+        contractAddress: 'CADDR2',
+        ledgerSequence: 101,
+        ledgerCloseTime: new Date(),
+        functionName: 'swap',
+        status: 'success',
+      },
     ]);
     (prismaRead.privacyTransaction.findMany as ReturnType<typeof vi.fn>).mockResolvedValue([
-      { txHash: 'tx1', protocols: ['SHIELDED_TRANSFER'], privacyScore: 80, totalValue: '1000', timestamp: new Date(), participants: ['GADDR1'] },
+      {
+        txHash: 'tx1',
+        protocols: ['SHIELDED_TRANSFER'],
+        privacyScore: 80,
+        totalValue: '1000',
+        timestamp: new Date(),
+        participants: ['GADDR1'],
+      },
     ]);
     (prismaRead.privacyTransaction.findUnique as ReturnType<typeof vi.fn>).mockResolvedValue(null);
   });
@@ -1176,7 +1315,13 @@ describe('Privacy Graph Analysis (unit)', () => {
 
   it('getEffectiveAnonymitySets returns comparison data', async () => {
     (prismaRead.anonymitySetSnapshot.findMany as ReturnType<typeof vi.fn>).mockResolvedValue([
-      { id: '1', protocol: 'SHIELDED_TRANSFER', setSize: 150, effectiveSetSize: 120, timestamp: new Date() },
+      {
+        id: '1',
+        protocol: 'SHIELDED_TRANSFER',
+        setSize: 150,
+        effectiveSetSize: 120,
+        timestamp: new Date(),
+      },
     ]);
     const { getEffectiveAnonymitySets } = await import('../src/indexer/privacy-graph');
     const result = await getEffectiveAnonymitySets();
@@ -1185,7 +1330,10 @@ describe('Privacy Graph Analysis (unit)', () => {
 
   it('analyzeTaint traces funds through protocols', async () => {
     (prismaRead.privacyTransaction.findUnique as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
-      txHash: 'tx1', protocols: ['MIXER'], totalValue: '5000', participants: ['GADDR1', 'GADDR2'],
+      txHash: 'tx1',
+      protocols: ['MIXER'],
+      totalValue: '5000',
+      participants: ['GADDR1', 'GADDR2'],
     });
     const { analyzeTaint } = await import('../src/indexer/privacy-graph');
     const result = await analyzeTaint('GADDR1', 2);

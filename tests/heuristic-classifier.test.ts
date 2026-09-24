@@ -7,7 +7,18 @@ import {
 
 describe('classifyContract', () => {
   it('classifies SEP-41 token contracts', () => {
-    const fns = ['transfer', 'balance', 'approve', 'allowance', 'mint', 'burn', 'decimals', 'symbol', 'name', 'total_supply'];
+    const fns = [
+      'transfer',
+      'balance',
+      'approve',
+      'allowance',
+      'mint',
+      'burn',
+      'decimals',
+      'symbol',
+      'name',
+      'total_supply',
+    ];
     const result = classifyContract(fns);
     expect(result.category).toBe('token');
     expect(result.confidence).toBe('high');
@@ -63,13 +74,33 @@ describe('classifyContract', () => {
   });
 
   it('classifies multisig contracts', () => {
-    const fns = ['submit', 'confirm', 'revoke', 'execute', 'owners', 'required', 'add_owner', 'remove_owner', 'threshold'];
+    const fns = [
+      'submit',
+      'confirm',
+      'revoke',
+      'execute',
+      'owners',
+      'required',
+      'add_owner',
+      'remove_owner',
+      'threshold',
+    ];
     const result = classifyContract(fns);
     expect(result.category).toBe('multisig');
   });
 
   it('classifies registry contracts', () => {
-    const fns = ['register', 'resolve', 'lookup', 'set', 'get', 'list', 'remove', 'update', 'record'];
+    const fns = [
+      'register',
+      'resolve',
+      'lookup',
+      'set',
+      'get',
+      'list',
+      'remove',
+      'update',
+      'record',
+    ];
     const result = classifyContract(fns);
     expect(result.category).toBe('registry');
   });
@@ -93,7 +124,18 @@ describe('classifyContract', () => {
   });
 
   it('assigns high confidence when many patterns match', () => {
-    const fns = ['transfer', 'balance', 'approve', 'allowance', 'mint', 'burn', 'decimals', 'symbol', 'name', 'total_supply'];
+    const fns = [
+      'transfer',
+      'balance',
+      'approve',
+      'allowance',
+      'mint',
+      'burn',
+      'decimals',
+      'symbol',
+      'name',
+      'total_supply',
+    ];
     const result = classifyContract(fns);
     expect(result.confidence).toBe('high');
   });

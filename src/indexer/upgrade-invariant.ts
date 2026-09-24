@@ -12,6 +12,7 @@
  */
 
 import { xdr } from '@stellar/stellar-sdk';
+import { logger } from '../logger';
 
 // ── Invariant definitions ────────────────────────────────────────────────────
 
@@ -345,7 +346,7 @@ export function gateUpgrade(candidates: CandidateXdrs, nextVersion: number): boo
   const result = verifyUpgradeInvariants(candidates, nextVersion);
 
   if (!result.safe) {
-    console.warn(
+    logger.warn(
       `[upgrade-invariant] ⛔ Protocol ${nextVersion} failed pre-validation. ` +
         `${result.violations.length} violation(s):`,
       result.violations.map((v) => `${v.invariant}: ${v.reason}`).join(' | '),
@@ -353,7 +354,7 @@ export function gateUpgrade(candidates: CandidateXdrs, nextVersion: number): boo
     return false;
   }
 
-  console.log(
+  logger.info(
     `[upgrade-invariant] ✅ Protocol ${nextVersion} passed pre-validation. ` +
       `${result.passed.length} invariant(s) checked, ${result.skipped.length} skipped.`,
   );

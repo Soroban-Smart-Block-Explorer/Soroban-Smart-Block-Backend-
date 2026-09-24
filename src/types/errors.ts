@@ -27,12 +27,18 @@ export interface RecoveryHint {
 }
 
 export interface StructuredErrorResponse {
-  error: string;
-  code: ErrorCode;
-  requestId: string;
-  statusCode: number;
-  stack?: string;
-  recovery?: RecoveryHint;
+  success: boolean;
+  error: {
+    code: ErrorCode;
+    message: string;
+    details?: Array<{ field: string; issue: string }>;
+    stack?: string;
+    recovery?: RecoveryHint;
+  };
+  meta: {
+    requestId: string;
+    timestamp: string;
+  };
 }
 
 export const ERROR_CLASSIFICATIONS: Record<string, ErrorClassification> = {

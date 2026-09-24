@@ -1,4 +1,4 @@
-import { prisma } from '../db';
+import { prismaWrite as prisma, prismaRead } from '../db';
 import { Severity, SEVERITY_MULTIPLIER } from './severity';
 
 export interface PropagationResult {
@@ -16,7 +16,7 @@ export interface PersistPropagationInput {
 export async function loadAffectedPoolsTvl(addresses: string[]): Promise<number[]> {
   if (addresses.length === 0) return [];
 
-  const pools = await prisma.dexPool.findMany({
+  const pools = await prismaRead.dexPool.findMany({
     where: { address: { in: addresses } },
     select: { tvlUsd: true },
   });
@@ -37,10 +37,8 @@ function computeTotalValueAtRisk(
   return affectedCount * multiplier * avgTvl;
 }
 
-export async function persistPropagation(
-  input: PersistPropagationInput,
-): Promise<void> {
-  const advisory = await prisma.vulnerabilityAdvisory.findUnique({
+export async function persistPropagation(input: PersistPropagationInput): Promise<void> {
+  const advisory = await prismaRead.vulnerabilityAdvisory.findUnique({
     where: { id: input.advisoryId },
     select: { severity: true },
   });

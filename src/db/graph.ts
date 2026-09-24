@@ -47,18 +47,15 @@ export class GraphDatabase {
   async executeCypher(
     query: string,
     parameters: Record<string, any> = {},
-    timeout: number = 5000
+    timeout: number = 5000,
   ): Promise<GraphQueryResult> {
     const startTime = Date.now();
-    
+
     try {
       // Convert Cypher query to AGE format
       const ageQuery = this.convertToAgeQuery(query);
-      
-      const result = await this.pool.query(
-        ageQuery,
-        { ...parameters, timeout }
-      );
+
+      const result = await this.pool.query(ageQuery, { ...parameters, timeout });
 
       const executionTime = Date.now() - startTime;
       const processedData = this.processAgeResult(result.rows);
@@ -70,7 +67,9 @@ export class GraphDatabase {
         edgeCount: this.countEdges(processedData),
       };
     } catch (error) {
-      throw new Error(`Graph query execution failed: ${error instanceof Error ? error.message : String(error)}`);
+      throw new Error(
+        `Graph query execution failed: ${error instanceof Error ? error.message : String(error)}`,
+      );
     }
   }
 
@@ -86,7 +85,7 @@ export class GraphDatabase {
    * Process AGE result format
    */
   private processAgeResult(rows: any[]): any[] {
-    return rows.map(row => {
+    return rows.map((row) => {
       const agtype = row.result;
       // Parse AGType to JSON
       return this.parseAgType(agtype);
@@ -133,16 +132,15 @@ export class GraphDatabase {
   /**
    * Create or update a node (upsert)
    */
-  async upsertNode(
-    label: string,
-    properties: Record<string, any>
-  ): Promise<void> {
+  async upsertNode(label: string, properties: Record<string, any>): Promise<void> {
     const { id, ...props } = properties;
     const query = `
       MERGE (n:${label} {id: $id})
-      SET ${Object.keys(props).map(key => `n.${key} = $${key}`).join(', ')}
+      SET ${Object.keys(props)
+        .map((key) => `n.${key} = $${key}`)
+        .join(', ')}
     `;
-    
+
     await this.executeCypher(query, { id, ...props });
   }
 
@@ -155,13 +153,15 @@ export class GraphDatabase {
     edgeLabel: string,
     toLabel: string,
     toId: string,
-    properties: Record<string, any> = {}
+    properties: Record<string, any> = {},
   ): Promise<void> {
     const query = `
       MERGE (a:${fromLabel} {id: $fromId})
       MERGE (b:${toLabel} {id: $toId})
       MERGE (a)-[r:${edgeLabel} {id: $edgeId}]->(b)
-      SET ${Object.keys(properties).map(key => `r.${key} = $${key}`).join(', ')}
+      SET ${Object.keys(properties)
+        .map((key) => `r.${key} = $${key}`)
+        .join(', ')}
     `;
 
     await this.executeCypher(query, {
@@ -180,7 +180,7 @@ export class GraphDatabase {
       MATCH (n:${label} {id: $id})
       DETACH DELETE n
     `;
-    
+
     await this.executeCypher(query, { id });
   }
 
@@ -192,13 +192,13 @@ export class GraphDatabase {
     fromId: string,
     edgeLabel: string,
     toLabel: string,
-    toId: string
+    toId: string,
   ): Promise<void> {
     const query = `
       MATCH (a:${fromLabel} {id: $fromId})-[r:${edgeLabel}]->(b:${toLabel} {id: $toId})
       DELETE r
     `;
-    
+
     await this.executeCypher(query, { fromId, toId });
   }
 
@@ -215,17 +215,17 @@ export class GraphDatabase {
       MATCH (n)
       RETURN count(n) as count
     `;
-    
+
     const edgeCountQuery = `
       MATCH ()-[r]->()
       RETURN count(r) as count
     `;
-    
+
     const labelsQuery = `
       MATCH (n)
       RETURN DISTINCT labels(n) as labels
     `;
-    
+
     const edgeTypesQuery = `
       MATCH ()-[r]->()
       RETURN DISTINCT type(r) as types
@@ -241,8 +241,8 @@ export class GraphDatabase {
     return {
       nodeCount: nodeCount.data[0]?.count || 0,
       edgeCount: edgeCount.data[0]?.count || 0,
-      nodeLabels: labels.data.flatMap(l => l.labels || []),
-      edgeLabels: edgeTypes.data.flatMap(t => t.types || []),
+      nodeLabels: labels.data.flatMap((l) => l.labels || []),
+      edgeLabels: edgeTypes.data.flatMap((t) => t.types || []),
     };
   }
 

@@ -1,6 +1,7 @@
 import { Router, Request, Response } from 'express';
 import { prismaWrite as prisma } from '../db';
 import { requireAuth, requireRole } from '../auth/middleware';
+import { asyncHandler } from '../middleware/asyncHandler';
 
 export const authSecurityRouter = Router();
 

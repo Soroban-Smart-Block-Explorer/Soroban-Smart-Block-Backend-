@@ -17,24 +17,42 @@ export interface WasmAnalysis {
 function specTypeToString(t: xdr.ScSpecTypeDef): string {
   const name = t.switch().name;
   switch (name) {
-    case 'scSpecTypeU32': return 'u32';
-    case 'scSpecTypeI32': return 'i32';
-    case 'scSpecTypeU64': return 'u64';
-    case 'scSpecTypeI64': return 'i64';
-    case 'scSpecTypeU128': return 'u128';
-    case 'scSpecTypeI128': return 'i128';
-    case 'scSpecTypeBool': return 'bool';
-    case 'scSpecTypeSymbol': return 'symbol';
-    case 'scSpecTypeString': return 'string';
-    case 'scSpecTypeAddress': return 'address';
-    case 'scSpecTypeBytes': return 'bytes';
-    case 'scSpecTypeVoid': return 'void';
-    case 'scSpecTypeOption': return `option<${specTypeToString((t as any).option().valueType())}>`;
-    case 'scSpecTypeVec': return `vec<${specTypeToString((t as any).vec().elementType())}>`;
-    case 'scSpecTypeMap': return `map<${specTypeToString((t as any).map().keyType())},${specTypeToString((t as any).map().valueType())}>`;
-    case 'scSpecTypeTuple': return `tuple`;
-    case 'scSpecTypeUdt': return `udt:${(t as any).udt().name().toString()}`;
-    default: return name;
+    case 'scSpecTypeU32':
+      return 'u32';
+    case 'scSpecTypeI32':
+      return 'i32';
+    case 'scSpecTypeU64':
+      return 'u64';
+    case 'scSpecTypeI64':
+      return 'i64';
+    case 'scSpecTypeU128':
+      return 'u128';
+    case 'scSpecTypeI128':
+      return 'i128';
+    case 'scSpecTypeBool':
+      return 'bool';
+    case 'scSpecTypeSymbol':
+      return 'symbol';
+    case 'scSpecTypeString':
+      return 'string';
+    case 'scSpecTypeAddress':
+      return 'address';
+    case 'scSpecTypeBytes':
+      return 'bytes';
+    case 'scSpecTypeVoid':
+      return 'void';
+    case 'scSpecTypeOption':
+      return `option<${specTypeToString((t as any).option().valueType())}>`;
+    case 'scSpecTypeVec':
+      return `vec<${specTypeToString((t as any).vec().elementType())}>`;
+    case 'scSpecTypeMap':
+      return `map<${specTypeToString((t as any).map().keyType())},${specTypeToString((t as any).map().valueType())}>`;
+    case 'scSpecTypeTuple':
+      return `tuple`;
+    case 'scSpecTypeUdt':
+      return `udt:${(t as any).udt().name().toString()}`;
+    default:
+      return name;
   }
 }
 

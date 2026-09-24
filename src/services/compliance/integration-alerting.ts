@@ -51,7 +51,7 @@ export function configureEmail(config: EmailConfig): void {
 }
 
 export function configureSiem(config: SiemConfig): void {
-  const existingIndex = siemConfigs.findIndex(s => s.type === config.type);
+  const existingIndex = siemConfigs.findIndex((s) => s.type === config.type);
   if (existingIndex >= 0) {
     siemConfigs[existingIndex] = config;
   } else {
@@ -84,10 +84,7 @@ export async function sendPagerDutyAlert(
   logger.info('PagerDuty alert sent', { title, severity });
 }
 
-export async function sendSlackAlert(
-  message: string,
-  blocks?: any[],
-): Promise<void> {
+export async function sendSlackAlert(message: string, blocks?: any[]): Promise<void> {
   if (!slackConfig.enabled || !slackConfig.webhookUrl) {
     logger.debug('Slack not configured, skipping alert');
     return;
@@ -99,11 +96,7 @@ export async function sendSlackAlert(
   logger.info('Slack alert sent', { message: message.substring(0, 100) });
 }
 
-export async function sendEmailAlert(
-  subject: string,
-  body: string,
-  to?: string[],
-): Promise<void> {
+export async function sendEmailAlert(subject: string, body: string, to?: string[]): Promise<void> {
   if (!emailConfig.enabled) {
     logger.debug('Email not configured, skipping alert');
     return;
@@ -137,9 +130,12 @@ export async function alertSanctionMatch(match: {
 }): Promise<void> {
   const title = `Sanction Match Alert - ${match.source}`;
   const severity: 'critical' | 'error' | 'warning' | 'info' =
-    match.score >= 95 ? 'critical'
-      : match.score >= 80 ? 'error'
-        : match.score >= 60 ? 'warning'
+    match.score >= 95
+      ? 'critical'
+      : match.score >= 80
+        ? 'error'
+        : match.score >= 60
+          ? 'warning'
           : 'info';
 
   const details = {
@@ -152,16 +148,15 @@ export async function alertSanctionMatch(match: {
 
   await Promise.allSettled([
     sendPagerDutyAlert(title, severity, details),
-    sendSlackAlert(`🚨 *${title}*\nAddress: \`${match.address}\`\nScore: ${match.score}\nSource: ${match.source}`),
+    sendSlackAlert(
+      `🚨 *${title}*\nAddress: \`${match.address}\`\nScore: ${match.score}\nSource: ${match.source}`,
+    ),
     sendEmailAlert(title, JSON.stringify(details, null, 2)),
     sendSiemAlert('sanctions_match', details),
   ]);
 }
 
-export async function alertComplianceFailure(
-  component: string,
-  error: string,
-): Promise<void> {
+export async function alertComplianceFailure(component: string, error: string): Promise<void> {
   const title = `Compliance Pipeline Failure - ${component}`;
 
   await Promise.allSettled([

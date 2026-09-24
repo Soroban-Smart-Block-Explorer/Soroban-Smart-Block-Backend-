@@ -1,7 +1,15 @@
 import type { AxiosError } from 'axios';
-import { SorobanRpc } from '@stellar/stellar-sdk';
+import { xdr, SorobanRpc } from '@stellar/stellar-sdk';
 import { config } from '../config';
 import { cacheGet, cacheSet } from '../cache';
+import { logger } from '../logger';
+import {
+  rpcCallDuration,
+  rpcCallErrorsTotal,
+  rpcCallRetriesTotal,
+  horizonCallDuration,
+  horizonCallErrorsTotal,
+} from '../metrics';
 
 const isDevnet = config.profile.name === 'devnet';
 
@@ -29,24 +37,51 @@ const LEDGER_CACHE_PREFIX = 'ledger:';
 
 const EVENT_PAGE_SIZE = 200;
 const MAX_RETRY_ATTEMPTS = 6;
+const MAX_PAGES = 100;
 
 function sleep(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-function isRateLimitError(error: unknown): boolean {
-  const axiosError = error as AxiosError | undefined;
-  const status = axiosError?.response?.status ?? (error as any)?.status;
-  return status === 429 || String((error as any)?.message ?? '').includes('429');
+function getStatus(error: unknown): number | undefined {
+  if (error && typeof error === 'object' && 'status' in error) {
+    return (error as { status: number }).status;
+  }
+  return undefined;
 }
 
-async function retry<T>(fn: () => Promise<T>): Promise<T> {
+function getMessage(error: unknown): string {
+  if (error && typeof error === 'object' && 'message' in error) {
+    return String((error as { message: string }).message);
+  }
+  return '';
+}
+
+function isRateLimitError(error: unknown): boolean {
+  const axiosError = error as AxiosError | undefined;
+  const status = axiosError?.response?.status ?? getStatus(error);
+  return status === 429 || getMessage(error).includes('429');
+}
+
+/**
+ * #910 — run `fn` while recording outbound RPC latency, error rate, and
+ * retry activity on the shared Prometheus registry. Every call site goes
+ * through here so all RPC operations are instrumented for free.
+ */
+async function retry<T>(operation: string, fn: () => Promise<T>): Promise<T> {
   let attempt = 0;
   // eslint-disable-next-line no-constant-condition
   while (true) {
+    const startTime = Date.now();
     try {
-      return await fn();
+      const result = await fn();
+      rpcCallDuration.observe({ operation, status: 'success' }, (Date.now() - startTime) / 1000);
+      return result;
     } catch (error: unknown) {
+      rpcCallDuration.observe({ operation, status: 'error' }, (Date.now() - startTime) / 1000);
+      const type = isRateLimitError(error) ? 'rate_limit' : 'error';
+      rpcCallErrorsTotal.inc({ operation, type });
+
       if (!isRateLimitError(error) || attempt >= MAX_RETRY_ATTEMPTS) {
         throw error;
       }
@@ -54,14 +89,33 @@ async function retry<T>(fn: () => Promise<T>): Promise<T> {
       const backoff = Math.min(16000, 500 * 2 ** attempt);
       const jitter = Math.floor(Math.random() * 300);
       attempt += 1;
-      console.warn(`RPC rate limit hit, retrying in ${backoff + jitter}ms (attempt ${attempt})`);
+      rpcCallRetriesTotal.inc({ operation });
+      logger.warn(`RPC rate limit hit, retrying in ${backoff + jitter}ms (attempt ${attempt})`);
       await sleep(backoff + jitter);
     }
   }
 }
 
+/**
+ * #910 — time a Horizon REST API call and record latency/errors on the shared
+ * Prometheus registry. Horizon is the indexer's fallback external dependency
+ * (transactions and ledger metadata when RPC can't answer).
+ */
+async function horizonCall<T>(operation: string, fn: () => Promise<T>): Promise<T> {
+  const startTime = Date.now();
+  try {
+    const result = await fn();
+    horizonCallDuration.observe({ operation, status: 'success' }, (Date.now() - startTime) / 1000);
+    return result;
+  } catch (error) {
+    horizonCallDuration.observe({ operation, status: 'error' }, (Date.now() - startTime) / 1000);
+    horizonCallErrorsTotal.inc({ operation, type: 'error' });
+    throw error;
+  }
+}
+
 async function fetchEventsPage(startLedger: number, cursor?: string) {
-  return retry(() =>
+  return retry('getEvents', () =>
     rpc.getEvents({
       startLedger,
       filters: [{ type: 'contract' }],
@@ -77,11 +131,29 @@ async function fetchEventsPage(startLedger: number, cursor?: string) {
 export async function fetchEvents(startLedger: number, endLedger: number): Promise<LedgerEvent[]> {
   const events: LedgerEvent[] = [];
   let cursor: string | undefined;
+  const seenCursors = new Set<string>();
+  let pageCount = 0;
 
   // eslint-disable-next-line no-constant-condition
   while (true) {
+    pageCount++;
+    if (pageCount > MAX_PAGES) {
+      logger.warn(
+        `[fetchEvents] Exceeded max page count (${MAX_PAGES}) for range ${startLedger}–${endLedger}`,
+      );
+      break;
+    }
+
+    if (cursor && seenCursors.has(cursor)) {
+      logger.warn(`[fetchEvents] Repeated cursor detected — breaking pagination loop`);
+      break;
+    }
+    if (cursor) {
+      seenCursors.add(cursor);
+    }
+
     const response = await fetchEventsPage(startLedger, cursor);
-    const page = (response.events ?? []) as any[];
+    const page = response.events ?? [];
 
     if (!page.length) {
       break;
@@ -90,7 +162,7 @@ export async function fetchEvents(startLedger: number, endLedger: number): Promi
     // Stop paginating if every event on this page is already beyond endLedger.
     // This is the server-side stop condition that prevents fetching unbounded
     // pages when the range is small but there are many later events.
-    const minLedger = Math.min(...page.map((e: any) => Number(e.ledger)));
+    const minLedger = Math.min(...page.map((e) => Number(e.ledger)));
     if (minLedger > endLedger) {
       break;
     }
@@ -99,15 +171,19 @@ export async function fetchEvents(startLedger: number, endLedger: number): Promi
       .filter(
         (e) => typeof e.ledger === 'number' && e.ledger >= startLedger && e.ledger <= endLedger,
       )
-      .map((e) => ({
-        contractId: String(e.contractId ?? ''),
-        transactionHash: String(e.txHash ?? ''),
-        ledgerSequence: Number(e.ledger),
-        ledgerCloseTime: new Date(e.ledgerClosedAt ?? Date.now()),
-        topics: Array.isArray(e.topic) ? e.topic.map((t: any) => t.toXDR('base64')) : [],
-        data: e.value?.toXDR ? e.value.toXDR('base64') : String(e.value ?? ''),
-        pagingToken: String(e.pagingToken ?? e.paging_token ?? ''),
-      }));
+      .map((e) => {
+        const topics = e.topic.map((t: xdr.ScVal) => t.toXDR('base64'));
+        const data = e.value?.toXDR ? e.value.toXDR('base64') : String(e.value ?? '');
+        return {
+          contractId: String(e.contractId ?? ''),
+          transactionHash: String(e.txHash ?? ''),
+          ledgerSequence: Number(e.ledger),
+          ledgerCloseTime: new Date(e.ledgerClosedAt ?? Date.now()),
+          topics,
+          data,
+          pagingToken: String(e.pagingToken ?? ''),
+        };
+      });
 
     events.push(...mapped);
 
@@ -115,7 +191,7 @@ export async function fetchEvents(startLedger: number, endLedger: number): Promi
       break;
     }
 
-    cursor = String((response as any).paging_token ?? (response as any).next_cursor ?? '');
+    cursor = page[page.length - 1].pagingToken;
     if (!cursor) {
       break;
     }
@@ -128,7 +204,7 @@ export async function fetchEvents(startLedger: number, endLedger: number): Promi
  * Fetch the latest ledger number from the RPC node.
  */
 export async function getLatestLedger(): Promise<number> {
-  const info = await retry(() => rpc.getLatestLedger());
+  const info = await retry('getLatestLedger', () => rpc.getLatestLedger());
   return Number(info.sequence);
 }
 
@@ -142,7 +218,7 @@ export async function getLedger(ledgerSequence: number): Promise<unknown> {
   if (cached !== null) return cached;
 
   const rpcClient = rpc as any;
-  const ledger = await retry(() => rpcClient.getLedger(ledgerSequence));
+  const ledger = await retry('getLedger', () => rpcClient.getLedger(ledgerSequence));
   const ttl = ledgerSequence === 0 ? null : 60 * 60 * 24;
   await cacheSet(cacheKey, ledger, ttl);
   return ledger;
@@ -152,7 +228,7 @@ export async function getLedger(ledgerSequence: number): Promise<unknown> {
  * Fetch a transaction by hash.
  */
 export async function getTransaction(hash: string) {
-  return retry(() => rpc.getTransaction(hash));
+  return retry('getTransaction', () => rpc.getTransaction(hash));
 }
 
 /**
@@ -160,16 +236,18 @@ export async function getTransaction(hash: string) {
  * Maps Horizon fields to the same shape used by the RPC result.
  */
 export async function getTransactionFromHorizon(hash: string) {
-  const axios = (await import('axios')).default;
-  const { data } = await axios.get(`${config.horizonUrl}/transactions/${hash}`);
-  return {
-    status: data.successful ? 'SUCCESS' : 'FAILED',
-    sourceAccount: data.source_account as string,
-    feeCharged: String(data.fee_charged ?? ''),
-    envelopeXdr: {
-      toXDR: (enc: string) => (enc === 'base64' ? data.envelope_xdr : data.envelope_xdr),
-    },
-  };
+  return horizonCall('transactions', async () => {
+    const axios = (await import('axios')).default;
+    const { data } = await axios.get(`${config.horizonUrl}/transactions/${hash}`);
+    return {
+      status: data.successful ? 'SUCCESS' : 'FAILED',
+      sourceAccount: data.source_account as string,
+      feeCharged: String(data.fee_charged ?? ''),
+      envelopeXdr: {
+        toXDR: (enc: string) => (enc === 'base64' ? data.envelope_xdr : data.envelope_xdr),
+      },
+    };
+  });
 }
 
 export function getRpcWebsocketUrl(): string {
@@ -185,8 +263,11 @@ export async function fetchLedgerMetadata(sequence: number): Promise<{
 }> {
   // First attempt: try Horizon because it has stable, standardized JSON structure
   try {
-    const axios = (await import('axios')).default;
-    const { data } = await axios.get(`${config.horizonUrl}/ledgers/${sequence}`);
+    const data = await horizonCall('ledgers', async () => {
+      const axios = (await import('axios')).default;
+      const res = await axios.get(`${config.horizonUrl}/ledgers/${sequence}`);
+      return res.data;
+    });
     if (data && data.hash) {
       return {
         sequence: Number(data.sequence),
@@ -220,4 +301,30 @@ export async function fetchLedgerMetadata(sequence: number): Promise<{
   }
 
   throw new Error(`Failed to fetch ledger ${sequence}`);
+}
+
+const CATCHUP_PREFETCH_CONCURRENCY = 8;
+
+/**
+ * #913 — fetch ledger metadata for multiple sequences with bounded
+ * concurrency instead of one RPC/Horizon round-trip at a time. Used by
+ * catch-up to pipeline network calls while downstream processing (reorg
+ * checks, persistence) stays sequential.
+ */
+export async function fetchLedgerMetadataBatch(
+  sequences: number[],
+): Promise<Map<number, Awaited<ReturnType<typeof fetchLedgerMetadata>>>> {
+  const results = new Map<number, Awaited<ReturnType<typeof fetchLedgerMetadata>>>();
+  let cursor = 0;
+
+  async function worker() {
+    while (cursor < sequences.length) {
+      const seq = sequences[cursor++];
+      results.set(seq, await fetchLedgerMetadata(seq));
+    }
+  }
+
+  const workerCount = Math.min(CATCHUP_PREFETCH_CONCURRENCY, sequences.length);
+  await Promise.all(Array.from({ length: workerCount }, worker));
+  return results;
 }

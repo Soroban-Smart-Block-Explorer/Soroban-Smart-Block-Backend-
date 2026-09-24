@@ -15,8 +15,9 @@
  */
 
 import { prismaWrite as prisma } from '../db';
-import { processLedgerRange } from './ledgerProcessor';
+import { processLedgerRange } from './indexer';
 import { config } from '../config';
+import { logger } from '../logger';
 
 // ─── Config ───────────────────────────────────────────────────────────────────
 
@@ -107,10 +108,72 @@ async function backfill(sequences: number[]): Promise<void> {
 
   for (const [start, end] of ranges) {
     try {
-      console.log(`[repair] backfilling ledgers ${start}–${end}`);
+      logger.info(`[repair] backfilling ledgers ${start}–${end}`);
       await processLedgerRange(start, end);
     } catch (err) {
-      console.error(`[repair] backfill failed for ${start}–${end}:`, err);
+      logger.error(`[repair] backfill failed for ${start}–${end}:`, err);
+    }
+  }
+}
+
+const MAX_REPAIR_ATTEMPTS = 3;
+
+/**
+ * Trigger immediate automated repair for detected ledger gaps, updating LedgerGap tracking records and SLA alerts.
+ */
+export async function triggerAutomatedGapRepair(gapRanges: Array<[number, number]>): Promise<void> {
+  if (gapRanges.length === 0) return;
+
+  logger.info(`[repair] 🛠️ Automated gap repair triggered for ${gapRanges.length} range(s)`);
+
+  for (const [start, end] of gapRanges) {
+    // Record or fetch LedgerGap entry
+    let gap = await prisma.ledgerGap.findFirst({
+      where: { startSequence: start, endSequence: end, resolved: false },
+    });
+
+    if (!gap) {
+      gap = await prisma.ledgerGap.create({
+        data: {
+          startSequence: start,
+          endSequence: end,
+          attemptCount: 1,
+          lastAttemptAt: new Date(),
+          resolved: false,
+        },
+      });
+    } else {
+      gap = await prisma.ledgerGap.update({
+        where: { id: gap.id },
+        data: {
+          attemptCount: { increment: 1 },
+          lastAttemptAt: new Date(),
+        },
+      });
+    }
+
+    try {
+      logger.info(
+        `[repair] Executing automated repair run for ledgers ${start} → ${end} (Attempt #${gap.attemptCount})`,
+      );
+      await processLedgerRange(start, end);
+
+      await prisma.ledgerGap.update({
+        where: { id: gap.id },
+        data: { resolved: true },
+      });
+      logger.info(`[repair] ✅ Gap ${start}–${end} successfully repaired and resolved.`);
+    } catch (err) {
+      logger.error(
+        `[repair] ❌ Failed to repair gap ${start}–${end} on attempt #${gap.attemptCount}:`,
+        err,
+      );
+
+      if (gap.attemptCount >= MAX_REPAIR_ATTEMPTS) {
+        logger.error(
+          `🚨 [SLA BREACH ALERT] Ledger gap ${start}–${end} failed ${gap.attemptCount} repair attempts! Operator intervention required.`,
+        );
+      }
     }
   }
 }
@@ -149,7 +212,7 @@ export async function runRepairSweep(
   }
 
   if (minSeq === null || maxSeq === null) {
-    console.log('[repair] No ledgers indexed yet — nothing to sweep.');
+    logger.info('[repair] No ledgers indexed yet — nothing to sweep.');
     return { hardGaps: 0, softGaps: 0 };
   }
 
@@ -157,23 +220,23 @@ export async function runRepairSweep(
   const sweepMax =
     opts?.toSeq !== undefined ? maxSeq : Math.min(maxSeq, minSeq + MAX_EMPTY_BATCH * 10);
 
-  console.log(`[repair] Sweeping ledgers ${minSeq}–${sweepMax}${dryRun ? ' (dry-run)' : ''}`);
+  logger.info(`[repair] Sweeping ledgers ${minSeq}–${sweepMax}${dryRun ? ' (dry-run)' : ''}`);
 
   // 1. Hard gaps
   const missing = await findMissingSequences(minSeq, sweepMax, REPAIR_CHUNK);
   if (missing.length > 0) {
-    console.log(`[repair] Found ${missing.length} missing sequence(s)`);
+    logger.info(`[repair] Found ${missing.length} missing sequence(s)`);
     if (!dryRun) await backfill(missing);
   }
 
   // 2. Soft gaps
   const empty = await findEmptyLedgers(REPAIR_CHUNK);
   if (empty.length > 0) {
-    console.log(`[repair] Found ${empty.length} empty ledger(s)`);
+    logger.info(`[repair] Found ${empty.length} empty ledger(s)`);
     if (!dryRun) await backfill(empty);
   }
 
-  console.log(
+  logger.info(
     `[repair] Sweep complete — hard: ${missing.length}, soft: ${empty.length}` +
       (dryRun ? ' (no changes written — dry-run)' : ''),
   );
@@ -187,7 +250,7 @@ export async function runRepairSweep(
  * Designed to run as a separate process alongside the live indexer.
  */
 export async function startRepairLoop(): Promise<void> {
-  console.log(
+  logger.info(
     `[repair] Starting background repair loop ` +
       `(interval=${SWEEP_INTERVAL_MS}ms, chunk=${REPAIR_CHUNK}, network=${config.stellarNetwork})`,
   );
@@ -197,8 +260,16 @@ export async function startRepairLoop(): Promise<void> {
     try {
       await runRepairSweep();
     } catch (err) {
-      console.error('[repair] Sweep error:', err);
+      logger.error('[repair] Sweep error:', err);
     }
     await sleep(SWEEP_INTERVAL_MS);
   }
+}
+
+// ─── Entry point ──────────────────────────────────────────────────────────────
+if (require.main === module) {
+  startRepairLoop().catch((err) => {
+    logger.error('[repair] Fatal error:', err);
+    process.exit(1);
+  });
 }

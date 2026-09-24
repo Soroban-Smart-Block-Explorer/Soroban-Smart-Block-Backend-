@@ -1,0 +1,119 @@
+---
+# PodDisruptionBudgets (#904) — keep at least one pod of each workload
+# available during voluntary disruptions (node drains, cluster upgrades,
+# `kubectl drain`). These do NOT protect against involuntary disruptions
+# (node crash, OOM-kill) — only against the eviction API respecting a budget.
+#
+# minAvailable: 1 requires each Deployment/StatefulSet to run >= 2 replicas
+# for the budget to ever permit an eviction; single-replica workloads will
+# simply block `kubectl drain` until scaled up. All API/indexer deployments
+# in this directory default to 2+ replicas (see api-deployment.yaml,
+# adaptive-indexer-deployment.yaml, hpa.yaml minReplicas).
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: soroban-api-pdb
+  namespace: soroban
+  labels:
+    app.kubernetes.io/name: soroban-explorer
+    app.kubernetes.io/component: api
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: soroban-api
+
+---
+# Mainnet overlay API deployment (k8s/multi-network-deployment.yaml).
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: soroban-api-mainnet-pdb
+  namespace: soroban
+  labels:
+    app.kubernetes.io/name: soroban-explorer
+    app.kubernetes.io/component: api
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: soroban-api-mainnet
+
+---
+# Adaptive indexer components (k8s/adaptive-indexer-deployment.yaml) are five
+# independently-scaled workloads sharing the app: adaptive-indexer label but
+# distinguished by their own `component:` label — one PDB per component so
+# draining a node can't take out an entire tier (e.g. all decoders) at once.
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: indexer-ingester-pdb
+  namespace: soroban
+  labels:
+    app.kubernetes.io/name: soroban-explorer
+    app.kubernetes.io/component: indexer
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      component: indexer-ingester
+
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: indexer-decoder-pdb
+  namespace: soroban
+  labels:
+    app.kubernetes.io/name: soroban-explorer
+    app.kubernetes.io/component: indexer
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      component: indexer-decoder
+
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: indexer-enrichment-pdb
+  namespace: soroban
+  labels:
+    app.kubernetes.io/name: soroban-explorer
+    app.kubernetes.io/component: indexer
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      component: indexer-enrichment
+
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: indexer-predictor-pdb
+  namespace: soroban
+  labels:
+    app.kubernetes.io/name: soroban-explorer
+    app.kubernetes.io/component: indexer
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      component: indexer-predictor
+
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: indexer-control-plane-pdb
+  namespace: soroban
+  labels:
+    app.kubernetes.io/name: soroban-explorer
+    app.kubernetes.io/component: indexer
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      component: indexer-control-plane

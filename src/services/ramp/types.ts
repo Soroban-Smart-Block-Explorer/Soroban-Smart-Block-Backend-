@@ -22,12 +22,7 @@ export type PaymentMethod =
 export type CryptoAsset = 'USDC' | 'XLM' | 'USDT' | 'ETH' | 'BTC';
 
 export type OrderStatus =
-  | 'pending'
-  | 'processing'
-  | 'completed'
-  | 'failed'
-  | 'refunded'
-  | 'cancelled';
+  'pending' | 'processing' | 'completed' | 'failed' | 'refunded' | 'cancelled';
 
 export type KycStatus = 'pending' | 'submitted' | 'approved' | 'rejected' | 'expired';
 export type KycTier = 'tier1' | 'tier2' | 'tier3';

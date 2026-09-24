@@ -1,4 +1,4 @@
-import { prisma } from '../db';
+import { prismaRead as prisma } from '../db';
 
 export const BATCH_SIZE = 1000;
 export const DEFAULT_MAX_DEPTH = 5;

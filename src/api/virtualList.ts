@@ -53,7 +53,7 @@ const CHARS_PER_LINE = 80; // approximate chars per line at default content widt
 
 /**
  * @swagger
- * /api/v1/virtual-list/transactions:
+ * /virtual-list/transactions:
  *   get:
  *     summary: Get transactions in virtual list format for infinite scroll
  *     tags: [VirtualList]
@@ -197,7 +197,7 @@ virtualListRouter.get(
 
 /**
  * @swagger
- * /api/v1/virtual-list/events:
+ * /virtual-list/events:
  *   get:
  *     summary: Get events in virtual list format for infinite scroll
  *     tags: [VirtualList]

@@ -1,0 +1,184 @@
+---
+# Multi-network Deployment — Mainnet API variant.
+# Mirrors api-deployment.yaml (soroban-api / testnet, the default profile) but layers the
+# mainnet ConfigMap overlay on top, matching the per-network split already used in
+# docker-compose.yml (api-testnet / api-mainnet / api-devnet, see src/profiles.ts).
+# Add a matching devnet variant the same way if devnet needs its own cluster deployment.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: soroban-api-mainnet
+  namespace: soroban
+  labels:
+    app.kubernetes.io/name: soroban-explorer
+    app.kubernetes.io/component: api
+    environment: mainnet
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: soroban-api-mainnet
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  template:
+    metadata:
+      labels:
+        app: soroban-api-mainnet
+        app.kubernetes.io/name: soroban-explorer
+        app.kubernetes.io/component: api
+        environment: mainnet
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1001
+        runAsGroup: 1001
+        fsGroup: 1001
+
+      terminationGracePeriodSeconds: 40
+
+      containers:
+        - name: api
+          image: soroban-explorer-api:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 3000
+              protocol: TCP
+            - name: p2p
+              containerPort: 4001
+              protocol: TCP
+
+          # Base config first, mainnet overlay second — later envFrom entries win on key conflicts.
+          envFrom:
+            - configMapRef:
+                name: soroban-explorer-config
+            - configMapRef:
+                name: soroban-explorer-config-mainnet
+            - secretRef:
+                name: soroban-explorer-secrets
+
+          env:
+            - name: DISABLE_INDEXER
+              value: "true"
+
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 15
+            periodSeconds: 20
+            timeoutSeconds: 5
+            failureThreshold: 3
+            successThreshold: 1
+
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+            successThreshold: 1
+
+          startupProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 5
+            timeoutSeconds: 5
+            failureThreshold: 12
+
+          resources:
+            requests:
+              cpu: "250m"
+              memory: "512Mi"
+            limits:
+              cpu: "1000m"
+              memory: "1Gi"
+
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: false
+            capabilities:
+              drop:
+                - ALL
+
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+
+      volumes:
+        - name: tmp
+          emptyDir:
+            medium: Memory
+            sizeLimit: 64Mi
+
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: DoNotSchedule
+          labelSelector:
+            matchLabels:
+              app: soroban-api-mainnet
+
+---
+# ClusterIP Service for the mainnet API deployment
+apiVersion: v1
+kind: Service
+metadata:
+  name: soroban-api-mainnet
+  namespace: soroban
+  labels:
+    app.kubernetes.io/name: soroban-explorer
+    app.kubernetes.io/component: api
+    environment: mainnet
+spec:
+  type: ClusterIP
+  selector:
+    app: soroban-api-mainnet
+  ports:
+    - name: http
+      port: 80
+      targetPort: http
+      protocol: TCP
+    - name: p2p
+      port: 4001
+      targetPort: p2p
+      protocol: TCP
+
+---
+# HPA for the mainnet API deployment
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: soroban-api-mainnet
+  namespace: soroban
+  labels:
+    app.kubernetes.io/name: soroban-explorer
+    app.kubernetes.io/component: api
+    environment: mainnet
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: soroban-api-mainnet
+  minReplicas: 2
+  maxReplicas: 10
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 70
+    - type: Resource
+      resource:
+        name: memory
+        target:
+          type: Utilization
+          averageUtilization: 80

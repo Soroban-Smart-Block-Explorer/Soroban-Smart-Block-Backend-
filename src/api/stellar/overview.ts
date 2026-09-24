@@ -1,5 +1,6 @@
 import { Router, Request, Response } from 'express';
 import { z } from 'zod';
+import { asyncHandler } from '../../middleware/asyncHandler';
 import {
   getEcosystemOverview,
   getOverviewHistory,
@@ -9,32 +10,41 @@ import {
 export const overviewRouter = Router();
 
 // GET /api/v1/stellar/overview
-overviewRouter.get('/', async (_req: Request, res: Response) => {
-  try {
-    const data = await getEcosystemOverview();
-    res.json(data);
-  } catch (e) {
-    res.status(500).json({ error: String(e) });
-  }
-});
+overviewRouter.get(
+  '/',
+  asyncHandler(async (_req: Request, res: Response) => {
+    try {
+      const data = await getEcosystemOverview();
+      res.json(data);
+    } catch (e) {
+      res.status(500).json({ error: String(e) });
+    }
+  }),
+);
 
 // GET /api/v1/stellar/overview/history
-overviewRouter.get('/history', async (req: Request, res: Response) => {
-  try {
-    const days = z.coerce.number().min(1).max(365).default(30).parse(req.query.days);
-    const data = await getOverviewHistory(days);
-    res.json(data);
-  } catch (e) {
-    res.status(400).json({ error: String(e) });
-  }
-});
+overviewRouter.get(
+  '/history',
+  asyncHandler(async (req: Request, res: Response) => {
+    try {
+      const days = z.coerce.number().min(1).max(365).default(30).parse(req.query.days);
+      const data = await getOverviewHistory(days);
+      res.json(data);
+    } catch (e) {
+      res.status(400).json({ error: String(e) });
+    }
+  }),
+);
 
 // GET /api/v1/stellar/overview/comparison
-overviewRouter.get('/comparison', async (_req: Request, res: Response) => {
-  try {
-    const data = await getNetworkComparison();
-    res.json(data);
-  } catch (e) {
-    res.status(500).json({ error: String(e) });
-  }
-});
+overviewRouter.get(
+  '/comparison',
+  asyncHandler(async (_req: Request, res: Response) => {
+    try {
+      const data = await getNetworkComparison();
+      res.json(data);
+    } catch (e) {
+      res.status(500).json({ error: String(e) });
+    }
+  }),
+);

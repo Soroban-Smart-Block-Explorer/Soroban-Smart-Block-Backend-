@@ -67,7 +67,7 @@ function toGatewayRequest(body: z.infer<typeof QuerySchema>): GatewayRequest {
 
 /**
  * @swagger
- * /api/v1/lakehouse/query:
+ * /lakehouse/query:
  *   post:
  *     summary: Route a time-ranged analytics query to the correct layer
  *     description: |
@@ -107,7 +107,7 @@ lakehouseRouter.post(
 
 /**
  * @swagger
- * /api/v1/lakehouse/query/plan:
+ * /lakehouse/query/plan:
  *   post:
  *     summary: Explain routing + federated plan for a query without executing it
  *     tags: [Data Lakehouse]
@@ -129,7 +129,7 @@ lakehouseRouter.post(
 
 /**
  * @swagger
- * /api/v1/lakehouse/schemas:
+ * /lakehouse/schemas:
  *   get:
  *     summary: List registered event schemas (subjects, versions, compatibility)
  *     tags: [Data Lakehouse]
@@ -157,7 +157,7 @@ lakehouseRouter.get(
 
 /**
  * @swagger
- * /api/v1/lakehouse/tiers:
+ * /lakehouse/tiers:
  *   get:
  *     summary: List data partitions and their current storage tier
  *     tags: [Data Lakehouse]
@@ -182,7 +182,7 @@ lakehouseRouter.get(
 
 /**
  * @swagger
- * /api/v1/lakehouse/tiers/evaluate:
+ * /lakehouse/tiers/evaluate:
  *   post:
  *     summary: Evaluate tier promotion/demotion decisions (optionally apply them)
  *     tags: [Data Lakehouse]
@@ -202,7 +202,7 @@ lakehouseRouter.post(
 
 /**
  * @swagger
- * /api/v1/lakehouse/dashboards:
+ * /lakehouse/dashboards:
  *   get:
  *     summary: List OLAP materialized views (MEV, compliance, protocol economics)
  *     tags: [Data Lakehouse]
@@ -225,7 +225,7 @@ lakehouseRouter.get(
 
 /**
  * @swagger
- * /api/v1/lakehouse/health:
+ * /lakehouse/health:
  *   get:
  *     summary: Report which layer drivers are active and instance readiness
  *     tags: [Data Lakehouse]

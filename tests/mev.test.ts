@@ -230,8 +230,10 @@ describe('getMevStatistics', () => {
       .mockResolvedValueOnce(20) // sandwichCount
       .mockResolvedValueOnce(10) // flashLoanCount
       .mockResolvedValueOnce(5); // arbCount
-    vi.mocked(prismaRead.mevEvent.aggregate)
-      .mockResolvedValue({ _sum: { profitUsd: 0, lossUsd: 0 }, _avg: { confidence: 0.88 } } as never);
+    vi.mocked(prismaRead.mevEvent.aggregate).mockResolvedValue({
+      _sum: { profitUsd: 0, lossUsd: 0 },
+      _avg: { confidence: 0.88 },
+    } as never);
     vi.mocked(prismaRead.mevEvent.groupBy).mockResolvedValue([] as never);
     vi.mocked(prismaRead.mevAttacker.findMany).mockResolvedValue([]);
     vi.mocked(prismaRead.mevAttacker.count).mockResolvedValue(3);

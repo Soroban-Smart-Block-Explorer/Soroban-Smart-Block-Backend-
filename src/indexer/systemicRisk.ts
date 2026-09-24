@@ -3,13 +3,7 @@ import { prismaRead as prisma } from '../db';
 export type CriticalityLevel = 'critical' | 'high' | 'medium' | 'low';
 export type FailureType = 'hack' | 'oracle_failure' | 'governance_attack' | 'bank_run';
 export type DependencyType =
-  | 'token'
-  | 'oracle'
-  | 'bridge'
-  | 'liquidity'
-  | 'admin'
-  | 'code'
-  | 'call';
+  'token' | 'oracle' | 'bridge' | 'liquidity' | 'admin' | 'code' | 'call';
 
 export interface DependencyEdge {
   from: string;

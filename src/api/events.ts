@@ -1,7 +1,9 @@
 import { Router, Request, Response } from 'express';
-import { prismaRead as prisma } from '../db';
 import { z } from 'zod';
 import { asyncHandler } from '../middleware/asyncHandler';
+import { validateQuery, validateParams } from '../middleware/validation';
+import { paginationSchema, stellarAddress, safeLabel } from '../schemas/common';
+import { eventService } from '../services/event.service';
 
 /**
  * @swagger
@@ -12,14 +14,21 @@ import { asyncHandler } from '../middleware/asyncHandler';
 
 export const eventRouter = Router();
 
-const paginationSchema = z.object({
-  page: z.coerce.number().min(1).default(1),
-  limit: z.coerce.number().min(1).max(100).default(20),
-});
+// Enhanced schema with filters from common schemas
+const eventListQuerySchema = paginationSchema.merge(
+  z.object({
+    contract: stellarAddress.optional(),
+    type: safeLabel.optional(),
+    topic: safeLabel.optional(),
+    // #914 — cursor-based pagination (preferred for deep pages); page/limit
+    // remains supported as a compatibility shim.
+    cursor: z.string().optional(),
+  }),
+);
 
 /**
  * @swagger
- * /api/v1/events:
+ * /events:
  *   get:
  *     summary: List decoded contract events
  *     tags: [Events]
@@ -44,6 +53,10 @@ const paginationSchema = z.object({
  *         name: limit
  *         schema: { type: integer, minimum: 1, maximum: 100, default: 20 }
  *         description: Page size
+ *       - in: query
+ *         name: cursor
+ *         schema: { type: string }
+ *         description: Event id to resume after (cursor pagination, preferred for deep pages). Takes precedence over `page` when set.
  *     responses:
  *       200:
  *         description: Paginated list of events (summary fields only)
@@ -69,6 +82,7 @@ const paginationSchema = z.object({
  *                 total: { type: integer, description: 'Total number of events matching the filter' }
  *                 page: { type: integer }
  *                 limit: { type: integer }
+ *                 nextCursor: { type: string, nullable: true, description: 'Pass as `cursor` to fetch the next page' }
  *               example:
  *                 data:
  *                   - id: '3389e9f0f1a4e32477b1c0d9e8a6f5b4c3d2e1f0a9b8c7d6e5f40312233445566-AAAADwAAAAh0cmFuc2Zlcg=='
@@ -103,44 +117,17 @@ const paginationSchema = z.object({
 // GET /events?contract=&type=&topic=&page=1
 eventRouter.get(
   '/',
+  validateQuery(eventListQuerySchema),
   asyncHandler(async (req: Request, res: Response) => {
-    const { page, limit } = paginationSchema.parse(req.query);
-    const { contract, type, topic } = req.query as Record<string, string>;
-    const skip = (page - 1) * limit;
-
-    const where = {
-      ...(contract && { contractAddress: contract }),
-      ...(type && { eventType: type }),
-      ...(topic && { topicSymbol: topic }),
-    };
-
-    const [events, total] = await Promise.all([
-      prisma.event.findMany({
-        where,
-        orderBy: { ledgerSequence: 'desc' },
-        skip,
-        take: limit,
-        select: {
-          id: true,
-          transactionHash: true,
-          contractAddress: true,
-          eventType: true,
-          topicSymbol: true,
-          decoded: true,
-          ledgerSequence: true,
-          ledgerCloseTime: true,
-        },
-      }),
-      prisma.event.count({ where }),
-    ]);
-
-    res.json({ data: events, total, page, limit });
+    const query = (req as any).validatedQuery as z.infer<typeof eventListQuerySchema>;
+    const result = await eventService.listEvents(query);
+    res.json(result);
   }),
 );
 
 /**
  * @swagger
- * /api/v1/events/{id}:
+ * /events/{id}:
  *   get:
  *     summary: Get a single event by ID
  *     tags: [Events]
@@ -170,8 +157,10 @@ eventRouter.get(
 // GET /events/:id
 eventRouter.get(
   '/:id',
+  validateParams(z.object({ id: z.string() })),
   asyncHandler(async (req: Request, res: Response) => {
-    const event = await prisma.event.findUnique({ where: { id: req.params.id } });
+    const params = (req as any).validatedParams as { id: string };
+    const event = await eventService.getEventById(params.id);
     if (!event) return res.status(404).json({ error: 'Event not found' });
     res.json(event);
   }),

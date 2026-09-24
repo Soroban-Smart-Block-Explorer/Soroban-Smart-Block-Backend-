@@ -10,7 +10,7 @@ import { asyncHandler } from '../middleware/asyncHandler';
  *   description: >
  *     In-memory Soroban sandbox for developing and testing smart contracts locally.
  *     Live VM state is kept in memory; sessions persist to the database.
- *     Note: sandbox router is not currently mounted in router.ts.
+ *
  */
 export const sandboxRouter = Router();
 
@@ -185,10 +185,12 @@ function getSessionId(params: unknown): string {
 
 /**
  * @swagger
- * /api/v1/sandbox/templates:
+ * /sandbox/templates:
  *   get:
  *     summary: List contract templates
- *     description: Returns all built-in sandbox templates, optionally filtered by search term or category. Note: sandbox router is not currently mounted in router.ts.
+ *     description: >-
+ *       Returns all built-in sandbox templates, optionally filtered by search term
+ *       or category.
  *     tags: [Sandbox]
  *     parameters:
  *       - in: query
@@ -215,24 +217,27 @@ function getSessionId(params: unknown): string {
  *                 version: "1.0.0"
  *                 author: Copilot
  */
-sandboxRouter.get('/templates', async (req: Request, res: Response) => {
-  try {
-    const templates = await sandboxEngine.listTemplates({
-      search: typeof req.query.search === 'string' ? req.query.search : undefined,
-      category: typeof req.query.category === 'string' ? req.query.category : undefined,
-    });
-    res.json(templates);
-  } catch (error) {
-    handleError(res, error);
-  }
-});
+sandboxRouter.get(
+  '/templates',
+  asyncHandler(async (req: Request, res: Response) => {
+    try {
+      const templates = await sandboxEngine.listTemplates({
+        search: typeof req.query.search === 'string' ? req.query.search : undefined,
+        category: typeof req.query.category === 'string' ? req.query.category : undefined,
+      });
+      res.json(templates);
+    } catch (error) {
+      handleError(res, error);
+    }
+  }),
+);
 
 /**
  * @swagger
- * /api/v1/sandbox/templates/{id}:
+ * /sandbox/templates/{id}:
  *   get:
  *     summary: Get a template by ID
- *     description: Returns the full template record for the given ID. Note: sandbox router is not currently mounted in router.ts.
+ *     description: Returns the full template record for the given ID.
  *     tags: [Sandbox]
  *     parameters:
  *       - in: path
@@ -256,22 +261,25 @@ sandboxRouter.get('/templates', async (req: Request, res: Response) => {
  *             example:
  *               error: Template not found
  */
-sandboxRouter.get('/templates/:id', async (req, res) => {
-  try {
-    const template = await sandboxEngine.getTemplate(req.params.id);
-    if (!template) return res.status(404).json({ error: 'Template not found' });
-    return res.json(template);
-  } catch (error) {
-    return handleError(res, error);
-  }
-});
+sandboxRouter.get(
+  '/templates/:id',
+  asyncHandler(async (req, res) => {
+    try {
+      const template = await sandboxEngine.getTemplate(req.params.id);
+      if (!template) return res.status(404).json({ error: 'Template not found' });
+      return res.json(template);
+    } catch (error) {
+      return handleError(res, error);
+    }
+  }),
+);
 
 /**
  * @swagger
- * /api/v1/sandbox/templates:
+ * /sandbox/templates:
  *   post:
  *     summary: Submit a custom template
- *     description: Creates or updates a contract template in the in-memory registry and persists it to the database. Note: sandbox router is not currently mounted in router.ts.
+ *     description: Creates or updates a contract template in the in-memory registry and persists it to the database.
  *     tags: [Sandbox]
  *     requestBody:
  *       required: true
@@ -311,21 +319,24 @@ sandboxRouter.get('/templates/:id', async (req, res) => {
  *             schema:
  *               $ref: '#/components/schemas/SandboxTemplate'
  */
-sandboxRouter.post('/templates', async (req, res) => {
-  try {
-    const created = await sandboxEngine.submitTemplate(req.body);
-    res.status(201).json(created);
-  } catch (error) {
-    handleError(res, error);
-  }
-});
+sandboxRouter.post(
+  '/templates',
+  asyncHandler(async (req, res) => {
+    try {
+      const created = await sandboxEngine.submitTemplate(req.body);
+      res.status(201).json(created);
+    } catch (error) {
+      handleError(res, error);
+    }
+  }),
+);
 
 /**
  * @swagger
- * /api/v1/sandbox/templates/{id}/params:
+ * /sandbox/templates/{id}/params:
  *   get:
  *     summary: Get template deployment parameters
- *     description: Returns the default constructor arguments, ABI, and deployment guide for a template. Note: sandbox router is not currently mounted in router.ts.
+ *     description: Returns the default constructor arguments, ABI, and deployment guide for a template.
  *     tags: [Sandbox]
  *     parameters:
  *       - in: path
@@ -349,22 +360,25 @@ sandboxRouter.post('/templates', async (req, res) => {
  *             example:
  *               error: Template not found
  */
-sandboxRouter.get('/templates/:id/params', async (req, res) => {
-  try {
-    const params = await sandboxEngine.getTemplateParams(req.params.id);
-    if (!params) return res.status(404).json({ error: 'Template not found' });
-    return res.json(params);
-  } catch (error) {
-    return handleError(res, error);
-  }
-});
+sandboxRouter.get(
+  '/templates/:id/params',
+  asyncHandler(async (req, res) => {
+    try {
+      const params = await sandboxEngine.getTemplateParams(req.params.id);
+      if (!params) return res.status(404).json({ error: 'Template not found' });
+      return res.json(params);
+    } catch (error) {
+      return handleError(res, error);
+    }
+  }),
+);
 
 /**
  * @swagger
- * /api/v1/sandbox/session:
+ * /sandbox/session:
  *   post:
  *     summary: Create a sandbox session
- *     description: Creates a new in-memory Soroban sandbox session with pre-funded accounts and a configurable ledger starting state. Note: sandbox router is not currently mounted in router.ts.
+ *     description: Creates a new in-memory Soroban sandbox session with pre-funded accounts and a configurable ledger starting state.
  *     tags: [Sandbox]
  *     requestBody:
  *       content:
@@ -420,20 +434,23 @@ sandboxRouter.get('/templates/:id/params', async (req, res) => {
  *             example:
  *               error: "Expected number, received string"
  */
-sandboxRouter.post('/session', async (req, res) => {
-  try {
-    res.status(201).json(await sandboxEngine.createSession(sessionCreateSchema.parse(req.body)));
-  } catch (error) {
-    handleError(res, error);
-  }
-});
+sandboxRouter.post(
+  '/session',
+  asyncHandler(async (req, res) => {
+    try {
+      res.status(201).json(await sandboxEngine.createSession(sessionCreateSchema.parse(req.body)));
+    } catch (error) {
+      handleError(res, error);
+    }
+  }),
+);
 
 /**
  * @swagger
- * /api/v1/sandbox/session/{sessionId}:
+ * /sandbox/session/{sessionId}:
  *   get:
  *     summary: Get session details
- *     description: Returns the current state summary for a sandbox session, including live ledger position, account count, and call history counts. Note: sandbox router is not currently mounted in router.ts.
+ *     description: Returns the current state summary for a sandbox session, including live ledger position, account count, and call history counts.
  *     tags: [Sandbox]
  *     parameters:
  *       - in: path
@@ -456,20 +473,23 @@ sandboxRouter.post('/session', async (req, res) => {
  *             example:
  *               error: Session not found
  */
-sandboxRouter.get('/session/:sessionId', async (req, res) => {
-  try {
-    res.json(await sandboxEngine.getSession(getSessionId(req.params)));
-  } catch (error) {
-    handleError(res, error);
-  }
-});
+sandboxRouter.get(
+  '/session/:sessionId',
+  asyncHandler(async (req, res) => {
+    try {
+      res.json(await sandboxEngine.getSession(getSessionId(req.params)));
+    } catch (error) {
+      handleError(res, error);
+    }
+  }),
+);
 
 /**
  * @swagger
- * /api/v1/sandbox/session/{sessionId}:
+ * /sandbox/session/{sessionId}:
  *   delete:
  *     summary: Destroy a sandbox session
- *     description: Marks the session as destroyed in the database and removes it from the in-memory active sessions map. Note: sandbox router is not currently mounted in router.ts.
+ *     description: Marks the session as destroyed in the database and removes it from the in-memory active sessions map.
  *     tags: [Sandbox]
  *     parameters:
  *       - in: path
@@ -496,20 +516,23 @@ sandboxRouter.get('/session/:sessionId', async (req, res) => {
  *             example:
  *               error: "String must contain at least 1 character(s)"
  */
-sandboxRouter.delete('/session/:sessionId', async (req, res) => {
-  try {
-    res.json(await sandboxEngine.destroySession(getSessionId(req.params)));
-  } catch (error) {
-    handleError(res, error);
-  }
-});
+sandboxRouter.delete(
+  '/session/:sessionId',
+  asyncHandler(async (req, res) => {
+    try {
+      res.json(await sandboxEngine.destroySession(getSessionId(req.params)));
+    } catch (error) {
+      handleError(res, error);
+    }
+  }),
+);
 
 /**
  * @swagger
- * /api/v1/sandbox/session/{sessionId}/pause:
+ * /sandbox/session/{sessionId}/pause:
  *   post:
  *     summary: Pause a session
- *     description: Sets the session status to paused and persists the current runtime state. Note: sandbox router is not currently mounted in router.ts.
+ *     description: Sets the session status to paused and persists the current runtime state.
  *     tags: [Sandbox]
  *     parameters:
  *       - in: path
@@ -532,20 +555,23 @@ sandboxRouter.delete('/session/:sessionId', async (req, res) => {
  *             example:
  *               error: "Session abc is not active."
  */
-sandboxRouter.post('/session/:sessionId/pause', async (req, res) => {
-  try {
-    res.json(await sandboxEngine.pauseSession(getSessionId(req.params)));
-  } catch (error) {
-    handleError(res, error);
-  }
-});
+sandboxRouter.post(
+  '/session/:sessionId/pause',
+  asyncHandler(async (req, res) => {
+    try {
+      res.json(await sandboxEngine.pauseSession(getSessionId(req.params)));
+    } catch (error) {
+      handleError(res, error);
+    }
+  }),
+);
 
 /**
  * @swagger
- * /api/v1/sandbox/session/{sessionId}/reset:
+ * /sandbox/session/{sessionId}/reset:
  *   post:
  *     summary: Reset session to genesis state
- *     description: Restores the runtime block to the original genesis state, clearing all contracts and account mutations. Note: sandbox router is not currently mounted in router.ts.
+ *     description: Restores the runtime block to the original genesis state, clearing all contracts and account mutations.
  *     tags: [Sandbox]
  *     parameters:
  *       - in: path
@@ -568,20 +594,23 @@ sandboxRouter.post('/session/:sessionId/pause', async (req, res) => {
  *             example:
  *               error: "Session abc is not active."
  */
-sandboxRouter.post('/session/:sessionId/reset', async (req, res) => {
-  try {
-    res.json(await sandboxEngine.resetSession(getSessionId(req.params)));
-  } catch (error) {
-    handleError(res, error);
-  }
-});
+sandboxRouter.post(
+  '/session/:sessionId/reset',
+  asyncHandler(async (req, res) => {
+    try {
+      res.json(await sandboxEngine.resetSession(getSessionId(req.params)));
+    } catch (error) {
+      handleError(res, error);
+    }
+  }),
+);
 
 /**
  * @swagger
- * /api/v1/sandbox/session/{sessionId}/snapshot:
+ * /sandbox/session/{sessionId}/snapshot:
  *   post:
  *     summary: Take a named snapshot
- *     description: Saves the current runtime state as a named snapshot that can be restored later. Note: sandbox router is not currently mounted in router.ts.
+ *     description: Saves the current runtime state as a named snapshot that can be restored later.
  *     tags: [Sandbox]
  *     parameters:
  *       - in: path
@@ -616,21 +645,24 @@ sandboxRouter.post('/session/:sessionId/reset', async (req, res) => {
  *             example:
  *               error: "String must contain at least 1 character(s)"
  */
-sandboxRouter.post('/session/:sessionId/snapshot', async (req, res) => {
-  try {
-    const body = snapshotSchema.parse({ sessionId: getSessionId(req.params), ...req.body });
-    res.status(201).json(await sandboxEngine.snapshotSession(body));
-  } catch (error) {
-    handleError(res, error);
-  }
-});
+sandboxRouter.post(
+  '/session/:sessionId/snapshot',
+  asyncHandler(async (req, res) => {
+    try {
+      const body = snapshotSchema.parse({ sessionId: getSessionId(req.params), ...req.body });
+      res.status(201).json(await sandboxEngine.snapshotSession(body));
+    } catch (error) {
+      handleError(res, error);
+    }
+  }),
+);
 
 /**
  * @swagger
- * /api/v1/sandbox/session/{sessionId}/snapshots:
+ * /sandbox/session/{sessionId}/snapshots:
  *   get:
  *     summary: List snapshots for a session
- *     description: Returns all named snapshots for the session, newest first. Note: sandbox router is not currently mounted in router.ts.
+ *     description: Returns all named snapshots for the session, newest first.
  *     tags: [Sandbox]
  *     parameters:
  *       - in: path
@@ -655,20 +687,23 @@ sandboxRouter.post('/session/:sessionId/snapshot', async (req, res) => {
  *             example:
  *               error: "String must contain at least 1 character(s)"
  */
-sandboxRouter.get('/session/:sessionId/snapshots', async (req, res) => {
-  try {
-    res.json(await sandboxEngine.listSnapshots(getSessionId(req.params)));
-  } catch (error) {
-    handleError(res, error);
-  }
-});
+sandboxRouter.get(
+  '/session/:sessionId/snapshots',
+  asyncHandler(async (req, res) => {
+    try {
+      res.json(await sandboxEngine.listSnapshots(getSessionId(req.params)));
+    } catch (error) {
+      handleError(res, error);
+    }
+  }),
+);
 
 /**
  * @swagger
- * /api/v1/sandbox/session/{sessionId}/restore/{snapshotId}:
+ * /sandbox/session/{sessionId}/restore/{snapshotId}:
  *   post:
  *     summary: Restore a snapshot
- *     description: Replaces the current runtime block with the state captured in the named snapshot. Note: sandbox router is not currently mounted in router.ts.
+ *     description: Replaces the current runtime block with the state captured in the named snapshot.
  *     tags: [Sandbox]
  *     parameters:
  *       - in: path
@@ -695,20 +730,25 @@ sandboxRouter.get('/session/:sessionId/snapshots', async (req, res) => {
  *             example:
  *               error: Snapshot not found
  */
-sandboxRouter.post('/session/:sessionId/restore/:snapshotId', async (req, res) => {
-  try {
-    res.json(await sandboxEngine.restoreSnapshot(getSessionId(req.params), req.params.snapshotId));
-  } catch (error) {
-    handleError(res, error);
-  }
-});
+sandboxRouter.post(
+  '/session/:sessionId/restore/:snapshotId',
+  asyncHandler(async (req, res) => {
+    try {
+      res.json(
+        await sandboxEngine.restoreSnapshot(getSessionId(req.params), req.params.snapshotId),
+      );
+    } catch (error) {
+      handleError(res, error);
+    }
+  }),
+);
 
 /**
  * @swagger
- * /api/v1/sandbox/session/{sessionId}/advance:
+ * /sandbox/session/{sessionId}/advance:
  *   post:
  *     summary: Advance the ledger clock
- *     description: Increments the ledger sequence and optionally moves the ledger timestamp forward. Useful for testing time-dependent logic. Note: sandbox router is not currently mounted in router.ts.
+ *     description: Increments the ledger sequence and optionally moves the ledger timestamp forward. Useful for testing time-dependent logic.
  *     tags: [Sandbox]
  *     parameters:
  *       - in: path
@@ -745,23 +785,26 @@ sandboxRouter.post('/session/:sessionId/restore/:snapshotId', async (req, res) =
  *             example:
  *               error: "Session abc is not active."
  */
-sandboxRouter.post('/session/:sessionId/advance', async (req, res) => {
-  try {
-    const sessionId = getSessionId(req.params);
-    const ledgers = typeof req.body?.ledgers === 'number' ? req.body.ledgers : 1;
-    const seconds = typeof req.body?.seconds === 'number' ? req.body.seconds : 0;
-    res.json(await sandboxEngine.advanceSession(sessionId, ledgers, seconds));
-  } catch (error) {
-    handleError(res, error);
-  }
-});
+sandboxRouter.post(
+  '/session/:sessionId/advance',
+  asyncHandler(async (req, res) => {
+    try {
+      const sessionId = getSessionId(req.params);
+      const ledgers = typeof req.body?.ledgers === 'number' ? req.body.ledgers : 1;
+      const seconds = typeof req.body?.seconds === 'number' ? req.body.seconds : 0;
+      res.json(await sandboxEngine.advanceSession(sessionId, ledgers, seconds));
+    } catch (error) {
+      handleError(res, error);
+    }
+  }),
+);
 
 /**
  * @swagger
- * /api/v1/sandbox/session/{sessionId}/fund:
+ * /sandbox/session/{sessionId}/fund:
  *   post:
  *     summary: Fund an account
- *     description: Adds the given amount to an account's balance within the session. Note: sandbox router is not currently mounted in router.ts.
+ *     description: Adds the given amount to an account's balance within the session.
  *     tags: [Sandbox]
  *     parameters:
  *       - in: path
@@ -800,20 +843,25 @@ sandboxRouter.post('/session/:sessionId/advance', async (req, res) => {
  *             example:
  *               error: Account not found
  */
-sandboxRouter.post('/session/:sessionId/fund', async (req, res) => {
-  try {
-    res.json(await sandboxEngine.fundAccount(getSessionId(req.params), fundSchema.parse(req.body)));
-  } catch (error) {
-    handleError(res, error);
-  }
-});
+sandboxRouter.post(
+  '/session/:sessionId/fund',
+  asyncHandler(async (req, res) => {
+    try {
+      res.json(
+        await sandboxEngine.fundAccount(getSessionId(req.params), fundSchema.parse(req.body)),
+      );
+    } catch (error) {
+      handleError(res, error);
+    }
+  }),
+);
 
 /**
  * @swagger
- * /api/v1/sandbox/session/{sessionId}/accounts:
+ * /sandbox/session/{sessionId}/accounts:
  *   post:
  *     summary: Create a new account
- *     description: Generates a new deterministic Stellar key pair and adds it to the session. Note: sandbox router is not currently mounted in router.ts.
+ *     description: Generates a new deterministic Stellar key pair and adds it to the session.
  *     tags: [Sandbox]
  *     parameters:
  *       - in: path
@@ -854,24 +902,30 @@ sandboxRouter.post('/session/:sessionId/fund', async (req, res) => {
  *             example:
  *               error: "Session abc is not active."
  */
-sandboxRouter.post('/session/:sessionId/accounts', async (req, res) => {
-  try {
-    res
-      .status(201)
-      .json(
-        await sandboxEngine.createAccount(getSessionId(req.params), accountSchema.parse(req.body)),
-      );
-  } catch (error) {
-    handleError(res, error);
-  }
-});
+sandboxRouter.post(
+  '/session/:sessionId/accounts',
+  asyncHandler(async (req, res) => {
+    try {
+      res
+        .status(201)
+        .json(
+          await sandboxEngine.createAccount(
+            getSessionId(req.params),
+            accountSchema.parse(req.body),
+          ),
+        );
+    } catch (error) {
+      handleError(res, error);
+    }
+  }),
+);
 
 /**
  * @swagger
- * /api/v1/sandbox/session/{sessionId}/accounts:
+ * /sandbox/session/{sessionId}/accounts:
  *   get:
  *     summary: List session accounts
- *     description: Returns all accounts currently live in the session's runtime block. Note: sandbox router is not currently mounted in router.ts.
+ *     description: Returns all accounts currently live in the session's runtime block.
  *     tags: [Sandbox]
  *     parameters:
  *       - in: path
@@ -896,20 +950,23 @@ sandboxRouter.post('/session/:sessionId/accounts', async (req, res) => {
  *             example:
  *               error: "Session abc is not active."
  */
-sandboxRouter.get('/session/:sessionId/accounts', async (req, res) => {
-  try {
-    res.json(await sandboxEngine.listAccounts(getSessionId(req.params)));
-  } catch (error) {
-    handleError(res, error);
-  }
-});
+sandboxRouter.get(
+  '/session/:sessionId/accounts',
+  asyncHandler(async (req, res) => {
+    try {
+      res.json(await sandboxEngine.listAccounts(getSessionId(req.params)));
+    } catch (error) {
+      handleError(res, error);
+    }
+  }),
+);
 
 /**
  * @swagger
- * /api/v1/sandbox/session/{sessionId}/register-token:
+ * /sandbox/session/{sessionId}/register-token:
  *   post:
  *     summary: Register a token contract
- *     description: Deploys a SEP-41 token template into the session using the provided metadata. Note: sandbox router is not currently mounted in router.ts.
+ *     description: Deploys a SEP-41 token template into the session using the provided metadata.
  *     tags: [Sandbox]
  *     parameters:
  *       - in: path
@@ -953,20 +1010,23 @@ sandboxRouter.get('/session/:sessionId/accounts', async (req, res) => {
  *             example:
  *               error: "Session abc is not active."
  */
-sandboxRouter.post('/session/:sessionId/register-token', async (req, res) => {
-  try {
-    res.status(201).json(await sandboxEngine.registerToken(getSessionId(req.params), req.body));
-  } catch (error) {
-    handleError(res, error);
-  }
-});
+sandboxRouter.post(
+  '/session/:sessionId/register-token',
+  asyncHandler(async (req, res) => {
+    try {
+      res.status(201).json(await sandboxEngine.registerToken(getSessionId(req.params), req.body));
+    } catch (error) {
+      handleError(res, error);
+    }
+  }),
+);
 
 /**
  * @swagger
- * /api/v1/sandbox/deploy:
+ * /sandbox/deploy:
  *   post:
  *     summary: Deploy a contract
- *     description: Deploys a Wasm contract (provided as base64) into the session's runtime state. Note: sandbox router is not currently mounted in router.ts.
+ *     description: Deploys a Wasm contract (provided as base64) into the session's runtime state.
  *     tags: [Sandbox]
  *     requestBody:
  *       required: true
@@ -1016,20 +1076,23 @@ sandboxRouter.post('/session/:sessionId/register-token', async (req, res) => {
  *             example:
  *               error: "Session abc is not active."
  */
-sandboxRouter.post('/deploy', async (req, res) => {
-  try {
-    res.status(201).json(await sandboxEngine.deploy(deploySchema.parse(req.body)));
-  } catch (error) {
-    handleError(res, error);
-  }
-});
+sandboxRouter.post(
+  '/deploy',
+  asyncHandler(async (req, res) => {
+    try {
+      res.status(201).json(await sandboxEngine.deploy(deploySchema.parse(req.body)));
+    } catch (error) {
+      handleError(res, error);
+    }
+  }),
+);
 
 /**
  * @swagger
- * /api/v1/sandbox/deploy-from-template:
+ * /sandbox/deploy-from-template:
  *   post:
  *     summary: Deploy from a built-in template
- *     description: Looks up a template by templateId, then deploys it with the template's Wasm and default ABI. Note: sandbox router is not currently mounted in router.ts.
+ *     description: Looks up a template by templateId, then deploys it with the template's Wasm and default ABI.
  *     tags: [Sandbox]
  *     requestBody:
  *       required: true
@@ -1069,20 +1132,23 @@ sandboxRouter.post('/deploy', async (req, res) => {
  *             example:
  *               error: Template not found
  */
-sandboxRouter.post('/deploy-from-template', async (req, res) => {
-  try {
-    res.status(201).json(await sandboxEngine.deployFromTemplate(deploySchema.parse(req.body)));
-  } catch (error) {
-    handleError(res, error);
-  }
-});
+sandboxRouter.post(
+  '/deploy-from-template',
+  asyncHandler(async (req, res) => {
+    try {
+      res.status(201).json(await sandboxEngine.deployFromTemplate(deploySchema.parse(req.body)));
+    } catch (error) {
+      handleError(res, error);
+    }
+  }),
+);
 
 /**
  * @swagger
- * /api/v1/sandbox/deploy-from-mainnet:
+ * /sandbox/deploy-from-mainnet:
  *   post:
  *     summary: Fork a mainnet contract into the sandbox
- *     description: Looks up the contract by address on mainnet, copies its ABI and name, then deploys a local copy. Note: sandbox router is not currently mounted in router.ts.
+ *     description: Looks up the contract by address on mainnet, copies its ABI and name, then deploys a local copy.
  *     tags: [Sandbox]
  *     requestBody:
  *       required: true
@@ -1118,22 +1184,25 @@ sandboxRouter.post('/deploy-from-template', async (req, res) => {
  *             example:
  *               error: "Session abc is not active."
  */
-sandboxRouter.post('/deploy-from-mainnet', async (req, res) => {
-  try {
-    res
-      .status(201)
-      .json(await sandboxEngine.deployFromMainnet(deployMainnetSchema.parse(req.body)));
-  } catch (error) {
-    handleError(res, error);
-  }
-});
+sandboxRouter.post(
+  '/deploy-from-mainnet',
+  asyncHandler(async (req, res) => {
+    try {
+      res
+        .status(201)
+        .json(await sandboxEngine.deployFromMainnet(deployMainnetSchema.parse(req.body)));
+    } catch (error) {
+      handleError(res, error);
+    }
+  }),
+);
 
 /**
  * @swagger
- * /api/v1/sandbox/call:
+ * /sandbox/call:
  *   post:
  *     summary: Call a contract function
- *     description: Invokes a function on a deployed sandbox contract and returns the result, events, and execution trace. Note: sandbox router is not currently mounted in router.ts.
+ *     description: Invokes a function on a deployed sandbox contract and returns the result, events, and execution trace.
  *     tags: [Sandbox]
  *     requestBody:
  *       required: true
@@ -1176,20 +1245,23 @@ sandboxRouter.post('/deploy-from-mainnet', async (req, res) => {
  *             example:
  *               error: Contract not found
  */
-sandboxRouter.post('/call', async (req, res) => {
-  try {
-    res.json(await sandboxEngine.call(callSchema.parse(req.body)));
-  } catch (error) {
-    handleError(res, error);
-  }
-});
+sandboxRouter.post(
+  '/call',
+  asyncHandler(async (req, res) => {
+    try {
+      res.json(await sandboxEngine.call(callSchema.parse(req.body)));
+    } catch (error) {
+      handleError(res, error);
+    }
+  }),
+);
 
 /**
  * @swagger
- * /api/v1/sandbox/call-batch:
+ * /sandbox/call-batch:
  *   post:
  *     summary: Execute multiple contract calls in sequence
- *     description: Runs an ordered list of contract calls within a single session, sharing a batch ID. Note: sandbox router is not currently mounted in router.ts.
+ *     description: Runs an ordered list of contract calls within a single session, sharing a batch ID.
  *     tags: [Sandbox]
  *     requestBody:
  *       required: true
@@ -1240,21 +1312,24 @@ sandboxRouter.post('/call', async (req, res) => {
  *             example:
  *               error: "Session abc is not active."
  */
-sandboxRouter.post('/call-batch', async (req, res) => {
-  try {
-    const body = batchCallSchema.parse(req.body);
-    res.json(await sandboxEngine.callBatch(body.sessionId, body.calls));
-  } catch (error) {
-    handleError(res, error);
-  }
-});
+sandboxRouter.post(
+  '/call-batch',
+  asyncHandler(async (req, res) => {
+    try {
+      const body = batchCallSchema.parse(req.body);
+      res.json(await sandboxEngine.callBatch(body.sessionId, body.calls));
+    } catch (error) {
+      handleError(res, error);
+    }
+  }),
+);
 
 /**
  * @swagger
- * /api/v1/sandbox/session/{sessionId}/contracts:
+ * /sandbox/session/{sessionId}/contracts:
  *   get:
  *     summary: List deployed contracts
- *     description: Returns all contracts currently live in the session's runtime block. Note: sandbox router is not currently mounted in router.ts.
+ *     description: Returns all contracts currently live in the session's runtime block.
  *     tags: [Sandbox]
  *     parameters:
  *       - in: path
@@ -1279,20 +1354,23 @@ sandboxRouter.post('/call-batch', async (req, res) => {
  *             example:
  *               error: "Session abc is not active."
  */
-sandboxRouter.get('/session/:sessionId/contracts', async (req, res) => {
-  try {
-    res.json(await sandboxEngine.listContracts(getSessionId(req.params)));
-  } catch (error) {
-    handleError(res, error);
-  }
-});
+sandboxRouter.get(
+  '/session/:sessionId/contracts',
+  asyncHandler(async (req, res) => {
+    try {
+      res.json(await sandboxEngine.listContracts(getSessionId(req.params)));
+    } catch (error) {
+      handleError(res, error);
+    }
+  }),
+);
 
 /**
  * @swagger
- * /api/v1/sandbox/session/{sessionId}/contracts/{address}/state:
+ * /sandbox/session/{sessionId}/contracts/{address}/state:
  *   get:
  *     summary: Get contract storage state
- *     description: Returns the raw key/value storage map for the given contract. Note: sandbox router is not currently mounted in router.ts.
+ *     description: Returns the raw key/value storage map for the given contract.
  *     tags: [Sandbox]
  *     parameters:
  *       - in: path
@@ -1324,20 +1402,23 @@ sandboxRouter.get('/session/:sessionId/contracts', async (req, res) => {
  *             example:
  *               error: Contract not found
  */
-sandboxRouter.get('/session/:sessionId/contracts/:address/state', async (req, res) => {
-  try {
-    res.json(await sandboxEngine.getContractState(getSessionId(req.params), req.params.address));
-  } catch (error) {
-    handleError(res, error);
-  }
-});
+sandboxRouter.get(
+  '/session/:sessionId/contracts/:address/state',
+  asyncHandler(async (req, res) => {
+    try {
+      res.json(await sandboxEngine.getContractState(getSessionId(req.params), req.params.address));
+    } catch (error) {
+      handleError(res, error);
+    }
+  }),
+);
 
 /**
  * @swagger
- * /api/v1/sandbox/session/{sessionId}/contracts/{address}/abi:
+ * /sandbox/session/{sessionId}/contracts/{address}/abi:
  *   get:
  *     summary: Get contract ABI
- *     description: Returns the ABI (function signatures and types) for the given contract. Note: sandbox router is not currently mounted in router.ts.
+ *     description: Returns the ABI (function signatures and types) for the given contract.
  *     tags: [Sandbox]
  *     parameters:
  *       - in: path
@@ -1378,20 +1459,23 @@ sandboxRouter.get('/session/:sessionId/contracts/:address/state', async (req, re
  *             example:
  *               error: Contract not found
  */
-sandboxRouter.get('/session/:sessionId/contracts/:address/abi', async (req, res) => {
-  try {
-    res.json(await sandboxEngine.getContractAbi(getSessionId(req.params), req.params.address));
-  } catch (error) {
-    handleError(res, error);
-  }
-});
+sandboxRouter.get(
+  '/session/:sessionId/contracts/:address/abi',
+  asyncHandler(async (req, res) => {
+    try {
+      res.json(await sandboxEngine.getContractAbi(getSessionId(req.params), req.params.address));
+    } catch (error) {
+      handleError(res, error);
+    }
+  }),
+);
 
 /**
  * @swagger
- * /api/v1/sandbox/debug:
+ * /sandbox/debug:
  *   post:
  *     summary: Debug a contract call
- *     description: Executes a contract function and returns the full call result extended with a debugger object containing host-function steps, a state diff, and gas metrics. Note: sandbox router is not currently mounted in router.ts.
+ *     description: Executes a contract function and returns the full call result extended with a debugger object containing host-function steps, a state diff, and gas metrics.
  *     tags: [Sandbox]
  *     requestBody:
  *       required: true
@@ -1452,30 +1536,33 @@ sandboxRouter.get('/session/:sessionId/contracts/:address/abi', async (req, res)
  *             example:
  *               error: Contract not found
  */
-sandboxRouter.post('/debug', async (req, res) => {
-  try {
-    const body = debugSchema.parse(req.body);
-    res.json(
-      await sandboxEngine.debug({
-        sessionId: body.sessionId,
-        contractId: body.contract,
-        functionName: body.function,
-        args: body.args,
-        sourceAccount: body.source,
-        traceOptions: body.traceOptions,
-      }),
-    );
-  } catch (error) {
-    handleError(res, error);
-  }
-});
+sandboxRouter.post(
+  '/debug',
+  asyncHandler(async (req, res) => {
+    try {
+      const body = debugSchema.parse(req.body);
+      res.json(
+        await sandboxEngine.debug({
+          sessionId: body.sessionId,
+          contractId: body.contract,
+          functionName: body.function,
+          args: body.args,
+          sourceAccount: body.source,
+          traceOptions: body.traceOptions,
+        }),
+      );
+    } catch (error) {
+      handleError(res, error);
+    }
+  }),
+);
 
 /**
  * @swagger
- * /api/v1/sandbox/session/{sessionId}/debugger-ui:
+ * /sandbox/session/{sessionId}/debugger-ui:
  *   get:
  *     summary: Debugger UI page
- *     description: Returns a minimal HTML page showing the live session state. Intended for browser-based debugging. Note: sandbox router is not currently mounted in router.ts.
+ *     description: Returns a minimal HTML page showing the live session state. Intended for browser-based debugging.
  *     tags: [Sandbox]
  *     parameters:
  *       - in: path
@@ -1498,25 +1585,28 @@ sandboxRouter.post('/debug', async (req, res) => {
  *             example:
  *               error: Session not found
  */
-sandboxRouter.get('/session/:sessionId/debugger-ui', async (req, res) => {
-  try {
-    const session = await sandboxEngine.getSession(getSessionId(req.params));
-    res
-      .type('html')
-      .send(
-        `<!doctype html><html><head><meta charset="utf-8"><title>Sandbox Debugger</title><style>body{font-family:system-ui,sans-serif;background:#0b1020;color:#e8eefc;padding:24px}pre{background:#121a33;padding:16px;border-radius:12px;overflow:auto}</style></head><body><h1>Sandbox Debugger</h1><p>Session ${session.id} is ${session.status}.</p><pre>${escapeHtml(JSON.stringify(session, null, 2))}</pre></body></html>`,
-      );
-  } catch (error) {
-    handleError(res, error);
-  }
-});
+sandboxRouter.get(
+  '/session/:sessionId/debugger-ui',
+  asyncHandler(async (req, res) => {
+    try {
+      const session = await sandboxEngine.getSession(getSessionId(req.params));
+      res
+        .type('html')
+        .send(
+          `<!doctype html><html><head><meta charset="utf-8"><title>Sandbox Debugger</title><style>body{font-family:system-ui,sans-serif;background:#0b1020;color:#e8eefc;padding:24px}pre{background:#121a33;padding:16px;border-radius:12px;overflow:auto}</style></head><body><h1>Sandbox Debugger</h1><p>Session ${session.id} is ${session.status}.</p><pre>${escapeHtml(JSON.stringify(session, null, 2))}</pre></body></html>`,
+        );
+    } catch (error) {
+      handleError(res, error);
+    }
+  }),
+);
 
 /**
  * @swagger
- * /api/v1/sandbox/debug/set-breakpoint:
+ * /sandbox/debug/set-breakpoint:
  *   post:
  *     summary: Set a debugger breakpoint (stub)
- *     description: Stub endpoint that echoes the breakpoint payload back. Full breakpoint support is not yet implemented. Note: sandbox router is not currently mounted in router.ts.
+ *     description: Stub endpoint that echoes the breakpoint payload back. Full breakpoint support is not yet implemented.
  *     tags: [Sandbox]
  *     requestBody:
  *       content:
@@ -1548,10 +1638,10 @@ sandboxRouter.post(
 
 /**
  * @swagger
- * /api/v1/sandbox/debug/continue:
+ * /sandbox/debug/continue:
  *   post:
  *     summary: Continue from a breakpoint (stub)
- *     description: Stub endpoint that echoes the payload back. Full step-through execution is not yet implemented. Note: sandbox router is not currently mounted in router.ts.
+ *     description: Stub endpoint that echoes the payload back. Full step-through execution is not yet implemented.
  *     tags: [Sandbox]
  *     requestBody:
  *       content:
@@ -1583,10 +1673,10 @@ sandboxRouter.post(
 
 /**
  * @swagger
- * /api/v1/sandbox/session/{sessionId}/calls:
+ * /sandbox/session/{sessionId}/calls:
  *   get:
  *     summary: List call history
- *     description: Returns all persisted call records for a session, newest first. Note: sandbox router is not currently mounted in router.ts.
+ *     description: Returns all persisted call records for a session, newest first.
  *     tags: [Sandbox]
  *     parameters:
  *       - in: path
@@ -1624,20 +1714,23 @@ sandboxRouter.post(
  *             example:
  *               error: "String must contain at least 1 character(s)"
  */
-sandboxRouter.get('/session/:sessionId/calls', async (req, res) => {
-  try {
-    res.json(await sandboxEngine.listCalls(getSessionId(req.params)));
-  } catch (error) {
-    handleError(res, error);
-  }
-});
+sandboxRouter.get(
+  '/session/:sessionId/calls',
+  asyncHandler(async (req, res) => {
+    try {
+      res.json(await sandboxEngine.listCalls(getSessionId(req.params)));
+    } catch (error) {
+      handleError(res, error);
+    }
+  }),
+);
 
 /**
  * @swagger
- * /api/v1/sandbox/session/{sessionId}/calls/{callId}:
+ * /sandbox/session/{sessionId}/calls/{callId}:
  *   get:
  *     summary: Get a call record
- *     description: Returns the persisted call record for the given ID. Note: sandbox router is not currently mounted in router.ts.
+ *     description: Returns the persisted call record for the given ID.
  *     tags: [Sandbox]
  *     parameters:
  *       - in: path
@@ -1677,20 +1770,23 @@ sandboxRouter.get('/session/:sessionId/calls', async (req, res) => {
  *             example:
  *               error: Call not found
  */
-sandboxRouter.get('/session/:sessionId/calls/:callId', async (req, res) => {
-  try {
-    res.json(await sandboxEngine.getCall(getSessionId(req.params), req.params.callId));
-  } catch (error) {
-    handleError(res, error);
-  }
-});
+sandboxRouter.get(
+  '/session/:sessionId/calls/:callId',
+  asyncHandler(async (req, res) => {
+    try {
+      res.json(await sandboxEngine.getCall(getSessionId(req.params), req.params.callId));
+    } catch (error) {
+      handleError(res, error);
+    }
+  }),
+);
 
 /**
  * @swagger
- * /api/v1/sandbox/compare:
+ * /sandbox/compare:
  *   post:
  *     summary: Compare two contracts
- *     description: Diffs the ABI, storage state, and metadata of two contracts. Each side can be a live session contract ID, a template ID, or a mainnet contract address. Note: sandbox router is not currently mounted in router.ts.
+ *     description: Diffs the ABI, storage state, and metadata of two contracts. Each side can be a live session contract ID, a template ID, or a mainnet contract address.
  *     tags: [Sandbox]
  *     requestBody:
  *       required: true
@@ -1745,20 +1841,23 @@ sandboxRouter.get('/session/:sessionId/calls/:callId', async (req, res) => {
  *             example:
  *               error: "Unable to resolve comparable contract or template: unknown-id"
  */
-sandboxRouter.post('/compare', async (req, res) => {
-  try {
-    res.json(await sandboxEngine.compare(compareSchema.parse(req.body)));
-  } catch (error) {
-    handleError(res, error);
-  }
-});
+sandboxRouter.post(
+  '/compare',
+  asyncHandler(async (req, res) => {
+    try {
+      res.json(await sandboxEngine.compare(compareSchema.parse(req.body)));
+    } catch (error) {
+      handleError(res, error);
+    }
+  }),
+);
 
 /**
  * @swagger
- * /api/v1/sandbox/session/{sessionId}/state-diff:
+ * /sandbox/session/{sessionId}/state-diff:
  *   get:
  *     summary: Diff current state against a snapshot
- *     description: Returns the keys that differ between the current runtime block and the state captured in the given snapshot. Note: sandbox router is not currently mounted in router.ts.
+ *     description: Returns the keys that differ between the current runtime block and the state captured in the given snapshot.
  *     tags: [Sandbox]
  *     parameters:
  *       - in: path
@@ -1799,22 +1898,25 @@ sandboxRouter.post('/compare', async (req, res) => {
  *             example:
  *               error: "Query parameter \"since\" is required."
  */
-sandboxRouter.get('/session/:sessionId/state-diff', async (req, res) => {
-  try {
-    const since = typeof req.query.since === 'string' ? req.query.since : null;
-    if (!since) return res.status(400).json({ error: 'Query parameter "since" is required.' });
-    res.json(await sandboxEngine.stateDiff(getSessionId(req.params), since));
-  } catch (error) {
-    handleError(res, error);
-  }
-});
+sandboxRouter.get(
+  '/session/:sessionId/state-diff',
+  asyncHandler(async (req, res) => {
+    try {
+      const since = typeof req.query.since === 'string' ? req.query.since : null;
+      if (!since) return res.status(400).json({ error: 'Query parameter "since" is required.' });
+      res.json(await sandboxEngine.stateDiff(getSessionId(req.params), since));
+    } catch (error) {
+      handleError(res, error);
+    }
+  }),
+);
 
 /**
  * @swagger
- * /api/v1/sandbox/fuzz/start:
+ * /sandbox/fuzz/start:
  *   post:
  *     summary: Start a fuzz run
- *     description: Runs one or more fuzz strategies against a contract and returns findings. Note: sandbox router is not currently mounted in router.ts.
+ *     description: Runs one or more fuzz strategies against a contract and returns findings.
  *     tags: [Sandbox]
  *     requestBody:
  *       required: true
@@ -1871,20 +1973,23 @@ sandboxRouter.get('/session/:sessionId/state-diff', async (req, res) => {
  *             example:
  *               error: Contract not found
  */
-sandboxRouter.post('/fuzz/start', async (req, res) => {
-  try {
-    res.status(201).json(await sandboxEngine.startFuzz(fuzzStartSchema.parse(req.body)));
-  } catch (error) {
-    handleError(res, error);
-  }
-});
+sandboxRouter.post(
+  '/fuzz/start',
+  asyncHandler(async (req, res) => {
+    try {
+      res.status(201).json(await sandboxEngine.startFuzz(fuzzStartSchema.parse(req.body)));
+    } catch (error) {
+      handleError(res, error);
+    }
+  }),
+);
 
 /**
  * @swagger
- * /api/v1/sandbox/fuzz/stop/{runId}:
+ * /sandbox/fuzz/stop/{runId}:
  *   post:
  *     summary: Cancel a fuzz run
- *     description: Sets the fuzz run status to cancelled. Note: sandbox router is not currently mounted in router.ts.
+ *     description: Sets the fuzz run status to cancelled.
  *     tags: [Sandbox]
  *     parameters:
  *       - in: path
@@ -1899,20 +2004,23 @@ sandboxRouter.post('/fuzz/start', async (req, res) => {
  *             schema:
  *               $ref: '#/components/schemas/FuzzRun'
  */
-sandboxRouter.post('/fuzz/stop/:runId', async (req, res) => {
-  try {
-    res.json(await sandboxEngine.stopFuzz(req.params.runId));
-  } catch (error) {
-    handleError(res, error);
-  }
-});
+sandboxRouter.post(
+  '/fuzz/stop/:runId',
+  asyncHandler(async (req, res) => {
+    try {
+      res.json(await sandboxEngine.stopFuzz(req.params.runId));
+    } catch (error) {
+      handleError(res, error);
+    }
+  }),
+);
 
 /**
  * @swagger
- * /api/v1/sandbox/fuzz/run/{runId}:
+ * /sandbox/fuzz/run/{runId}:
  *   get:
  *     summary: Get a fuzz run
- *     description: Returns the fuzz run record for the given ID. Note: sandbox router is not currently mounted in router.ts.
+ *     description: Returns the fuzz run record for the given ID.
  *     tags: [Sandbox]
  *     parameters:
  *       - in: path
@@ -1935,69 +2043,88 @@ sandboxRouter.post('/fuzz/stop/:runId', async (req, res) => {
  *             example:
  *               error: Fuzz run not found
  */
-sandboxRouter.post('/fuzz/:contractId', async (req, res) => {
-  try {
-    const payload = fuzzCampaignSchema.parse({
-      sessionId: req.body?.sessionId,
-      contractId: req.params.contractId,
-      config: req.body?.config,
-    });
-    res.status(201).json(await sandboxEngine.startFuzzCampaign(payload));
-  } catch (error) {
-    handleError(res, error);
-  }
-});
+sandboxRouter.post(
+  '/fuzz/:contractId',
+  asyncHandler(async (req, res) => {
+    try {
+      const payload = fuzzCampaignSchema.parse({
+        sessionId: req.body?.sessionId,
+        contractId: req.params.contractId,
+        config: req.body?.config,
+      });
+      res.status(201).json(await sandboxEngine.startFuzzCampaign(payload));
+    } catch (error) {
+      handleError(res, error);
+    }
+  }),
+);
 
-sandboxRouter.get('/fuzz/:campaignId', async (req, res) => {
-  try {
-    const campaign = await sandboxEngine.getFuzzCampaign(req.params.campaignId);
-    if (!campaign) return res.status(404).json({ error: 'Fuzz campaign not found' });
-    return res.json({
-      ...campaign,
-      coveragePercent: campaign.coverage.totalCoverage,
-      uniqueCrashes: campaign.crashes.length,
-      branchesHit: campaign.coverage.coveredBranches.length,
-    });
-  } catch (error) {
-    handleError(res, error);
-  }
-});
+sandboxRouter.get(
+  '/fuzz/:campaignId',
+  asyncHandler(async (req, res) => {
+    try {
+      const campaign = await sandboxEngine.getFuzzCampaign(req.params.campaignId);
+      if (!campaign) return res.status(404).json({ error: 'Fuzz campaign not found' });
+      return res.json({
+        ...campaign,
+        coveragePercent: campaign.coverage.totalCoverage,
+        uniqueCrashes: campaign.crashes.length,
+        branchesHit: campaign.coverage.coveredBranches.length,
+      });
+    } catch (error) {
+      handleError(res, error);
+    }
+  }),
+);
 
-sandboxRouter.get('/fuzz/:campaignId/crashes', async (req, res) => {
-  try {
-    res.json(await sandboxEngine.listFuzzCampaignCrashes(req.params.campaignId));
-  } catch (error) {
-    handleError(res, error);
-  }
-});
+sandboxRouter.get(
+  '/fuzz/:campaignId/crashes',
+  asyncHandler(async (req, res) => {
+    try {
+      res.json(await sandboxEngine.listFuzzCampaignCrashes(req.params.campaignId));
+    } catch (error) {
+      handleError(res, error);
+    }
+  }),
+);
 
-sandboxRouter.post('/fuzz/:campaignId/minimize/:crashId', async (req, res) => {
-  try {
-    const { sessionId } = minimizeCrashSchema.parse(req.body ?? {});
-    res.json(
-      await sandboxEngine.minimizeCrash(sessionId ?? '', req.params.campaignId, req.params.crashId),
-    );
-  } catch (error) {
-    handleError(res, error);
-  }
-});
+sandboxRouter.post(
+  '/fuzz/:campaignId/minimize/:crashId',
+  asyncHandler(async (req, res) => {
+    try {
+      const { sessionId } = minimizeCrashSchema.parse(req.body ?? {});
+      res.json(
+        await sandboxEngine.minimizeCrash(
+          sessionId ?? '',
+          req.params.campaignId,
+          req.params.crashId,
+        ),
+      );
+    } catch (error) {
+      handleError(res, error);
+    }
+  }),
+);
 
-sandboxRouter.get('/fuzz/run/:runId', async (req, res) => {
-  try {
-    const run = await sandboxEngine.getFuzzRun(req.params.runId);
-    if (!run) return res.status(404).json({ error: 'Fuzz run not found' });
-    return res.json(run);
-  } catch (error) {
-    handleError(res, error);
-  }
-});
+sandboxRouter.get(
+  '/fuzz/run/:runId',
+  asyncHandler(async (req, res) => {
+    try {
+      const run = await sandboxEngine.getFuzzRun(req.params.runId);
+      if (!run) return res.status(404).json({ error: 'Fuzz run not found' });
+      return res.json(run);
+    } catch (error) {
+      handleError(res, error);
+    }
+  }),
+);
 
 /**
  * @swagger
- * /api/v1/sandbox/fuzz/run/{runId}/findings:
+ * /sandbox/fuzz/run/{runId}/findings:
  *   get:
  *     summary: List findings for a fuzz run
- *     description: Returns all findings for the given fuzz run, newest first. Note: sandbox router is not currently mounted in router.ts.
+ *     description: Returns all findings for the given fuzz run, newest first.
  *     tags: [Sandbox]
  *     parameters:
  *       - in: path
@@ -2014,20 +2141,23 @@ sandboxRouter.get('/fuzz/run/:runId', async (req, res) => {
  *               items:
  *                 $ref: '#/components/schemas/FuzzFinding'
  */
-sandboxRouter.get('/fuzz/run/:runId/findings', async (req, res) => {
-  try {
-    res.json(await sandboxEngine.listFuzzFindings(req.params.runId));
-  } catch (error) {
-    handleError(res, error);
-  }
-});
+sandboxRouter.get(
+  '/fuzz/run/:runId/findings',
+  asyncHandler(async (req, res) => {
+    try {
+      res.json(await sandboxEngine.listFuzzFindings(req.params.runId));
+    } catch (error) {
+      handleError(res, error);
+    }
+  }),
+);
 
 /**
  * @swagger
- * /api/v1/sandbox/fuzz/runs:
+ * /sandbox/fuzz/runs:
  *   get:
  *     summary: List fuzz runs
- *     description: Returns all fuzz runs, optionally filtered by session, newest first. Note: sandbox router is not currently mounted in router.ts.
+ *     description: Returns all fuzz runs, optionally filtered by session, newest first.
  *     tags: [Sandbox]
  *     parameters:
  *       - in: query
@@ -2044,21 +2174,24 @@ sandboxRouter.get('/fuzz/run/:runId/findings', async (req, res) => {
  *               items:
  *                 $ref: '#/components/schemas/FuzzRun'
  */
-sandboxRouter.get('/fuzz/runs', async (req, res) => {
-  try {
-    const sessionId = typeof req.query.sessionId === 'string' ? req.query.sessionId : undefined;
-    res.json(await sandboxEngine.listFuzzRuns(sessionId));
-  } catch (error) {
-    handleError(res, error);
-  }
-});
+sandboxRouter.get(
+  '/fuzz/runs',
+  asyncHandler(async (req, res) => {
+    try {
+      const sessionId = typeof req.query.sessionId === 'string' ? req.query.sessionId : undefined;
+      res.json(await sandboxEngine.listFuzzRuns(sessionId));
+    } catch (error) {
+      handleError(res, error);
+    }
+  }),
+);
 
 /**
  * @swagger
- * /api/v1/sandbox/fuzz/run/{runId}/replay/{findingId}:
+ * /sandbox/fuzz/run/{runId}/replay/{findingId}:
  *   post:
  *     summary: Replay a fuzz finding
- *     description: Re-executes the call sequence from a specific finding to reproduce the issue. Note: sandbox router is not currently mounted in router.ts.
+ *     description: Re-executes the call sequence from a specific finding to reproduce the issue.
  *     tags: [Sandbox]
  *     parameters:
  *       - in: path
@@ -2091,20 +2224,23 @@ sandboxRouter.get('/fuzz/runs', async (req, res) => {
  *             example:
  *               error: Finding not found
  */
-sandboxRouter.post('/fuzz/run/:runId/replay/:findingId', async (req, res) => {
-  try {
-    res.json(await sandboxEngine.replayFinding(req.params.runId, req.params.findingId));
-  } catch (error) {
-    handleError(res, error);
-  }
-});
+sandboxRouter.post(
+  '/fuzz/run/:runId/replay/:findingId',
+  asyncHandler(async (req, res) => {
+    try {
+      res.json(await sandboxEngine.replayFinding(req.params.runId, req.params.findingId));
+    } catch (error) {
+      handleError(res, error);
+    }
+  }),
+);
 
 /**
  * @swagger
- * /api/v1/sandbox/ci/execute:
+ * /sandbox/ci/execute:
  *   post:
  *     summary: Run a CI pipeline
- *     description: Executes an ordered list of deploy, call, and assert steps in a fresh or existing session. Note: sandbox router is not currently mounted in router.ts.
+ *     description: Executes an ordered list of deploy, call, and assert steps in a fresh or existing session.
  *     tags: [Sandbox]
  *     requestBody:
  *       required: true
@@ -2169,20 +2305,23 @@ sandboxRouter.post('/fuzz/run/:runId/replay/:findingId', async (req, res) => {
  *             example:
  *               error: "Invalid discriminator value. Expected 'deploy' | 'call' | 'assert'"
  */
-sandboxRouter.post('/ci/execute', async (req, res) => {
-  try {
-    res.status(201).json(await sandboxEngine.executeCi(ciSchema.parse(req.body)));
-  } catch (error) {
-    handleError(res, error);
-  }
-});
+sandboxRouter.post(
+  '/ci/execute',
+  asyncHandler(async (req, res) => {
+    try {
+      res.status(201).json(await sandboxEngine.executeCi(ciSchema.parse(req.body)));
+    } catch (error) {
+      handleError(res, error);
+    }
+  }),
+);
 
 /**
  * @swagger
- * /api/v1/sandbox/ci/result/{runId}:
+ * /sandbox/ci/result/{runId}:
  *   get:
  *     summary: Get a CI run result
- *     description: Returns the persisted CI run record for the given run ID. Note: sandbox router is not currently mounted in router.ts.
+ *     description: Returns the persisted CI run record for the given run ID.
  *     tags: [Sandbox]
  *     parameters:
  *       - in: path
@@ -2214,22 +2353,25 @@ sandboxRouter.post('/ci/execute', async (req, res) => {
  *             example:
  *               error: CI run not found
  */
-sandboxRouter.get('/ci/result/:runId', async (req, res) => {
-  try {
-    const run = await sandboxEngine.getCiResult(req.params.runId);
-    if (!run) return res.status(404).json({ error: 'CI run not found' });
-    return res.json(run);
-  } catch (error) {
-    handleError(res, error);
-  }
-});
+sandboxRouter.get(
+  '/ci/result/:runId',
+  asyncHandler(async (req, res) => {
+    try {
+      const run = await sandboxEngine.getCiResult(req.params.runId);
+      if (!run) return res.status(404).json({ error: 'CI run not found' });
+      return res.json(run);
+    } catch (error) {
+      handleError(res, error);
+    }
+  }),
+);
 
 /**
  * @swagger
- * /api/v1/sandbox/session/{sessionId}/share:
+ * /sandbox/session/{sessionId}/share:
  *   post:
  *     summary: Create a share link
- *     description: Captures the current session state as a view-only snapshot and returns a share record. Note: sandbox router is not currently mounted in router.ts.
+ *     description: Captures the current session state as a view-only snapshot and returns a share record.
  *     tags: [Sandbox]
  *     parameters:
  *       - in: path
@@ -2262,28 +2404,31 @@ sandboxRouter.get('/ci/result/:runId', async (req, res) => {
  *             example:
  *               error: "Session abc is not active."
  */
-sandboxRouter.post('/session/:sessionId/share', async (req, res) => {
-  try {
-    const body = shareSchema.parse({ sessionId: getSessionId(req.params), ...req.body });
-    res
-      .status(201)
-      .json(
-        await sandboxEngine.shareSession(
-          body.sessionId,
-          body.expiresAt ? new Date(body.expiresAt) : undefined,
-        ),
-      );
-  } catch (error) {
-    handleError(res, error);
-  }
-});
+sandboxRouter.post(
+  '/session/:sessionId/share',
+  asyncHandler(async (req, res) => {
+    try {
+      const body = shareSchema.parse({ sessionId: getSessionId(req.params), ...req.body });
+      res
+        .status(201)
+        .json(
+          await sandboxEngine.shareSession(
+            body.sessionId,
+            body.expiresAt ? new Date(body.expiresAt) : undefined,
+          ),
+        );
+    } catch (error) {
+      handleError(res, error);
+    }
+  }),
+);
 
 /**
  * @swagger
- * /api/v1/sandbox/share/{shareId}:
+ * /sandbox/share/{shareId}:
  *   get:
  *     summary: View a shared session
- *     description: Returns the view-only share record for the given share ID. Note: sandbox router is not currently mounted in router.ts.
+ *     description: Returns the view-only share record for the given share ID.
  *     tags: [Sandbox]
  *     parameters:
  *       - in: path
@@ -2306,20 +2451,23 @@ sandboxRouter.post('/session/:sessionId/share', async (req, res) => {
  *             example:
  *               error: Share not found
  */
-sandboxRouter.get('/share/:shareId', async (req, res) => {
-  try {
-    res.json(await sandboxEngine.viewShare(req.params.shareId));
-  } catch (error) {
-    handleError(res, error);
-  }
-});
+sandboxRouter.get(
+  '/share/:shareId',
+  asyncHandler(async (req, res) => {
+    try {
+      res.json(await sandboxEngine.viewShare(req.params.shareId));
+    } catch (error) {
+      handleError(res, error);
+    }
+  }),
+);
 
 /**
  * @swagger
- * /api/v1/sandbox/session/{sessionId}/export:
+ * /sandbox/session/{sessionId}/export:
  *   post:
  *     summary: Export a session
- *     description: Serialises the session's runtime state as a JSON document or generates a code scaffold in JavaScript or Python. Note: sandbox router is not currently mounted in router.ts.
+ *     description: Serialises the session's runtime state as a JSON document or generates a code scaffold in JavaScript or Python.
  *     tags: [Sandbox]
  *     parameters:
  *       - in: path
@@ -2362,21 +2510,24 @@ sandboxRouter.get('/share/:shareId', async (req, res) => {
  *             example:
  *               error: "Invalid enum value. Expected 'js' | 'python' | 'json', received 'csv'"
  */
-sandboxRouter.post('/session/:sessionId/export', async (req, res) => {
-  try {
-    const body = exportSchema.parse({ sessionId: req.params.sessionId, ...req.body });
-    res.json(await sandboxEngine.exportSession(body.sessionId, body.format ?? 'json'));
-  } catch (error) {
-    handleError(res, error);
-  }
-});
+sandboxRouter.post(
+  '/session/:sessionId/export',
+  asyncHandler(async (req, res) => {
+    try {
+      const body = exportSchema.parse({ sessionId: req.params.sessionId, ...req.body });
+      res.json(await sandboxEngine.exportSession(body.sessionId, body.format ?? 'json'));
+    } catch (error) {
+      handleError(res, error);
+    }
+  }),
+);
 
 /**
  * @swagger
- * /api/v1/sandbox/session/{sessionId}/import:
+ * /sandbox/session/{sessionId}/import:
  *   post:
  *     summary: Import session state
- *     description: Replaces the session's runtime block with the state from the given payload. Note: sandbox router is not currently mounted in router.ts.
+ *     description: Replaces the session's runtime block with the state from the given payload.
  *     tags: [Sandbox]
  *     parameters:
  *       - in: path
@@ -2410,21 +2561,24 @@ sandboxRouter.post('/session/:sessionId/export', async (req, res) => {
  *             example:
  *               error: "Session abc is not active."
  */
-sandboxRouter.post('/session/:sessionId/import', async (req, res) => {
-  try {
-    const body = importSchema.parse({ sessionId: req.params.sessionId, payload: req.body });
-    res.json(await sandboxEngine.importSession(body.sessionId, body.payload));
-  } catch (error) {
-    handleError(res, error);
-  }
-});
+sandboxRouter.post(
+  '/session/:sessionId/import',
+  asyncHandler(async (req, res) => {
+    try {
+      const body = importSchema.parse({ sessionId: req.params.sessionId, payload: req.body });
+      res.json(await sandboxEngine.importSession(body.sessionId, body.payload));
+    } catch (error) {
+      handleError(res, error);
+    }
+  }),
+);
 
 /**
  * @swagger
- * /api/v1/sandbox/optimize:
+ * /sandbox/optimize:
  *   post:
  *     summary: Optimize a contract
- *     description: Analyses one or all contracts in a session and returns CPU/memory optimization recommendations. Note: sandbox router is not currently mounted in router.ts.
+ *     description: Analyses one or all contracts in a session and returns CPU/memory optimization recommendations.
  *     tags: [Sandbox]
  *     requestBody:
  *       required: true
@@ -2455,26 +2609,29 @@ sandboxRouter.post('/session/:sessionId/import', async (req, res) => {
  *             example:
  *               error: "String must contain at least 1 character(s)"
  */
-sandboxRouter.post('/optimize', async (req, res) => {
-  try {
-    const sessionId = z.string().min(1).parse(req.body.sessionId);
-    res.json(
-      await sandboxEngine.optimizeContract(
-        sessionId,
-        typeof req.body.contractId === 'string' ? req.body.contractId : undefined,
-      ),
-    );
-  } catch (error) {
-    handleError(res, error);
-  }
-});
+sandboxRouter.post(
+  '/optimize',
+  asyncHandler(async (req, res) => {
+    try {
+      const sessionId = z.string().min(1).parse(req.body.sessionId);
+      res.json(
+        await sandboxEngine.optimizeContract(
+          sessionId,
+          typeof req.body.contractId === 'string' ? req.body.contractId : undefined,
+        ),
+      );
+    } catch (error) {
+      handleError(res, error);
+    }
+  }),
+);
 
 /**
  * @swagger
- * /api/v1/sandbox/verify/invariant:
+ * /sandbox/verify/invariant:
  *   post:
  *     summary: Verify a contract invariant
- *     description: Checks whether a named invariant (e.g. "balance <= totalSupply") holds for the given contract's current state. Note: sandbox router is not currently mounted in router.ts.
+ *     description: Checks whether a named invariant (e.g. "balance <= totalSupply") holds for the given contract's current state.
  *     tags: [Sandbox]
  *     requestBody:
  *       required: true
@@ -2515,28 +2672,31 @@ sandboxRouter.post('/optimize', async (req, res) => {
  *             example:
  *               error: Contract not found
  */
-sandboxRouter.post('/verify/invariant', async (req, res) => {
-  try {
-    const body = invariantSchema.parse(req.body);
-    res.json(
-      await sandboxEngine.verifyInvariant(body.sessionId, {
-        contract: body.contract,
-        invariant: body.invariant,
-        checker: body.checker,
-        bound: body.bound,
-      }),
-    );
-  } catch (error) {
-    handleError(res, error);
-  }
-});
+sandboxRouter.post(
+  '/verify/invariant',
+  asyncHandler(async (req, res) => {
+    try {
+      const body = invariantSchema.parse(req.body);
+      res.json(
+        await sandboxEngine.verifyInvariant(body.sessionId, {
+          contract: body.contract,
+          invariant: body.invariant,
+          checker: body.checker,
+          bound: body.bound,
+        }),
+      );
+    } catch (error) {
+      handleError(res, error);
+    }
+  }),
+);
 
 /**
  * @swagger
- * /api/v1/sandbox/verify/assertion:
+ * /sandbox/verify/assertion:
  *   post:
  *     summary: Verify a contract assertion
- *     description: Checks whether an assertion holds for the given contract's current state. Delegates to the invariant checker. Note: sandbox router is not currently mounted in router.ts.
+ *     description: Checks whether an assertion holds for the given contract's current state. Delegates to the invariant checker.
  *     tags: [Sandbox]
  *     requestBody:
  *       required: true
@@ -2574,21 +2734,24 @@ sandboxRouter.post('/verify/invariant', async (req, res) => {
  *             example:
  *               error: Contract not found
  */
-sandboxRouter.post('/verify/assertion', async (req, res) => {
-  try {
-    const body = assertionSchema.parse(req.body);
-    res.json(await sandboxEngine.verifyAssertion(body.sessionId, body));
-  } catch (error) {
-    handleError(res, error);
-  }
-});
+sandboxRouter.post(
+  '/verify/assertion',
+  asyncHandler(async (req, res) => {
+    try {
+      const body = assertionSchema.parse(req.body);
+      res.json(await sandboxEngine.verifyAssertion(body.sessionId, body));
+    } catch (error) {
+      handleError(res, error);
+    }
+  }),
+);
 
 /**
  * @swagger
- * /api/v1/sandbox/generate/sdk:
+ * /sandbox/generate/sdk:
  *   post:
  *     summary: Generate a TypeScript SDK
- *     description: Returns a TypeScript client class scaffold for a deployed contract's ABI. Note: sandbox router is not currently mounted in router.ts.
+ *     description: Returns a TypeScript client class scaffold for a deployed contract's ABI.
  *     tags: [Sandbox]
  *     requestBody:
  *       required: true
@@ -2628,22 +2791,25 @@ sandboxRouter.post('/verify/assertion', async (req, res) => {
  *             example:
  *               error: Contract not found
  */
-sandboxRouter.post('/generate/sdk', async (req, res) => {
-  try {
-    const sessionId = z.string().min(1).parse(req.body.sessionId);
-    const contractId = z.string().min(1).parse(req.body.contractId);
-    res.json(await sandboxEngine.generateSdk(sessionId, contractId));
-  } catch (error) {
-    handleError(res, error);
-  }
-});
+sandboxRouter.post(
+  '/generate/sdk',
+  asyncHandler(async (req, res) => {
+    try {
+      const sessionId = z.string().min(1).parse(req.body.sessionId);
+      const contractId = z.string().min(1).parse(req.body.contractId);
+      res.json(await sandboxEngine.generateSdk(sessionId, contractId));
+    } catch (error) {
+      handleError(res, error);
+    }
+  }),
+);
 
 /**
  * @swagger
- * /api/v1/sandbox/generate/docs:
+ * /sandbox/generate/docs:
  *   post:
  *     summary: Generate contract documentation
- *     description: Returns a Markdown documentation string generated from a deployed contract's ABI. Note: sandbox router is not currently mounted in router.ts.
+ *     description: Returns a Markdown documentation string generated from a deployed contract's ABI.
  *     tags: [Sandbox]
  *     requestBody:
  *       required: true
@@ -2679,22 +2845,25 @@ sandboxRouter.post('/generate/sdk', async (req, res) => {
  *             example:
  *               error: Contract not found
  */
-sandboxRouter.post('/generate/docs', async (req, res) => {
-  try {
-    const sessionId = z.string().min(1).parse(req.body.sessionId);
-    const contractId = z.string().min(1).parse(req.body.contractId);
-    res.json(await sandboxEngine.generateDocs(sessionId, contractId));
-  } catch (error) {
-    handleError(res, error);
-  }
-});
+sandboxRouter.post(
+  '/generate/docs',
+  asyncHandler(async (req, res) => {
+    try {
+      const sessionId = z.string().min(1).parse(req.body.sessionId);
+      const contractId = z.string().min(1).parse(req.body.contractId);
+      res.json(await sandboxEngine.generateDocs(sessionId, contractId));
+    } catch (error) {
+      handleError(res, error);
+    }
+  }),
+);
 
 /**
  * @swagger
- * /api/v1/sandbox/generate/tests:
+ * /sandbox/generate/tests:
  *   post:
  *     summary: Generate test scaffolding
- *     description: Returns a TypeScript test file skeleton for a deployed contract. Note: sandbox router is not currently mounted in router.ts.
+ *     description: Returns a TypeScript test file skeleton for a deployed contract.
  *     tags: [Sandbox]
  *     requestBody:
  *       required: true
@@ -2731,22 +2900,25 @@ sandboxRouter.post('/generate/docs', async (req, res) => {
  *             example:
  *               error: Contract not found
  */
-sandboxRouter.post('/generate/tests', async (req, res) => {
-  try {
-    const sessionId = z.string().min(1).parse(req.body.sessionId);
-    const contractId = z.string().min(1).parse(req.body.contractId);
-    res.json(await sandboxEngine.generateTests(sessionId, contractId));
-  } catch (error) {
-    handleError(res, error);
-  }
-});
+sandboxRouter.post(
+  '/generate/tests',
+  asyncHandler(async (req, res) => {
+    try {
+      const sessionId = z.string().min(1).parse(req.body.sessionId);
+      const contractId = z.string().min(1).parse(req.body.contractId);
+      res.json(await sandboxEngine.generateTests(sessionId, contractId));
+    } catch (error) {
+      handleError(res, error);
+    }
+  }),
+);
 
 /**
  * @swagger
- * /api/v1/sandbox/benchmark:
+ * /sandbox/benchmark:
  *   post:
  *     summary: Benchmark a contract
- *     description: Returns throughput, latency, storage-growth, and memory-profile metrics for a deployed contract's key functions. Note: sandbox router is not currently mounted in router.ts.
+ *     description: Returns throughput, latency, storage-growth, and memory-profile metrics for a deployed contract's key functions.
  *     tags: [Sandbox]
  *     requestBody:
  *       required: true
@@ -2803,22 +2975,25 @@ sandboxRouter.post('/generate/tests', async (req, res) => {
  *             example:
  *               error: Contract not found
  */
-sandboxRouter.post('/benchmark', async (req, res) => {
-  try {
-    const sessionId = z.string().min(1).parse(req.body.sessionId);
-    const contractId = z.string().min(1).parse(req.body.contractId);
-    res.json(await sandboxEngine.benchmark(sessionId, contractId));
-  } catch (error) {
-    handleError(res, error);
-  }
-});
+sandboxRouter.post(
+  '/benchmark',
+  asyncHandler(async (req, res) => {
+    try {
+      const sessionId = z.string().min(1).parse(req.body.sessionId);
+      const contractId = z.string().min(1).parse(req.body.contractId);
+      res.json(await sandboxEngine.benchmark(sessionId, contractId));
+    } catch (error) {
+      handleError(res, error);
+    }
+  }),
+);
 
 /**
  * @swagger
- * /api/v1/sandbox/replay/{txHash}:
+ * /sandbox/replay/{txHash}:
  *   post:
  *     summary: Replay a mainnet transaction
- *     description: Scaffolds a mainnet transaction replay pipeline. Full live-RPC integration is not yet wired up. Note: sandbox router is not currently mounted in router.ts.
+ *     description: Scaffolds a mainnet transaction replay pipeline. Full live-RPC integration is not yet wired up.
  *     tags: [Sandbox]
  *     parameters:
  *       - in: path
@@ -2852,20 +3027,23 @@ sandboxRouter.post('/benchmark', async (req, res) => {
  *                     equal: { type: boolean, example: false }
  *                     note: { type: string }
  */
-sandboxRouter.post('/replay/:txHash', async (req, res) => {
-  try {
-    res.json(await sandboxEngine.replayMainnet(req.params.txHash));
-  } catch (error) {
-    handleError(res, error);
-  }
-});
+sandboxRouter.post(
+  '/replay/:txHash',
+  asyncHandler(async (req, res) => {
+    try {
+      res.json(await sandboxEngine.replayMainnet(req.params.txHash));
+    } catch (error) {
+      handleError(res, error);
+    }
+  }),
+);
 
 /**
  * @swagger
- * /api/v1/sandbox/replay/{txHash}/comparison:
+ * /sandbox/replay/{txHash}/comparison:
  *   get:
  *     summary: Compare mainnet vs sandbox replay
- *     description: Returns the replay result wrapped with the transaction hash under a comparison key. Full live-RPC integration is not yet wired up. Note: sandbox router is not currently mounted in router.ts.
+ *     description: Returns the replay result wrapped with the transaction hash under a comparison key. Full live-RPC integration is not yet wired up.
  *     tags: [Sandbox]
  *     parameters:
  *       - in: path
@@ -2894,23 +3072,26 @@ sandboxRouter.post('/replay/:txHash', async (req, res) => {
  *                         equal: { type: boolean, example: false }
  *                         note: { type: string }
  */
-sandboxRouter.get('/replay/:txHash/comparison', async (req, res) => {
-  try {
-    res.json({
-      txHash: req.params.txHash,
-      comparison: await sandboxEngine.replayMainnet(req.params.txHash),
-    });
-  } catch (error) {
-    handleError(res, error);
-  }
-});
+sandboxRouter.get(
+  '/replay/:txHash/comparison',
+  asyncHandler(async (req, res) => {
+    try {
+      res.json({
+        txHash: req.params.txHash,
+        comparison: await sandboxEngine.replayMainnet(req.params.txHash),
+      });
+    } catch (error) {
+      handleError(res, error);
+    }
+  }),
+);
 
 /**
  * @swagger
- * /api/v1/sandbox/fork/{contractAddress}:
+ * /sandbox/fork/{contractAddress}:
  *   post:
  *     summary: Fork a mainnet contract
- *     description: Copies the ABI and name of a mainnet contract and deploys a local fork into the session. Equivalent to deploy-from-mainnet with a generated name. Note: sandbox router is not currently mounted in router.ts.
+ *     description: Copies the ABI and name of a mainnet contract and deploys a local fork into the session. Equivalent to deploy-from-mainnet with a generated name.
  *     tags: [Sandbox]
  *     parameters:
  *       - in: path
@@ -2945,21 +3126,24 @@ sandboxRouter.get('/replay/:txHash/comparison', async (req, res) => {
  *             example:
  *               error: "String must contain at least 1 character(s)"
  */
-sandboxRouter.post('/fork/:contractAddress', async (req, res) => {
-  try {
-    const sessionId = z.string().min(1).parse(req.body.sessionId);
-    res.status(201).json(await sandboxEngine.forkContract(sessionId, req.params.contractAddress));
-  } catch (error) {
-    handleError(res, error);
-  }
-});
+sandboxRouter.post(
+  '/fork/:contractAddress',
+  asyncHandler(async (req, res) => {
+    try {
+      const sessionId = z.string().min(1).parse(req.body.sessionId);
+      res.status(201).json(await sandboxEngine.forkContract(sessionId, req.params.contractAddress));
+    } catch (error) {
+      handleError(res, error);
+    }
+  }),
+);
 
 /**
  * @swagger
- * /api/v1/sandbox/deploy-to-testnet:
+ * /sandbox/deploy-to-testnet:
  *   post:
  *     summary: Export a contract to testnet
- *     description: Returns the Wasm hash and a readiness flag for deploying the contract to the Stellar testnet. Actual testnet submission is not performed. Note: sandbox router is not currently mounted in router.ts.
+ *     description: Returns the Wasm hash and a readiness flag for deploying the contract to the Stellar testnet. Actual testnet submission is not performed.
  *     tags: [Sandbox]
  *     requestBody:
  *       required: true
@@ -2995,22 +3179,25 @@ sandboxRouter.post('/fork/:contractAddress', async (req, res) => {
  *             example:
  *               error: Contract not found
  */
-sandboxRouter.post('/deploy-to-testnet', async (req, res) => {
-  try {
-    const sessionId = z.string().min(1).parse(req.body.sessionId);
-    const contractId = z.string().min(1).parse(req.body.contractId);
-    res.json(await sandboxEngine.deployToTestnet(sessionId, contractId));
-  } catch (error) {
-    handleError(res, error);
-  }
-});
+sandboxRouter.post(
+  '/deploy-to-testnet',
+  asyncHandler(async (req, res) => {
+    try {
+      const sessionId = z.string().min(1).parse(req.body.sessionId);
+      const contractId = z.string().min(1).parse(req.body.contractId);
+      res.json(await sandboxEngine.deployToTestnet(sessionId, contractId));
+    } catch (error) {
+      handleError(res, error);
+    }
+  }),
+);
 
 /**
  * @swagger
- * /api/v1/sandbox/deploy-to-mainnet:
+ * /sandbox/deploy-to-mainnet:
  *   post:
  *     summary: Export a contract to mainnet
- *     description: Returns the Wasm hash and a readiness flag for deploying to mainnet. Always returns ready=false and requires manual confirmation before any real submission. Note: sandbox router is not currently mounted in router.ts.
+ *     description: Returns the Wasm hash and a readiness flag for deploying to mainnet. Always returns ready=false and requires manual confirmation before any real submission.
  *     tags: [Sandbox]
  *     requestBody:
  *       required: true
@@ -3047,21 +3234,24 @@ sandboxRouter.post('/deploy-to-testnet', async (req, res) => {
  *             example:
  *               error: Contract not found
  */
-sandboxRouter.post('/deploy-to-mainnet', async (req, res) => {
-  try {
-    const sessionId = z.string().min(1).parse(req.body.sessionId);
-    const contractId = z.string().min(1).parse(req.body.contractId);
-    res.json(await sandboxEngine.deployToMainnet(sessionId, contractId));
-  } catch (error) {
-    handleError(res, error);
-  }
-});
+sandboxRouter.post(
+  '/deploy-to-mainnet',
+  asyncHandler(async (req, res) => {
+    try {
+      const sessionId = z.string().min(1).parse(req.body.sessionId);
+      const contractId = z.string().min(1).parse(req.body.contractId);
+      res.json(await sandboxEngine.deployToMainnet(sessionId, contractId));
+    } catch (error) {
+      handleError(res, error);
+    }
+  }),
+);
 
 function escapeHtml(input: string): string {
   return input
-    .replaceAll('&', '&amp;')
-    .replaceAll('<', '&lt;')
-    .replaceAll('>', '&gt;')
-    .replaceAll('"', '&quot;')
-    .replaceAll("'", '&#39;');
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
 }
