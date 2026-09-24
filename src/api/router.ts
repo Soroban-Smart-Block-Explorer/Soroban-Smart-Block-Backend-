@@ -60,6 +60,7 @@ import { auditRouter } from './audit';
 import { rateLimitAdminRouter } from './rate-limits';
 import { alertsRouter } from './alerts';
 import { oracleIntelligenceRouter } from './oracle-intelligence';
+import { alertRulesRouter } from './alert-rules';
 
 // ── Admin ─────────────────────────────────────────────────────────────────────
 import { adminErrorsRouter } from './admin/errors';
@@ -109,6 +110,11 @@ router.use('/exports', exportsRouter);
 router.use('/admin/rate-limits', rateLimitAdminRouter);
 router.use('/market/alerts', alertsRouter);
 router.use('/oracles/intelligence', oracleIntelligenceRouter);
+
+// ── Suspicious Activity Alerts ────────────────────────────────────────────────
+// Central rule-based alert feed. Reads/config are tenant-scoped; ingest
+// requires an API key.
+router.use('/alert-rules', alertRulesRouter);
 
 // ── Predictive Analytics ──────────────────────────────────────────────────────
 router.use('/fraud', fraudRouter);
