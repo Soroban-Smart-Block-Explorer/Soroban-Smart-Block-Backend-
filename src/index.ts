@@ -106,6 +106,9 @@ async function gracefulShutdown(signal: string): Promise<void> {
       logger.info('[shutdown] WebSocket server closed');
     }
 
+    stopMevPredictionPublisher();
+    logger.info('[shutdown] MEV prediction publisher stopped');
+
     stopBridgeWorker();
     logger.info('[shutdown] Bridge worker stopped');
 

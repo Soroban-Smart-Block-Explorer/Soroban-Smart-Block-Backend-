@@ -21,6 +21,7 @@ import { startPoolPriceMonitor as startPoolPriceMonitorImpl } from './indexer/po
 import { startArbitrageScanner as startArbitrageScannerImpl } from './indexer/arbitrage-scanner';
 import { startFeeAggregator as startFeeAggregatorImpl } from './indexer/fee-aggregator';
 import { startBridgeWorker } from './bridge-tracker';
+import { startMevPredictionPublisher } from './ws/mevPredictBroadcaster';
 import { startAuditPipeline } from './indexer/audit-pipeline';
 import { startAuditScheduler } from './indexer/audit-scheduler';
 import { startContinuousAuditMonitor } from './indexer/audit-monitor';
@@ -161,6 +162,20 @@ export async function initializeServices(disabledServices: string[]): Promise<vo
       startAuditDigestScheduler();
     } catch (err) {
       logger.warn('Audit digest scheduler failed to start', { error: String(err) });
+    }
+
+    // MEV prediction publisher — recomputes ranked forward-looking signals and
+    // pushes fresh ones to /ws/mev/predictions subscribers.
+    if (process.env.ENABLE_MEV_PREDICT_WS === 'true') {
+      try {
+        startMevPredictionPublisher();
+        logger.info('MEV prediction publisher started');
+      } catch (err) {
+        logger.warn('MEV prediction publisher failed to start', { error: String(err) });
+      }
+    } else {
+      disabledServices.push('mevPredictPublisher');
+      logger.debug('MEV prediction publisher disabled (ENABLE_MEV_PREDICT_WS not set)');
     }
   }
 

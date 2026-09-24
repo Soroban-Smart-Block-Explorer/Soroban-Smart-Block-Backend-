@@ -14,6 +14,7 @@ import { attachWebSocketServer } from './ws/websocketServer';
 import { attachPrivacyWebSocket as attachPrivacyWebSocketReal } from './ws/privacyBroadcaster';
 import { attachComposabilityWebSocket as attachComposabilityWebSocketImpl } from './ws/composabilityBroadcaster';
 import { attachArbitrageWebSocket as attachArbitrageWebSocketImpl } from './ws/arbitrageBroadcaster';
+import { attachMevPredictWebSocket } from './ws/mevPredictBroadcaster';
 import { attachAuditWebSocket } from './ws/auditBroadcaster';
 import { featureFlags } from './feature-flags';
 
@@ -65,6 +66,18 @@ export function createHttpServer(app: Express, disabledServices: string[]): Http
   } else {
     disabledServices.push('arbitrageWS (schema unavailable)');
     logger.debug('Arbitrage WebSocket disabled (required tables missing)');
+  }
+
+  if (enableMevPredictWs) {
+    try {
+      attachMevPredictWebSocket(httpServer);
+      logger.info('MEV prediction WebSocket attached');
+    } catch (err) {
+      logger.warn('MEV prediction WebSocket attachment failed', { error: String(err) });
+    }
+  } else {
+    disabledServices.push('mevPredictWS');
+    logger.debug('MEV prediction WebSocket disabled (ENABLE_MEV_PREDICT_WS not set)');
   }
 
   // /ws/audit — score alerts, finding alerts, signals
