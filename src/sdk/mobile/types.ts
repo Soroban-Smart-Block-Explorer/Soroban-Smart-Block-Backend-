@@ -5,6 +5,21 @@ export interface SorobanExplorerConfig {
   retryConfig?: RetryConfig;
   cacheConfig?: CacheConfig;
   offlineConfig?: OfflineConfig;
+  /**
+   * Base path under which the backend auth router is mounted.
+   * Defaults to `/api/v1/auth` (the backend mounts `authRouter` under
+   * `/api/v1/auth`). Override when reverse-proxying or versioning.
+   */
+  authPath?: string;
+  /** App identifier sent with the login challenge. Defaults to `explorer-mobile`. */
+  appId?: string;
+  /** Stellar network the wallet address lives on. Defaults to `testnet`. */
+  network?: 'testnet' | 'mainnet' | 'devnet';
+  /**
+   * Fetch credentials mode. Web/PWA clients can set `'include'` to reuse the
+   * backend's signed session cookie in addition to the JWT bearer token.
+   */
+  credentials?: 'omit' | 'same-origin' | 'include';
 }
 
 export interface RetryConfig {
@@ -173,10 +188,57 @@ export interface AuthCredentials {
   expiresAt: number;
 }
 
+/**
+ * A token pair issued by the backend `/auth/challenge` + `/auth/verify` flow.
+ * Mirrors the `AuthSession` Prisma model / `issueTokens` result shape.
+ * `expiresAt` is stored as epoch milliseconds for cheap local comparisons.
+ */
+export interface AuthSession {
+  accessToken: string;
+  refreshToken: string;
+  sessionId?: string;
+  address?: string;
+  role?: string;
+  tier?: string;
+  /** Access-token expiry, in epoch milliseconds. */
+  expiresAt: number;
+}
+
+export type BiometricType = 'faceid' | 'touchid' | 'fingerprint' | 'iris' | 'none';
+
 export interface BiometricAuthResult {
   success: boolean;
   error?: string;
-  biometricType?: 'faceid' | 'touchid' | 'fingerprint' | 'iris' | 'none';
+  biometricType?: BiometricType;
+}
+
+/**
+ * Signs the Stellar login challenge. The app owns the private key (kept in the
+ * secure enclave / keychain) and only exposes signing to the SDK.
+ */
+export interface WalletSigner {
+  getAddress(): Promise<string> | string;
+  /** Signs the raw UTF-8 challenge bytes, returning a base64 ed25519 signature. */
+  sign(message: string): Promise<string> | string;
+}
+
+export type AuthTier = 'free' | 'developer' | 'premium' | 'enterprise';
+
+/**
+ * Entitlements resolved from the backend `/auth/me` + `/auth/check-access`
+ * endpoints. Used to gate premium-only mobile features.
+ */
+export interface Entitlements {
+  tier: AuthTier;
+  features: string[];
+  rateLimit?: { requestsPerMinute: number; burstLimit: number };
+  /** Convenience flag: tier is `premium` or `enterprise`. */
+  isPremium: boolean;
+}
+
+/** Minimal React Native `AppState` surface used for auto-lock. */
+export interface AppStateLike {
+  addEventListener(type: 'change', handler: (state: string) => void): { remove: () => void } | void;
 }
 
 export interface PushRegistration {

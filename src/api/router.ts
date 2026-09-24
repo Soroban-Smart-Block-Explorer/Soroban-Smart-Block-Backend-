@@ -202,3 +202,12 @@ router.use('/audit', auditRouter);
 // Stream + OLAP + cold-storage query gateway. Compute-heavy — key required.
 import { lakehouseRouter } from './lakehouse';
 router.use('/lakehouse', requireApiKey, lakehouseRouter);
+
+// ── Authentication ────────────────────────────────────────────────────────────
+// Wallet challenge/verify (JWT + refresh token), OAuth2, and session-cookie
+// auth. Consumed by the web app and the mobile SDK (`SorobanExplorerAuth`).
+// OAuth2 mounts first so /auth/oauth2/* wins over the /auth wildcard mount.
+import { authOAuth2Router } from './authOAuth2';
+import { authRouter } from './auth';
+router.use('/auth/oauth2', authOAuth2Router);
+router.use('/auth', authRouter);
