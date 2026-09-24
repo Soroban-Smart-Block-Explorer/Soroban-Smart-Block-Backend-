@@ -106,6 +106,10 @@ const envSchema = z.object({
   // src/scheduler/cron-scheduler.ts.
   WORKER_STALE_INTERVAL_MULTIPLIER: z.coerce.number().positive().default(3),
   WORKER_MAX_CONSECUTIVE_FAILURES: z.coerce.number().int().positive().default(3),
+
+  // GET /search/suggest — per-source latency budget and merged-result cache TTL.
+  SEARCH_SUGGEST_BUDGET_MS: z.coerce.number().int().positive().default(400),
+  SEARCH_SUGGEST_CACHE_TTL_MS: z.coerce.number().int().min(0).default(10000),
 });
 
 let parsedEnv: z.infer<typeof envSchema>;
@@ -231,4 +235,7 @@ export const config = {
 
   workerStaleIntervalMultiplier: parsedEnv.WORKER_STALE_INTERVAL_MULTIPLIER,
   workerMaxConsecutiveFailures: parsedEnv.WORKER_MAX_CONSECUTIVE_FAILURES,
+
+  searchSuggestBudgetMs: parsedEnv.SEARCH_SUGGEST_BUDGET_MS,
+  searchSuggestCacheTtlMs: parsedEnv.SEARCH_SUGGEST_CACHE_TTL_MS,
 } as const;
