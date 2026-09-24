@@ -64,6 +64,26 @@ describe('SorobanExplorerClient', () => {
     expect(client.getQueuedOperations().length).toBe(1);
   });
 
+  it('should fetch hydration entity summaries in a batch', async () => {
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({
+        entities: [{ type: 'contract', id: 'C1', label: 'USD Coin', status: 'verified' }],
+      }),
+    });
+    const entities = await client.getHydrationEntities([{ type: 'contract', id: 'C1' }]);
+    expect(entities).toEqual([
+      { type: 'contract', id: 'C1', label: 'USD Coin', status: 'verified' },
+    ]);
+    expect(mockFetch).toHaveBeenCalledTimes(1);
+  });
+
+  it('should skip the network when hydrating zero refs', async () => {
+    const entities = await client.getHydrationEntities([]);
+    expect(entities).toEqual([]);
+    expect(mockFetch).not.toHaveBeenCalled();
+  });
+
   it('should invalidate cache by pattern', async () => {
     mockFetch.mockResolvedValue({
       ok: true,

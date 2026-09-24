@@ -194,5 +194,6 @@ packages/mobile/
 │   ├── SorobanExplorerAuth.ts  # Biometric auth + key storage
 │   ├── SorobanExplorerPush.ts  # Push notification client
 │   ├── SorobanExplorerOffline.ts # Offline-first data layer
+│   ├── SorobanExplorerLocalCache.ts # On-device recent searches / watchlist / last-viewed
 │   └── types.ts                # Shared types
 └── __tests__/                  # Unit tests
