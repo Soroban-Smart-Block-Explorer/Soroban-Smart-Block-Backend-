@@ -1,8 +1,8 @@
 import { xdr, scValToNative } from '@stellar/stellar-sdk';
-import { getContractAbi, decodeArgs, renderHuman } from './registry';
+import { getContractContext, decodeArgs, renderHuman } from './registry';
 import { parseInvokeHostFunction } from './xdr-parser';
 import { parseSep41Event, isSep41Event } from './sep41-parser';
-import { prismaRead as prisma } from '../db';
+import { config } from '../config';
 
 export interface DecodedTransaction {
   contractAddress: string | null;
@@ -60,7 +60,8 @@ export async function decodeTransaction(rawXdr: string): Promise<DecodedTransact
     rawArgs = [];
   }
 
-  const abi = await getContractAbi(contractAddress);
+  // Resolve against the active network profile so network-keyed ABIs win.
+  const { abi, contract } = await getContractContext(contractAddress, config.stellarNetwork);
   if (!abi) {
     return {
       contractAddress,
@@ -69,8 +70,6 @@ export async function decodeTransaction(rawXdr: string): Promise<DecodedTransact
       humanReadable: `Called ${functionName} on ${contractAddress}`,
     };
   }
-
-  const contract = await prisma.contract.findUnique({ where: { address: contractAddress } });
   const decoded = decodeArgs(functionName, rawArgs, abi, contract?.tokenDecimals ?? undefined);
   const human = decoded
     ? renderHuman(functionName, decoded, abi, contract?.name, contract?.tokenDecimals ?? undefined)

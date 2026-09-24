@@ -249,17 +249,62 @@ model Contract {
   createdAt DateTime @map("created_at") @default(now())
   updatedAt DateTime @map("updated_at") @updatedAt
 
-  transactions     Transaction[]
-  events           Event[]
-  wasmUpgrades     WasmUpgradeHistory[]
-  verificationRuns VerificationRun[]
-  auditCerts       AuditCertificate[]
+  transactions       Transaction[]
+  events             Event[]
+  wasmUpgrades       WasmUpgradeHistory[]
+  verificationRuns   VerificationRun[]
+  auditCerts         AuditCertificate[]
+  networkDeployments ContractNetwork[]
 
   @@index([address])
   @@index([verificationBadge])
   @@index([safetyScore])
   @@index([createdAt])
   @@map("_contracts")
+}
+
+/// Per-network deployment of a registered contract.
+///
+/// Stellar contract IDs are only unique within a network, so the same protocol
+/// usually appears at a different address on testnet/mainnet/devnet. Each row
+/// stores the network-keyed address, ABI/version metadata, and linkage hints
+/// that group deployments of the same protocol across networks.
+model ContractNetwork {
+  id String @map("id") @id @default(cuid())
+
+  /// Contract address as it appears on `network`.
+  address String @map("address") @db.VarChar(56)
+  /// Network this address belongs to (e.g. testnet | mainnet | devnet).
+  network String @map("network") @db.VarChar(32) @default("testnet")
+
+  /// Canonical registry record this deployment resolves to.
+  contractId String @map("contract_id")
+  contract   Contract @relation(fields: [contractId], references: [id], onDelete: Cascade)
+
+  /// Network-keyed ABI + version data. Falls back to the canonical Contract ABI.
+  abi        Json?   @map("abi")
+  abiVersion String? @map("abi_version") @db.VarChar(64)
+  abiHash    String? @map("abi_hash") @db.VarChar(64)
+  wasmHash   String? @map("wasm_hash") @db.VarChar(64)
+  version    String? @map("version") @db.VarChar(64)
+
+  /// Linkage hints — groups the same protocol deployed across networks.
+  protocolKey String? @map("protocol_key") @db.VarChar(128)
+  isCanonical Boolean @map("is_canonical") @default(false)
+
+  deployedAtLedger Int? @map("deployed_at_ledger")
+
+  createdAt DateTime @map("created_at") @default(now())
+  updatedAt DateTime @map("updated_at") @updatedAt
+
+  /// Dedupe key for a deployment: an address is only meaningful within a network.
+  @@unique([address, network], name: "address_network")
+  /// One deployment per canonical contract per network.
+  @@unique([contractId, network], name: "contract_network")
+  @@index([contractId])
+  @@index([network])
+  @@index([protocolKey])
+  @@map("_contract_networks")
 }
 
 model VerificationRun {
