@@ -69,7 +69,7 @@ const TIMEOUT_ROUTES: TimeoutConfig[] = [
     label: 'contracts-api',
   },
   {
-    pattern: /^\/api\/v1\/wallets\/[^/]+\/(transactions|events)$/,
+    pattern: /^\/api\/v1\/wallets\/[^/]+\/(transactions|events|history|journey)$/,
     timeout: TIMEOUT_NORMAL,
     label: 'wallet-history',
   },
