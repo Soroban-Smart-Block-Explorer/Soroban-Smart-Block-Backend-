@@ -11,6 +11,7 @@
 import { prismaWrite, prismaRead } from '../db';
 import { diffWasm, type WasmDiff } from './wasm-diff';
 import { logger } from '../logger';
+import { uuidv7 } from '../utils/uuidv7';
 
 /** Approximate Stellar ledger close interval, used to convert ages → ledgers. */
 const LEDGER_SECONDS = 5;
@@ -380,6 +381,7 @@ export async function recordUpgradeWithIntelligence(input: RecordUpgradeInput) {
 
   const record = await prismaWrite.wasmUpgradeHistory.create({
     data: {
+      id: uuidv7(),
       contractAddress,
       previousHash,
       newHash: newWasmHash,

@@ -6,6 +6,7 @@ import { requireAuth } from '../auth/middleware';
 import { cacheGet, cacheSet } from '../cache';
 import { issueTokens, generateSessionId, REFRESH_TOKEN_TTL } from '../auth/tokens';
 import { asyncHandler } from '../middleware/asyncHandler';
+import { uuidv7 } from '../utils/uuidv7';
 
 export const authMultisigRouter = Router();
 
@@ -127,7 +128,13 @@ authMultisigRouter.post(
     let user = await prisma.walletUser.findUnique({ where: { address: flow.multisigAddress } });
     if (!user) {
       user = await prisma.walletUser.create({
-        data: { address: flow.multisigAddress, role: 'user', tier: 'developer', isMultiSig: true },
+        data: {
+          id: uuidv7(),
+          address: flow.multisigAddress,
+          role: 'user',
+          tier: 'developer',
+          isMultiSig: true,
+        },
       });
     }
 
@@ -193,7 +200,7 @@ authMultisigRouter.post(
     }
     const wallet = await prisma.multiSigWallet.upsert({
       where: { walletAddress },
-      create: { walletAddress, signers, threshold, description },
+      create: { id: uuidv7(), walletAddress, signers, threshold, description },
       update: { signers, threshold, description },
     });
     res.status(201).json(wallet);

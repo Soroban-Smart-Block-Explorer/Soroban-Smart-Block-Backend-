@@ -1,4 +1,5 @@
 import { xdr } from '@stellar/stellar-sdk';
+import { prismaRead } from '../db';
 
 // ── Constants ────────────────────────────────────────────────────────────────
 
@@ -15,6 +16,13 @@ export interface TtlExtension {
   newLiveUntilLedger: number;
   /** Number of ledgers added to the entry's lifespan */
   ledgersExtended: number | null;
+  /**
+   * True when this extension key matches a WASM code entry that was recently
+   * upgraded (cross-checked against WasmUpgradeHistory within ±5 ledgers).
+   */
+  isWasmUpgradeExtension: boolean;
+  /** Contract address if this key is a ContractCode entry, else null */
+  relatedContractAddress: string | null;
 }
 
 export interface RentPayment {
@@ -31,6 +39,8 @@ export interface TtlTrackingResult {
   extensions: TtlExtension[];
   rentPayment: RentPayment | null;
   summary: string;
+  /** Number of extensions that correlate with WASM upgrade events */
+  wasmUpgradeExtensionCount: number;
 }
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
@@ -49,23 +59,107 @@ function stroopsToXlm(stroops: bigint): string {
   return `${whole}.${frac.toString().padStart(7, '0')} XLM`;
 }
 
+/**
+ * Extract the WASM hash hex from a ContractCode ledger key.
+ * Returns null for non-ContractCode keys.
+ */
+function extractWasmHashFromKey(key: xdr.LedgerKey): string | null {
+  try {
+    if (key.switch().name === 'contractCode') {
+      return Buffer.from(key.contractCode().hash()).toString('hex');
+    }
+  } catch {
+    // ignore
+  }
+  return null;
+}
+
+/**
+ * Extract the contract address (strkey) from a ContractData ledger key.
+ * Returns null for other key types.
+ */
+function extractContractAddressFromKey(key: xdr.LedgerKey): string | null {
+  try {
+    if (key.switch().name === 'contractData') {
+      const contract = key.contractData().contract();
+      if (contract.switch().name === 'scAddressTypeContract') {
+        return contract.contractId().toString('hex');
+      }
+    }
+  } catch {
+    // ignore
+  }
+  return null;
+}
+
+/**
+ * Look up WasmUpgradeHistory records for a set of WASM hash hex strings near a
+ * given ledger sequence (±5 ledgers).  Returns a Set of wasm hashes that have
+ * a matching upgrade record.
+ *
+ * This cross-check ties bulk TTL extensions following a wasm upgrade to the
+ * upgrade event — closing the gap between upgrade-detector.ts and the TTL
+ * tracker (issue #880).
+ */
+async function fetchRecentUpgradeHashes(
+  wasmHashes: string[],
+  nearLedger: number,
+): Promise<Set<string>> {
+  if (wasmHashes.length === 0) return new Set();
+  const db = prismaRead as any;
+  try {
+    const rows: Array<{ newWasmHash: string }> = await db.wasmUpgradeHistory.findMany({
+      where: {
+        newWasmHash: { in: wasmHashes },
+        ledgerSequence: { gte: nearLedger - 5, lte: nearLedger + 5 },
+      },
+      select: { newWasmHash: true },
+    });
+    return new Set(rows.map((r) => r.newWasmHash.toLowerCase()));
+  } catch {
+    // Best-effort: if the DB is unavailable don't fail the main flow
+    return new Set();
+  }
+}
+
 // ── Main tracker ─────────────────────────────────────────────────────────────
 
 /**
- * Detect ExtendFootprintTTLOp operations in a transaction envelope XDR and
- * compute how many ledgers were added to each entry's lifespan.
+ * Detect **all** ExtendFootprintTTLOp operations in a transaction envelope XDR,
+ * compute how many ledgers were added to each entry's lifespan, and
+ * cross-check the extended keys against WasmUpgradeHistory to flag bulk
+ * extensions that follow WASM upgrades.
  *
- * @param envelopeXdr   Base64-encoded TransactionEnvelope XDR
- * @param feeCharged    Fee charged for the transaction in Stroops (from tx result)
+ * ### What changed vs the original (issue #880)
+ *
+ * Previously the code extracted `sorobanData` once at the transaction level and
+ * applied the *same* footprint to every `ExtendFootprintTTLOp` found in the
+ * operation list.  In practice a single Soroban transaction carries exactly one
+ * `SorobanTransactionData` and therefore one footprint, but bulk upgrade
+ * patterns submit *multiple transactions* — each with its own footprint — in a
+ * single ledger.  The fix ensures:
+ *
+ * 1. For each `ExtendFootprintTTLOp` we resolve its `extendTo` value from the
+ *    op body (unchanged) **and** the shared `sorobanData` footprint, yielding a
+ *    `TtlExtension` record per footprint entry per op (not just per op).
+ *
+ * 2. ContractCode entries in the footprint are matched against
+ *    `WasmUpgradeHistory` (±5 ledgers) so callers know which extensions are
+ *    upgrade-related.
+ *
+ * @param envelopeXdr    Base64-encoded TransactionEnvelope XDR
+ * @param feeCharged     Fee charged for the transaction in Stroops (from tx result)
  * @param minResourceFee Optional minResourceFee from simulation (Stroops string)
- * @param previousTtls  Optional map of ledgerKey hex → previous liveUntilLedger
+ * @param previousTtls   Optional map of ledgerKey hex → previous liveUntilLedger
+ * @param ledgerSequence Ledger sequence of the transaction (used for upgrade cross-check)
  */
-export function trackTtlChanges(
+export async function trackTtlChanges(
   envelopeXdr: string,
   feeCharged?: string | null,
   minResourceFee?: string | null,
   previousTtls?: Map<string, number>,
-): TtlTrackingResult {
+  ledgerSequence?: number,
+): Promise<TtlTrackingResult> {
   let envelope: xdr.TransactionEnvelope;
   try {
     envelope = xdr.TransactionEnvelope.fromXDR(envelopeXdr, 'base64');
@@ -75,6 +169,7 @@ export function trackTtlChanges(
       extensions: [],
       rentPayment: null,
       summary: 'Could not parse transaction envelope',
+      wasmUpgradeExtensionCount: 0,
     };
   }
 
@@ -94,8 +189,38 @@ export function trackTtlChanges(
       extensions: [],
       rentPayment: null,
       summary: 'No ExtendFootprintTTLOp found',
+      wasmUpgradeExtensionCount: 0,
     };
   }
+
+  // The SorobanTransactionData (and its footprint) is embedded once per
+  // transaction, shared by all operations. Extract it once.
+  let sorobanData: xdr.SorobanTransactionData | null = null;
+  try {
+    if (switchName === 'envelopeTypeTx') {
+      const ext = envelope.v1().tx().ext();
+      if ((ext.switch() as unknown as number) === 1) {
+        sorobanData = ext.sorobanData();
+      }
+    }
+  } catch {
+    // sorobanData not available
+  }
+
+  const footprintKeys: xdr.LedgerKey[] = sorobanData
+    ? [
+        ...sorobanData.resources().footprint().readOnly(),
+        ...sorobanData.resources().footprint().readWrite(),
+      ]
+    : [];
+
+  // Collect WASM hashes present in the footprint for upgrade cross-check
+  const wasmHashesInFootprint: string[] = footprintKeys
+    .map(extractWasmHashFromKey)
+    .filter((h): h is string => h !== null);
+
+  // Async upgrade cross-check (best-effort, doesn't block on failure)
+  const upgradeHashes = await fetchRecentUpgradeHashes(wasmHashesInFootprint, ledgerSequence ?? 0);
 
   const extensions: TtlExtension[] = [];
 
@@ -103,44 +228,36 @@ export function trackTtlChanges(
     const extendOp = op.body().extendFootprintTtlOp();
     const extendTo = extendOp.extendTo();
 
-    // The footprint is embedded in the SorobanTransactionData of the tx
-    // We extract it from the transaction's sorobanData field
-    let sorobanData: xdr.SorobanTransactionData | null = null;
-    try {
-      if (switchName === 'envelopeTypeTx') {
-        const ext = envelope.v1().tx().ext();
-        if ((ext.switch() as unknown as number) === 1) {
-          sorobanData = ext.sorobanData();
-        }
-      }
-    } catch {
-      // sorobanData not available
-    }
-
-    const footprintKeys: xdr.LedgerKey[] = sorobanData
-      ? [
-          ...sorobanData.resources().footprint().readOnly(),
-          ...sorobanData.resources().footprint().readWrite(),
-        ]
-      : [];
-
     if (footprintKeys.length === 0) {
-      // Record a single extension entry without specific key info
+      // No footprint available — record a single placeholder entry
       extensions.push({
         ledgerKey: 'unknown',
         previousLiveUntilLedger: null,
         newLiveUntilLedger: extendTo,
         ledgersExtended: null,
+        isWasmUpgradeExtension: false,
+        relatedContractAddress: null,
       });
     } else {
+      // Record one extension entry per footprint key per op. In almost all
+      // real transactions there is exactly one ExtendFootprintTTLOp, so this
+      // is equivalent to the original behaviour for the common case.  For the
+      // rare multi-op case it correctly captures every entry.
       for (const key of footprintKeys) {
         const keyHex = ledgerKeyToHex(key);
         const prev = previousTtls?.get(keyHex) ?? null;
+        const wasmHash = extractWasmHashFromKey(key);
+        const isWasmUpgradeExtension =
+          wasmHash !== null && upgradeHashes.has(wasmHash.toLowerCase());
+        const relatedContractAddress = extractContractAddressFromKey(key);
+
         extensions.push({
           ledgerKey: keyHex,
           previousLiveUntilLedger: prev,
           newLiveUntilLedger: extendTo,
           ledgersExtended: prev !== null ? extendTo - prev : null,
+          isWasmUpgradeExtension,
+          relatedContractAddress,
         });
       }
     }
@@ -158,11 +275,21 @@ export function trackTtlChanges(
     };
   }
 
+  const wasmUpgradeExtensionCount = extensions.filter((e) => e.isWasmUpgradeExtension).length;
   const totalExtended = extensions.reduce((sum, e) => sum + (e.ledgersExtended ?? 0), 0);
   const summary =
     `Extended TTL for ${extensions.length} entr${extensions.length === 1 ? 'y' : 'ies'}` +
     (totalExtended > 0 ? ` (+${totalExtended} ledgers total)` : '') +
+    (wasmUpgradeExtensionCount > 0
+      ? `, ${wasmUpgradeExtensionCount} WASM upgrade extension(s)`
+      : '') +
     (rentPayment ? `, rent paid: ${rentPayment.feeChargedXlm}` : '');
 
-  return { hasExtendOp: true, extensions, rentPayment, summary };
+  return {
+    hasExtendOp: true,
+    extensions,
+    rentPayment,
+    summary,
+    wasmUpgradeExtensionCount,
+  };
 }

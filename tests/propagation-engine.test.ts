@@ -14,7 +14,8 @@ const prismaMock = {
 };
 
 vi.mock('../src/db', () => ({
-  prisma: prismaMock,
+  prismaRead: prismaMock,
+  prismaWrite: prismaMock,
 }));
 
 describe('SEVERITY_MULTIPLIER', () => {

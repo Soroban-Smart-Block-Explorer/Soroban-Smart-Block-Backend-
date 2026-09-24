@@ -759,7 +759,7 @@ revenueRouter.get(
           avgFeePercent: p.avgFeePercent,
           feeStructure: p.feeStructure,
           tvl: p.tvl,
-          lastUpdatedAt: p.lastUpdatedAt,
+          lastUpdatedAt: p.updatedAt,
         })),
       });
     } catch (e) {

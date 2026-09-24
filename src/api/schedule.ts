@@ -26,7 +26,7 @@ const paginationSchema = z.object({
 
 /**
  * @swagger
- * /api/v1/schedule/contracts/{address}:
+ * /schedule/contracts/{address}:
  *   get:
  *     summary: List scheduled operations for a contract
  *     tags: [Schedule]
@@ -114,7 +114,7 @@ scheduleRouter.get(
 
 /**
  * @swagger
- * /api/v1/schedule/contracts/{address}/timeline:
+ * /schedule/contracts/{address}/timeline:
  *   get:
  *     summary: Upcoming events timeline for a contract
  *     description: Scheduled operations triggering at or after now, ordered ascending.
@@ -191,7 +191,7 @@ scheduleRouter.get(
 
 /**
  * @swagger
- * /api/v1/schedule/upcoming:
+ * /schedule/upcoming:
  *   get:
  *     summary: Upcoming operations across all contracts
  *     description: Operations with status PENDING or ACTIVE triggering within the next N hours, ordered ascending.
@@ -258,7 +258,7 @@ scheduleRouter.get(
 
 /**
  * @swagger
- * /api/v1/schedule/contracts/{address}/vesting:
+ * /schedule/contracts/{address}/vesting:
  *   get:
  *     summary: List vesting schedules for a contract
  *     tags: [Schedule]
@@ -327,7 +327,7 @@ scheduleRouter.get(
 
 /**
  * @swagger
- * /api/v1/schedule/contracts/{address}/governance:
+ * /schedule/contracts/{address}/governance:
  *   get:
  *     summary: List governance timelocks for a contract
  *     tags: [Schedule]
@@ -396,7 +396,7 @@ scheduleRouter.get(
 
 /**
  * @swagger
- * /api/v1/schedule/contracts/{address}/cron:
+ * /schedule/contracts/{address}/cron:
  *   get:
  *     summary: List cron jobs for a contract
  *     tags: [Schedule]
@@ -465,7 +465,7 @@ scheduleRouter.get(
 
 /**
  * @swagger
- * /api/v1/schedule/calendar:
+ * /schedule/calendar:
  *   get:
  *     summary: Calendar view of events in a time range
  *     description: Scheduled operations, vesting unlocks, and governance executions between `from` and `to` (defaults to the next 7 days).
@@ -602,7 +602,7 @@ scheduleRouter.get(
 
 /**
  * @swagger
- * /api/v1/schedule/calendar.ics:
+ * /schedule/calendar.ics:
  *   get:
  *     summary: Export upcoming operations as an iCalendar file
  *     description: Scheduled operations for the next 90 days (max 500) as a downloadable text/calendar (.ics) attachment.
@@ -704,7 +704,7 @@ scheduleRouter.get(
 
 /**
  * @swagger
- * /api/v1/schedule/operations/{opId}:
+ * /schedule/operations/{opId}:
  *   get:
  *     summary: Get a scheduled operation by id
  *     tags: [Schedule]
@@ -752,7 +752,7 @@ scheduleRouter.get(
 
 /**
  * @swagger
- * /api/v1/schedule/discover:
+ * /schedule/discover:
  *   get:
  *     summary: Discover contracts with scheduled operations
  *     description: Top 50 contracts by scheduled-operation count.
@@ -808,7 +808,7 @@ scheduleRouter.get(
 
 /**
  * @swagger
- * /api/v1/schedule/stats:
+ * /schedule/stats:
  *   get:
  *     summary: Platform-wide schedule statistics
  *     tags: [Schedule]
@@ -918,7 +918,7 @@ scheduleRouter.get(
 
 /**
  * @swagger
- * /api/v1/schedule/alerts:
+ * /schedule/alerts:
  *   get:
  *     summary: List unacknowledged timer alerts
  *     tags: [Schedule]
@@ -980,7 +980,7 @@ scheduleRouter.get(
 
 /**
  * @swagger
- * /api/v1/schedule/alerts/{id}/acknowledge:
+ * /schedule/alerts/{id}/acknowledge:
  *   post:
  *     summary: Acknowledge a timer alert
  *     tags: [Schedule]
@@ -1033,7 +1033,7 @@ scheduleRouter.post(
 
 /**
  * @swagger
- * /api/v1/schedule/search:
+ * /schedule/search:
  *   get:
  *     summary: Search scheduled operations
  *     description: Case-insensitive substring search across contract address, function name, and description, with optional type/status filters.
@@ -1126,7 +1126,7 @@ scheduleRouter.get(
 
 /**
  * @swagger
- * /api/v1/schedule/vesting/large-unlocks:
+ * /schedule/vesting/large-unlocks:
  *   get:
  *     summary: Large upcoming vesting unlocks
  *     description: Active vesting schedules unlocking within the next N days above a minimum amount, ordered by unlock amount descending (capped at 100).
@@ -1194,7 +1194,7 @@ scheduleRouter.get(
 
 /**
  * @swagger
- * /api/v1/schedule/vesting/{beneficiaryAddress}:
+ * /schedule/vesting/{beneficiaryAddress}:
  *   get:
  *     summary: List vesting schedules for a beneficiary
  *     description: Vesting schedules where the given address is the beneficiary. This route does not run Stellar-address validation middleware.
@@ -1262,7 +1262,7 @@ scheduleRouter.get(
 
 /**
  * @swagger
- * /api/v1/schedule/vesting/leaderboard:
+ * /schedule/vesting/leaderboard:
  *   get:
  *     summary: Top upcoming vesting unlocks across all beneficiaries
  *     description: Up to 20 active schedules unlocking within the next 30 days, ordered by next-unlock amount descending.
@@ -1321,7 +1321,7 @@ scheduleRouter.get(
 
 /**
  * @swagger
- * /api/v1/schedule/governance/pending:
+ * /schedule/governance/pending:
  *   get:
  *     summary: List pending (queued or executable) governance timelocks
  *     description: Each entry is augmented with countdown fields computed at request time.
@@ -1404,7 +1404,7 @@ scheduleRouter.get(
 
 /**
  * @swagger
- * /api/v1/schedule/governance/expired:
+ * /schedule/governance/expired:
  *   get:
  *     summary: List expired governance timelocks
  *     tags: [Schedule]
@@ -1465,7 +1465,7 @@ scheduleRouter.get(
 
 /**
  * @swagger
- * /api/v1/schedule/governance/stats:
+ * /schedule/governance/stats:
  *   get:
  *     summary: Governance timelock statistics
  *     tags: [Schedule]
@@ -1542,7 +1542,7 @@ const cronCreateSchema = z.object({
 
 /**
  * @swagger
- * /api/v1/schedule/cron:
+ * /schedule/cron:
  *   post:
  *     summary: Create a cron job
  *     tags: [Schedule]
@@ -1614,7 +1614,7 @@ scheduleRouter.post(
 
 /**
  * @swagger
- * /api/v1/schedule/cron/{id}:
+ * /schedule/cron/{id}:
  *   put:
  *     summary: Update a cron job
  *     description: All fields are optional; only supplied fields are changed. Supplying `cronExpression` recomputes the next run time.
@@ -1699,7 +1699,7 @@ scheduleRouter.put(
 
 /**
  * @swagger
- * /api/v1/schedule/cron/{id}:
+ * /schedule/cron/{id}:
  *   delete:
  *     summary: Delete a cron job
  *     description: Removes the cron job and its execution history.
@@ -1756,7 +1756,7 @@ scheduleRouter.delete(
 
 /**
  * @swagger
- * /api/v1/schedule/cron/{id}/trigger:
+ * /schedule/cron/{id}/trigger:
  *   post:
  *     summary: Manually trigger a cron job
  *     description: Records a successful manual execution and bumps the job's run counters.
@@ -1828,7 +1828,7 @@ scheduleRouter.post(
 
 /**
  * @swagger
- * /api/v1/schedule/cron/{id}/history:
+ * /schedule/cron/{id}/history:
  *   get:
  *     summary: List a cron job's execution history
  *     tags: [Schedule]
@@ -1903,7 +1903,7 @@ scheduleRouter.get(
 
 /**
  * @swagger
- * /api/v1/schedule/cron/{id}/toggle:
+ * /schedule/cron/{id}/toggle:
  *   patch:
  *     summary: Toggle a cron job's enabled flag
  *     tags: [Schedule]
@@ -1956,7 +1956,7 @@ scheduleRouter.patch(
 
 /**
  * @swagger
- * /api/v1/schedule/health:
+ * /schedule/health:
  *   get:
  *     summary: Scheduler health metrics
  *     tags: [Schedule]

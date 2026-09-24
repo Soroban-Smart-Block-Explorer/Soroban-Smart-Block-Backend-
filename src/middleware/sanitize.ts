@@ -42,12 +42,49 @@ export function assertValidStellarAddress(addr: string, field = 'address'): void
 const HTML_TAG_RE = /<[^>]*>/g;
 const DANGEROUS_PROTO_RE = /\b(javascript|vbscript|data):/gi;
 const INLINE_HANDLER_RE = /\bon\w+\s*=/gi;
+// SQL injection vectors: a quote/keyword combination or a classic command
+// pattern. Narrow enough to let ordinary apostrophes and prose through.
+const SQL_ATTACK_RE =
+  /\b(union\s+select|drop\s+table|insert\s+into|delete\s+from|alter\s+table|create\s+table)\b|(['"`])[^'"`]{0,80}\b(select|union|drop|insert|update|delete|create|alter|or|and)\b/i;
 // Prototype pollution: reject keys that would climb the prototype chain
 const PROTO_POLLUTION_KEYS = new Set(['__proto__', 'constructor', 'prototype']);
 // Maximum input size limits
 const MAX_STRING_LEN = 2048;
 const MAX_ARRAY_LEN = 100;
 const MAX_OBJECT_DEPTH = 10;
+
+/** Error thrown when input matches a known XSS / injection attack vector. */
+export class UnsafeInputError extends Error {
+  constructor(value: string) {
+    super('Input blocked: potential XSS or injection vector detected');
+    this.name = 'UnsafeInputError';
+    // Keep a (truncated) copy of the offending value for debugging.
+    (this as { value?: string }).value = value.slice(0, 200);
+  }
+}
+
+/**
+ * Reject strings that clearly match an attack vector (HTML tag injection,
+ * dangerous URI scheme, inline event handler, or SQL command). Returns true
+ * when the value should be rejected.
+ */
+export function isUnsafeInput(value: string): boolean {
+  const v = value.trim();
+  // Fresh non-global literals so .test() is not stateful (no shared lastIndex).
+  return (
+    /<[^>]*>/.test(v) ||
+    /\b(javascript|vbscript|data):/i.test(v) ||
+    /\bon\w+\s*=/i.test(v) ||
+    SQL_ATTACK_RE.test(v)
+  );
+}
+
+/** Throw {@link UnsafeInputError} when the value matches an attack vector. */
+export function assertSafeInput(value: string): void {
+  if (isUnsafeInput(value)) {
+    throw new UnsafeInputError(value);
+  }
+}
 
 /**
  * Strip ALL HTML tags, dangerous URI schemes, and inline event handlers from a string.
@@ -69,18 +106,20 @@ export function encodeForHtml(value: string): string {
 }
 
 /**
- * Strip HTML/XSS vectors from a string and enforce a maximum length.
+ * Sanitize a string and enforce a maximum length.
  *
- * Note: this does NOT attempt to detect or reject SQL injection patterns.
- * All database access goes through Prisma, which uses parameterized queries
- * and is not vulnerable to SQL injection via string content. A regex-based
- * SQL blocklist here would be trivially bypassable by a real attacker while
- * rejecting legitimate input (e.g. names containing an apostrophe or a
- * semicolon), so it provided false security rather than real protection.
+ * Rejects (throws {@link UnsafeInputError}) inputs that clearly match an
+ * attack vector — HTML tag injection, dangerous URI schemes, inline event
+ * handlers, or SQL command patterns. Note that rejecting hostile content
+ * is defense-in-depth: all database access goes through Prisma, which uses
+ * parameterized queries and is not vulnerable to SQL injection via string
+ * content. The detection patterns are intentionally narrow so ordinary
+ * apostrophes and prose are never rejected.
  */
 export function sanitizeString(value: string): string {
   // Enforce size limit first to avoid ReDoS via oversized inputs
   const trimmed = value.trim().slice(0, MAX_STRING_LEN);
+  assertSafeInput(trimmed);
   return stripHtml(trimmed);
 }
 

@@ -56,7 +56,7 @@ const QuerySchema = z.object({
 
 /**
  * @swagger
- * /api/v1/analytics/query:
+ * /analytics/query:
  *   post:
  *     summary: Execute a SQL query against the Iceberg data lake
  *     description: |
@@ -172,7 +172,7 @@ analyticsQueryRouter.post(
 
 /**
  * @swagger
- * /api/v1/analytics/query/templates:
+ * /analytics/query/templates:
  *   get:
  *     summary: List pre-built dashboard SQL templates
  *     tags: [Analytics Data Lake]
@@ -211,7 +211,7 @@ analyticsQueryRouter.get(
 
 /**
  * @swagger
- * /api/v1/analytics/query/estimate:
+ * /analytics/query/estimate:
  *   post:
  *     summary: Estimate cost and engine recommendation for a SQL query
  *     tags: [Analytics Data Lake]
@@ -229,7 +229,7 @@ analyticsQueryRouter.post(
 
 /**
  * @swagger
- * /api/v1/analytics/dashboard/{type}:
+ * /analytics/dashboard/{type}:
  *   get:
  *     summary: Fast dashboard data from PostgreSQL materialized views (Redis-cached)
  *     description: Returns pre-computed aggregations without hitting the data lake. Cached for 5 min.
@@ -295,7 +295,7 @@ analyticsQueryRouter.get(
 
 /**
  * @swagger
- * /api/v1/analytics/lineage:
+ * /analytics/lineage:
  *   get:
  *     summary: List recent ETL job lineage records
  *     tags: [Analytics Data Lake]

@@ -65,21 +65,31 @@ export type WasmInstr =
   | { op: 'i32.eq'; left: WasmInstr[]; right: WasmInstr[] }
   | { op: 'i32.ne'; left: WasmInstr[]; right: WasmInstr[] }
   | { op: 'i32.lt_s'; left: WasmInstr[]; right: WasmInstr[] }
+  | { op: 'i32.lt_u'; left: WasmInstr[]; right: WasmInstr[] }
   | { op: 'i32.le_s'; left: WasmInstr[]; right: WasmInstr[] }
+  | { op: 'i32.le_u'; left: WasmInstr[]; right: WasmInstr[] }
   | { op: 'i32.gt_s'; left: WasmInstr[]; right: WasmInstr[] }
+  | { op: 'i32.gt_u'; left: WasmInstr[]; right: WasmInstr[] }
   | { op: 'i32.ge_s'; left: WasmInstr[]; right: WasmInstr[] }
+  | { op: 'i32.ge_u'; left: WasmInstr[]; right: WasmInstr[] }
   | { op: 'i32.eqz'; value: WasmInstr[] }
   | { op: 'i64.add'; left: WasmInstr[]; right: WasmInstr[] }
   | { op: 'i64.sub'; left: WasmInstr[]; right: WasmInstr[] }
   | { op: 'i64.mul'; left: WasmInstr[]; right: WasmInstr[] }
   | { op: 'i64.div_s'; left: WasmInstr[]; right: WasmInstr[] }
+  | { op: 'i64.div_u'; left: WasmInstr[]; right: WasmInstr[] }
   | { op: 'i64.rem_s'; left: WasmInstr[]; right: WasmInstr[] }
+  | { op: 'i64.rem_u'; left: WasmInstr[]; right: WasmInstr[] }
   | { op: 'i64.eq'; left: WasmInstr[]; right: WasmInstr[] }
   | { op: 'i64.ne'; left: WasmInstr[]; right: WasmInstr[] }
   | { op: 'i64.lt_s'; left: WasmInstr[]; right: WasmInstr[] }
+  | { op: 'i64.lt_u'; left: WasmInstr[]; right: WasmInstr[] }
   | { op: 'i64.le_s'; left: WasmInstr[]; right: WasmInstr[] }
+  | { op: 'i64.le_u'; left: WasmInstr[]; right: WasmInstr[] }
   | { op: 'i64.gt_s'; left: WasmInstr[]; right: WasmInstr[] }
+  | { op: 'i64.gt_u'; left: WasmInstr[]; right: WasmInstr[] }
   | { op: 'i64.ge_s'; left: WasmInstr[]; right: WasmInstr[] }
+  | { op: 'i64.ge_u'; left: WasmInstr[]; right: WasmInstr[] }
   | { op: 'i64.eqz'; value: WasmInstr[] }
   | { op: 'drop'; value: WasmInstr[] }
   | { op: 'select'; cond: WasmInstr[]; then: WasmInstr[]; else: WasmInstr[] }

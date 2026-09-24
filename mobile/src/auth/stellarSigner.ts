@@ -1,7 +1,7 @@
 import * as SecureStore from 'expo-secure-store';
 import { Buffer } from 'buffer';
 import { Keypair } from '@stellar/stellar-sdk';
-import type { WalletSigner } from '@soroban/sdk';
+import type { WalletSigner } from '@soroban-explorer/mobile';
 
 const WALLET_SECRET_KEY = 'soroban_wallet_secret';
 

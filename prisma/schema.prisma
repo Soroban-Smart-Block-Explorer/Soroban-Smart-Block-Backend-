@@ -24,7 +24,7 @@ model Ledger {
 }
 
 model WasmUpgradeHistory {
-  id String @map("id") @id @default(cuid())
+  id String @map("id") @id
   contractAddress String @map("contract_address")
   previousHash String? @map("previous_hash")
   newHash String @map("new_hash")
@@ -59,7 +59,7 @@ model WasmUpgradeHistory {
 }
 
 model Transaction {
-  id String @map("id") @id @default(cuid())
+  id String @map("id") @id
   hash String @map("hash") @unique
   ledgerSequence Int @map("ledger_sequence")
   ledgerCloseTime DateTime @map("ledger_close_time")
@@ -407,8 +407,15 @@ model PropagationAnalysis {
 
 model IndexerState {
   id String @map("id") @id @default("singleton")
+  network String @map("network") @default("mainnet")
   lastLedger Int @map("last_ledger") @default(0)
+  version Int @map("version") @default(0)
+  leaderId String? @map("leader_id")
+  leaderLeaseExpiresAt DateTime? @map("leader_lease_expires_at")
   updatedAt DateTime @map("updated_at") @updatedAt
+
+  @@unique([network, id])
+  @@index([network])
   @@map("_indexer_states")
 }
 
@@ -443,7 +450,36 @@ model LedgerGap {
   endSequence Int @map("end_sequence")
   detectedAt DateTime @map("detected_at") @default(now())
   resolved Boolean @map("resolved") @default(false)
+  attemptCount Int @map("attempt_count") @default(0)
+  lastAttemptAt DateTime? @map("last_attempt_at")
   @@map("_ledger_gaps")
+}
+
+/// Persists per-batch progress for parallel catch-up workers (issue #881).
+/// Each row records one [rangeStart, rangeEnd] chunk assigned to a worker.
+/// On crash-restart the indexer resumes from `lastCommittedLedger` rather
+/// than re-fetching from `rangeStart`.
+///
+/// Composite unique key: (rangeStart, rangeEnd) so concurrent workers
+/// targeting the same chunk upsert rather than create duplicate rows.
+model CatchUpCheckpoint {
+  id                  String   @map("id") @id @default(cuid())
+  /// First ledger of the worker's assigned chunk
+  rangeStart          Int      @map("range_start")
+  /// Last ledger of the worker's assigned chunk
+  rangeEnd            Int      @map("range_end")
+  /// Last ledger successfully committed within this chunk.
+  /// NULL means the chunk has not started yet.
+  lastCommittedLedger Int?     @map("last_committed_ledger")
+  /// Whether the entire chunk was processed without error
+  completed           Boolean  @map("completed") @default(false)
+  /// ISO timestamp of the last upsert
+  updatedAt           DateTime @map("updated_at") @updatedAt
+  createdAt           DateTime @map("created_at") @default(now())
+
+  @@unique([rangeStart, rangeEnd])
+  @@index([completed])
+  @@map("_catch_up_checkpoints")
 }
 
 model SacMapping {
@@ -564,17 +600,36 @@ model FailedItem {
   @@map("_failed_items")
 }
 
-model ApiKey {
+model DeadLetterItem {
   id String @map("id") @id @default(cuid())
-  key String @map("key") @unique
-  active Boolean @map("active") @default(true)
+  itemType String @map("item_type")
+  itemId String @map("item_id")
+  ledger Int @map("ledger")
+  hash String? @map("hash")
+  errorMsg String @map("error_msg")
+  errorStack String? @map("error_stack")
+  retryCount Int @map("retry_count") @default(0)
+  payload Json? @map("payload")
+  createdAt DateTime @map("created_at") @default(now())
+
+  @@index([itemType])
+  @@index([ledger])
+  @@map("_dead_letter_items")
+}
+
+model ApiKey {
+  id        String   @map("id") @id @default(cuid())
+  /// SHA-256 hex digest of the raw API key. The plaintext key is NEVER stored.
+  /// Replaces the old plaintext `key` column (issue #882).
+  keyHash   String   @map("key_hash") @unique
+  active    Boolean  @map("active") @default(true)
   createdAt DateTime @map("created_at") @default(now())
   lastUsedAt DateTime? @map("last_used_at")
   @@map("_api_keies")
 }
 
 model SmartWallet {
-  id String @map("id") @id @default(cuid())
+  id String @map("id") @id
   address String @map("address") @unique
   walletType String @map("wallet_type")
   signerCount Int? @map("signer_count")
@@ -621,7 +676,7 @@ model SponsoredTransaction {
 }
 
 model AuthDecomposition {
-  id String @map("id") @id @default(cuid())
+  id String @map("id") @id
   transactionHash String @map("transaction_hash") @unique
   walletAddress String? @map("wallet_address")
   authTree Json @map("auth_tree")
@@ -643,12 +698,13 @@ model AuthDecomposition {
 // ---------------------------------------------------------------------------
 
 model SanctionsList {
-  id String @map("id") @id @default(cuid())
+  id String @map("id") @id
   source String @map("source") // "ofac_sdn" | "ofac_cap" | "eu" | "un" | "uk_ofsi" | "custom"
   sourceUrl String? @map("source_url")
   listVersion String @map("list_version") // version/date of the list
   listName String? @map("list_name")
   entityType String @map("entity_type") // "individual" | "entity" | "vessel" | "aircraft" | "unknown"
+  // On-chain address (if applicable). Nullable for non-crypto entities/individuals without a specific address; PostgreSQL permits multiple NULL values under standard UNIQUE constraints.
   address String? @map("address")
   addressPattern String? @map("address_pattern")
   name String? @map("name")
@@ -754,7 +810,7 @@ model ContractResourceMetric {
 }
 
 model TranslationKey {
-  id String @map("id") @id @default(cuid())
+  id String @map("id") @id
   key String @map("key") @unique
   defaultText String @map("default_text")
   context String? @map("context")
@@ -768,7 +824,7 @@ model TranslationKey {
 }
 
 model Translation {
-  id String @map("id") @id @default(cuid())
+  id String @map("id") @id
   keyId String @map("key_id")
   language String @map("language")
   translatedText String @map("translated_text")
@@ -786,7 +842,7 @@ model Translation {
 }
 
 model FeedChannel {
-  id String @map("id") @id @default(cuid())
+  id String @map("id") @id
   name String @map("name") @unique
   description String? @map("description")
   category String? @map("category")
@@ -814,7 +870,7 @@ model FeedMessage {
 }
 
 model FeedSubscription {
-  id String @map("id") @id @default(cuid())
+  id String @map("id") @id
   channelName String @map("channel_name")
   deliveryType String @map("delivery_type")
   deliveryConfig Json? @map("delivery_config")
@@ -912,7 +968,7 @@ model RecoveryAnalysis {
 }
 
 model AlertConfiguration {
-  id String @map("id") @id @default(cuid())
+  id String @map("id") @id
   userId String @map("user_id")
   contractAddress String? @map("contract_address") @db.VarChar(56)
   name String? @map("name") @db.VarChar(255)
@@ -1439,8 +1495,8 @@ model MevEvent {
   flashLoanAlert Boolean? @map("flash_loan_alert")
   createdAt DateTime @map("created_at") @default(now())
 
-  victim   MevVictim?   @relation(fields: [victimAddress], references: [address], onUpdate: Cascade)
-  attacker MevAttacker? @relation(fields: [attackerAddress], references: [address], onUpdate: Cascade)
+  victim   MevVictim?   @relation(fields: [victimAddress], references: [address], onDelete: Cascade, onUpdate: Cascade)
+  attacker MevAttacker? @relation(fields: [attackerAddress], references: [address], onDelete: Cascade, onUpdate: Cascade)
 
   @@index([mevType])
   @@index([ledgerSeq])
@@ -1559,6 +1615,8 @@ model DevApiKey {
   expiresAt DateTime? @map("expires_at")
   lastUsedAt DateTime? @map("last_used_at")
   status String @map("status") @default("active")
+  /// ID of the key that was rotated to produce this key, for audit-trail chaining (#888)
+  rotatedFromKeyId String? @map("rotated_from_key_id")
   createdAt DateTime @map("created_at") @default(now())
   updatedAt DateTime @map("updated_at") @updatedAt
 
@@ -1570,6 +1628,7 @@ model DevApiKey {
   @@index([keyHash])
   @@index([status])
   @@index([tier])
+  @@index([expiresAt])
   @@map("_dev_api_keies")
 }
 
@@ -1863,8 +1922,8 @@ model ArbitrageOpportunity {
   executionTxHash String? @map("execution_tx_hash") @db.VarChar(64)
   createdAt DateTime @map("created_at") @default(now())
 
-  buyPool    DexPool?             @relation(fields: [buyPoolId], references: [id], onUpdate: Cascade, name: "buyPool")
-  sellPool   DexPool?             @relation(fields: [sellPoolId], references: [id], onUpdate: Cascade, name: "sellPool")
+  buyPool    DexPool?             @relation(fields: [buyPoolId], references: [id], onDelete: Cascade, onUpdate: Cascade, name: "buyPool")
+  sellPool   DexPool?             @relation(fields: [sellPoolId], references: [id], onDelete: Cascade, onUpdate: Cascade, name: "sellPool")
   mevScore   MevOpportunityScore?
   executions ArbitrageExecution[]
 
@@ -2179,7 +2238,7 @@ model ProtocolEconomicsSnapshot {
 // =========================================================================
 
 model FeatureDefinition {
-  id String @map("id") @id @default(cuid())
+  id String @map("id") @id
   name String @map("name") @unique
   description String? @map("description")
   category String? @map("category")
@@ -2194,7 +2253,7 @@ model FeatureDefinition {
 }
 
 model FeatureValue {
-  id String @map("id") @id @default(cuid())
+  id String @map("id") @id
   featureId String @map("feature_id")
   value Float @map("value")
   timestamp DateTime @map("timestamp")
@@ -2204,7 +2263,6 @@ model FeatureValue {
   feature FeatureDefinition @relation(fields: [featureId], references: [id])
 
   @@index([featureId, timestamp])
-  @@index([featureId, timestamp, id])
   @@map("_feature_values")
 }
 
@@ -2288,7 +2346,7 @@ model Attestation {
 }
 
 model AuditLog {
-  id String @map("id") @id @default(cuid())
+  id String @map("id") @id
   actor String @map("actor")
   action String @map("action")
   target String @map("target")
@@ -2297,6 +2355,26 @@ model AuditLog {
   reason String? @map("reason")
   createdAt DateTime @map("created_at") @default(now())
   @@map("_audit_logs")
+}
+
+/// Audit trail for sensitive read-only operations (compliance screens, freeze queries,
+/// admin error views, webhook secret views). Intentionally never pruned. (#890)
+model SensitiveReadAudit {
+  id        String   @id @default(cuid()) @map("id")
+  actor     String   @map("actor")          // userId, apiKeyId, or "admin"
+  ip        String   @map("ip")
+  endpoint  String   @map("endpoint")
+  method    String   @map("method")         // always GET for reads
+  target    String   @map("target")         // resource identifier queried (address, id, etc.)
+  requestId String?  @map("request_id")
+  userAgent String?  @map("user_agent")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@index([actor])
+  @@index([endpoint])
+  @@index([target])
+  @@index([createdAt(sort: Desc)])
+  @@map("_sensitive_read_audits")
 }
 
 model BackfillRequest {
@@ -2469,7 +2547,6 @@ model ExportJob {
   fileUrl String? @map("file_url")
   filters Json? @map("filters")
   errorMsg String? @map("error_msg")
-  errorMessage String? @map("error_message")
   rowCount Int? @map("row_count")
   completedAt DateTime? @map("completed_at")
   totalRows Int? @map("total_rows")
@@ -2512,14 +2589,12 @@ model FrozenLedgerKey {
 
 model FuzzFinding {
   id String @map("id") @id @default(cuid())
-  runId String @map("run_id")
-  findingType String @map("finding_type")
+  fuzzRunId String @map("fuzz_run_id")
+  findingType String? @map("finding_type")
   description String? @map("description")
-  fuzzRunId String? @map("fuzz_run_id")
   severity String? @map("severity")
   createdAt DateTime @map("created_at") @default(now())
 
-  @@index([runId])
   @@index([fuzzRunId])
   @@map("_fuzz_findings")
 }
@@ -2540,7 +2615,7 @@ model FuzzRun {
 }
 
 model GasAnalyticsSnapshot {
-  id String @map("id") @id @default(cuid())
+  id String @map("id") @id
   bucket String @map("bucket")
   bucketStart DateTime @map("bucket_start")
   bucketEnd DateTime @map("bucket_end")
@@ -2573,7 +2648,7 @@ model GasGolfingTip {
 // values (i128-safe), matching the indexer's addIntegerStrings arithmetic.
 
 model GovernanceContract {
-  id String @map("id") @id @default(cuid())
+  id String @map("id") @id
   contractAddress String @map("contract_address") @unique
   governanceType String @map("governance_type")
   votingToken String? @map("voting_token")
@@ -2680,7 +2755,7 @@ model GovernanceMultisigSigner {
 }
 
 model GovernanceProposal {
-  id String @map("id") @id @default(cuid())
+  id String @map("id") @id
   contractAddress String @map("contract_address")
   proposalId String @map("proposal_id") // on-chain proposal id (natural key with contractAddress)
   proposer String @map("proposer")
@@ -2718,7 +2793,7 @@ model GovernanceProposal {
 }
 
 model GovernanceVote {
-  id String @map("id") @id @default(cuid())
+  id String @map("id") @id
   contractAddress String @map("contract_address")
   proposalId String @map("proposal_id") // on-chain proposal id (FK to proposal's natural key)
   voter String @map("voter")
@@ -2944,7 +3019,7 @@ model PoolSnapshot {
 }
 
 model PoolSwap {
-  id String @map("id") @id @default(cuid())
+  id String @map("id") @id
   poolAddress String @map("pool_address")
   tokenIn String @map("token_in")
   amountIn String? @map("amount_in")
@@ -3045,7 +3120,7 @@ model PrivacyTransaction {
 }
 
 model ReentrancyAlert {
-  id String @map("id") @id @default(cuid())
+  id String @map("id") @id
   transactionHash String @map("transaction_hash") @unique
   contractAddress String @map("contract_address")
   severity String? @map("severity")
@@ -3055,7 +3130,7 @@ model ReentrancyAlert {
 }
 
 model RegisteredDapp {
-  id String @map("id") @id @default(cuid())
+  id String @map("id") @id
   name String @map("name")
   apiKey String @map("api_key")
   createdAt DateTime @map("created_at") @default(now())
@@ -3349,7 +3424,7 @@ model ShieldedTransfer {
 }
 
 model SignatureInspection {
-  id String @map("id") @id @default(cuid())
+  id String @map("id") @id
   transactionHash String @map("transaction_hash") @unique
   ledgerSequence Int @map("ledger_sequence")
   curveType String? @map("curve_type")
@@ -3396,7 +3471,7 @@ model StateContention {
 }
 
 model ThreatAdvisory {
-  id String @map("id") @id @default(cuid())
+  id String @map("id") @id
   title String @map("title")
   description String? @map("description")
   severity String @map("severity")
@@ -3437,7 +3512,7 @@ model ThreatReview {
 }
 
 model TipSubscription {
-  id String @map("id") @id @default(cuid())
+  id String @map("id") @id
   channel String @map("channel")
   target String @map("target")
   active Boolean @map("active")
@@ -3450,7 +3525,7 @@ model TipSubscription {
 }
 
 model TipWebhook {
-  id String @map("id") @id @default(cuid())
+  id String @map("id") @id
   url String @map("url")
   events Json? @map("events")
   secret String? @map("secret")
@@ -3514,7 +3589,7 @@ model TokenPrice {
 }
 
 model TokenPriceHistory {
-  id String @map("id") @id @default(cuid())
+  id String @map("id") @id
   tokenAddress String @map("token_address")
   priceUsd Decimal @map("price_usd")
   priceXlm Decimal @map("price_xlm")
@@ -3549,6 +3624,7 @@ model PriceAlert {
 model VerifiableCredential {
   id String @map("id") @id @default(cuid())
   profileId String @map("profile_id")
+  // Unique credential identifier (W3C format or DID URI). Required and unique per credential instance.
   credentialId String @map("credential_id")
   context String? @map("context")
   type String? @map("type")
@@ -3587,7 +3663,7 @@ model VolumeAlert {
 }
 
 model VulnerabilitySource {
-  id String @map("id") @id @default(cuid())
+  id String @map("id") @id
   name String @map("name") @unique
   sourceType String @map("source_type")
   feedUrl String? @map("feed_url")
@@ -3599,7 +3675,7 @@ model VulnerabilitySource {
 }
 
 model WebhookDelivery {
-  id String @map("id") @id @default(cuid())
+  id String @map("id") @id
   subscriptionId String @map("subscription_id")
   eventId String? @map("event_id")
   attempt Int? @map("attempt")
@@ -3623,7 +3699,7 @@ model WebhookDelivery {
 }
 
 model WebhookSubscription {
-  id String @map("id") @id @default(cuid())
+  id String @map("id") @id
   apiKeyId String @map("api_key_id")
   url String @map("url")
   secret String @map("secret")
@@ -4145,7 +4221,7 @@ model DataRetrieval {
 }
 
 model SlaOffer {
-  id          String       @id @default(cuid())
+  id          String       @id
   nodeId      String
   node        ArchivalNode @relation(fields: [nodeId], references: [id])
   tier        String
@@ -4216,7 +4292,7 @@ model ArchivalAppeal {
 // =========================================================================
 
 model NftCollection {
-  id String @map("id") @id @default(cuid())
+  id String @map("id") @id
   contractAddress String @map("contract_address") @unique
   name String? @map("name")
   symbol String? @map("symbol")
@@ -4597,7 +4673,7 @@ model BridgeVolume {
 // ── Auth models ───────────────────────────────────────────────────────────────
 
 model WalletUser {
-  id          String    @id @default(cuid())
+  id          String    @id
   address     String    @unique
   role        String    @default("user")
   tier        String    @default("free")
@@ -4675,7 +4751,7 @@ model AuthWebhook {
 }
 
 model MultiSigWallet {
-  id            String   @id @default(cuid())
+  id            String   @id
   walletAddress String   @unique
   signers       Json
   threshold     Int
@@ -4687,7 +4763,7 @@ model MultiSigWallet {
 }
 
 model OAuthApp {
-  id           String   @id @default(cuid())
+  id           String   @id
   clientId     String   @unique
   clientSecret String
   name         String
@@ -4702,7 +4778,7 @@ model OAuthApp {
 }
 
 model OAuthCode {
-  id          String   @id @default(cuid())
+  id          String   @id
   code        String   @unique
   clientId    String
   userId      String
@@ -5044,4 +5120,56 @@ model SearchIndexEntry {
   @@index([contentType])
   @@index([content])
   @@map("_search_index_entries")
+}
+
+// ── Feature Flags (gradual rollout, per-environment + per-developer toggles) ──
+// Backs the runtime feature-flag system in src/feature-flags. Each row is one
+// registered flag; overrides layer on top (developer > environment > env var
+// > rollout > default). Schema availability of required tables is checked
+// separately at runtime and is not stored here.
+model FeatureFlag {
+  id             String   @map("id") @id @default(cuid())
+  key            String   @map("key") @unique
+  description    String   @map("description") @default("")
+  defaultEnabled Boolean  @map("default_enabled") @default(false)
+  // Gradual rollout target (0-100). Applied to a stable per-account bucket
+  // when no explicit override or env var is set. 0 = off, 100 = fully on.
+  rolloutPercent Int      @map("rollout_percent") @default(0)
+  createdAt      DateTime @map("created_at") @default(now())
+  updatedAt      DateTime @map("updated_at") @updatedAt
+
+  overrides FeatureFlagOverride[]
+
+  @@map("_feature_flags")
+}
+
+model FeatureFlagOverride {
+  id         String   @map("id") @id @default(cuid())
+  flagKey    String   @map("flag_key")
+  // 'environment' (scopeValue = network name) or 'developer' (scopeValue = developerId)
+  scopeType  String   @map("scope_type")
+  scopeValue String   @map("scope_value")
+  enabled    Boolean  @map("enabled")
+  createdAt  DateTime @map("created_at") @default(now())
+  updatedAt  DateTime @map("updated_at") @updatedAt
+
+  flag FeatureFlag @relation(fields: [flagKey], references: [key], onDelete: Cascade)
+
+  @@unique([flagKey, scopeType, scopeValue])
+  @@index([flagKey, scopeType])
+  @@map("_feature_flag_overrides")
+}
+
+model FuzzJob {
+  id              String    @map("id") @id
+  contractAddress String    @map("contract_address")
+  status          String    @map("status") // 'running', 'completed', 'failed', 'interrupted'
+  report          Json?     @map("report")
+  error           String?   @map("error")
+  startedAt       DateTime  @map("started_at") @default(now())
+  completedAt     DateTime? @map("completed_at")
+
+  @@index([contractAddress])
+  @@index([status])
+  @@map("_fuzz_jobs")
 }

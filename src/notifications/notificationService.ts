@@ -92,7 +92,12 @@ export class NotificationService {
       try {
         await this.deliverToPlatform(platform, tokens, notification);
         success += tokens.length;
-      } catch {
+      } catch (err) {
+        // Misconfiguration (e.g. no APNs key but iOS devices were requested)
+        // must surface loudly instead of being swallowed as a delivery failure.
+        if (err instanceof Error && err.message.endsWith('not configured')) {
+          throw err;
+        }
         failed += tokens.length;
       }
     }

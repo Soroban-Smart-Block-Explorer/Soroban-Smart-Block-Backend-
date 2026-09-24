@@ -27,7 +27,7 @@
 import { prismaRead, prismaWrite } from '../db';
 import { logger } from '../logger';
 import { runAudit } from './audit-engine';
-import { emitPostAuditAlerts } from './audit-monitor';
+import { emitPostAuditAlerts } from './audit-post-alerts';
 import { anchorCertificateForPipeline } from '../lib/anchor-service';
 
 // ── Types ─────────────────────────────────────────────────────────────────────

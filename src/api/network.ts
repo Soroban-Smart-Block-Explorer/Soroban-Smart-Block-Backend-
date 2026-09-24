@@ -12,7 +12,7 @@ export const networkRouter = Router();
 
 /**
  * @swagger
- * /api/v1/network:
+ * /network:
  *   get:
  *     summary: Get active network configuration
  *     description: Returns the current network profile (testnet / mainnet / devnet) and RPC connection details.

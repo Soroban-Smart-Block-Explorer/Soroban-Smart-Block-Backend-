@@ -1,11 +1,19 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 import type { NextFunction, Request, Response } from 'express';
+import crypto from 'crypto';
 import {
   getRateLimitTier,
   normalizeTierConfig,
   tieredRateLimit,
 } from '../src/middleware/rateLimit';
 import { checkTokenBucket } from '../src/middleware/tokenBucket';
+
+// getRateLimitTier hashes the incoming API key with SHA-256 before comparing
+// it against the configured key sets (#715 — plaintext keys are never
+// retained), so test fixtures must hash their expected keys the same way.
+function hashApiKey(raw: string): string {
+  return crypto.createHash('sha256').update(raw).digest('hex');
+}
 
 vi.mock('../src/logger', () => ({ logger: { info: vi.fn(), warn: vi.fn() } }));
 vi.mock('../src/middleware/tokenBucket', () => ({
@@ -57,8 +65,8 @@ describe('rate limit configuration', () => {
   it('selects the highest matching tier for known API keys', () => {
     const tier = getRateLimitTier(
       'premium-api',
-      new Set(['developer-api']),
-      new Set(['premium-api']),
+      new Set([hashApiKey('developer-api')]),
+      new Set([hashApiKey('premium-api')]),
     );
     expect(tier).toBe('premium');
   });

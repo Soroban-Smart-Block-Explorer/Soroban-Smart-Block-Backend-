@@ -33,11 +33,17 @@ vi.mock('../src/auth/challenge', () => ({
   incrementAttempts: vi.fn(),
   checkChallengeRateLimit: vi.fn(),
 }));
-vi.mock('../src/auth/rbac', () => ({
-  getFeatures: vi.fn(),
-  featureList: vi.fn(),
-  hasRole: vi.fn(),
-}));
+vi.mock('../src/auth/rbac', async (importOriginal) => {
+  // Keep the real tier/role constants (rateLimit.ts reads TIER_CONFIG at
+  // import time) and only stub the runtime functions this suite isn't testing.
+  const actual = await importOriginal<typeof import('../src/auth/rbac')>();
+  return {
+    ...actual,
+    getFeatures: vi.fn(),
+    featureList: vi.fn(),
+    hasRole: vi.fn(),
+  };
+});
 vi.mock('../src/indexer/privacy-detector', () => ({ detectPrivacyTechniques: vi.fn() }));
 vi.mock('../src/indexer/privacy-scorer', () => ({ computePrivacyScore: vi.fn() }));
 vi.mock('../src/indexer/privacy-graph', () => ({

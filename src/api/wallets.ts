@@ -2,9 +2,11 @@ import { Router, Request, Response } from 'express';
 import { container } from '../services/container';
 import { z } from 'zod';
 import { validateAddressParam } from '../middleware/sanitize';
-import axios from 'axios';
-import { config } from '../config';
 import { asyncHandler } from '../middleware/asyncHandler';
+import {
+  fetchHorizonOperations as fetchHorizonOperationsTyped,
+  type HorizonOperation,
+} from '../stellar/horizon-client';
 
 /**
  * @swagger
@@ -22,7 +24,7 @@ const paginationSchema = z.object({
 
 /**
  * @swagger
- * /api/v1/wallets/{address}/transactions:
+ * /wallets/{address}/transactions:
  *   get:
  *     summary: List a wallet's Soroban transactions (offset-paginated)
  *     description: Transactions where this address is the source account, newest first.
@@ -121,7 +123,7 @@ walletRouter.get(
 
 /**
  * @swagger
- * /api/v1/wallets/{address}/events:
+ * /wallets/{address}/events:
  *   get:
  *     summary: List events involving a wallet (offset-paginated)
  *     description: >-
@@ -205,7 +207,7 @@ walletRouter.get(
 
 /**
  * @swagger
- * /api/v1/wallets/{address}/history:
+ * /wallets/{address}/history:
  *   get:
  *     summary: Unified Soroban + classic Stellar history for a wallet
  *     description: >-
@@ -323,12 +325,28 @@ walletRouter.get(
           humanReadable: true,
         },
       }),
-      fetchHorizonOperations(address, limit * 2),
+      fetchHorizonOperationsTyped(address, limit * 2).then((r) => r.records),
     ]);
 
     // Normalise into a unified shape
-    const sorobanItems = sorobanTxs.map((tx) => ({
-      type: 'soroban' as const,
+    type WalletHistoryItem = {
+      type: 'soroban' | 'classic';
+      timestamp: Date;
+      hash: string;
+      ledgerSequence: number | null;
+      status: string | null;
+      contractAddress: string | null;
+      functionName: string | null;
+      humanReadable: string | null;
+      operationType: string | null;
+      amount: string | null;
+      asset: string | null;
+      from: string | null;
+      to: string | null;
+    };
+
+    const sorobanItems = sorobanTxs.map((tx): WalletHistoryItem => ({
+      type: 'soroban',
       timestamp: tx.ledgerCloseTime,
       hash: tx.hash,
       ledgerSequence: tx.ledgerSequence,
@@ -344,8 +362,8 @@ walletRouter.get(
       to: null,
     }));
 
-    const classicItems = horizonOps.map((op: any) => ({
-      type: 'classic' as const,
+    const classicItems = horizonOps.map((op: HorizonOperation): WalletHistoryItem => ({
+      type: 'classic',
       timestamp: new Date(op.created_at),
       hash: op.transaction_hash,
       ledgerSequence: null,
@@ -354,10 +372,11 @@ walletRouter.get(
       functionName: null,
       humanReadable: null,
       operationType: op.type,
-      amount: op.amount ?? op.starting_balance ?? null,
-      asset: op.asset_type === 'native' ? 'XLM' : (op.asset_code ?? null),
-      from: op.from ?? op.funder ?? null,
-      to: op.to ?? op.account ?? null,
+      amount:
+        (op.amount as string | undefined) ?? (op.starting_balance as string | undefined) ?? null,
+      asset: op.asset_type === 'native' ? 'XLM' : ((op.asset_code as string | undefined) ?? null),
+      from: (op.from as string | undefined) ?? (op.funder as string | undefined) ?? null,
+      to: (op.to as string | undefined) ?? (op.account as string | undefined) ?? null,
     }));
 
     // Merge and sort descending by timestamp
@@ -372,17 +391,3 @@ walletRouter.get(
     res.json({ data: paginated, total: merged.length, page, limit });
   }),
 );
-
-async function fetchHorizonOperations(address: string, limit: number): Promise<any[]> {
-  try {
-    const url = `${config.horizonUrl}/accounts/${encodeURIComponent(address)}/operations`;
-    const resp = await axios.get(url, {
-      params: { limit, order: 'desc' },
-      timeout: 10_000,
-    });
-    return resp.data?._embedded?.records ?? [];
-  } catch {
-    // Horizon unavailable or account not found — return empty rather than failing the whole request
-    return [];
-  }
-}

@@ -1,5 +1,6 @@
 import axios from 'axios';
 import { config } from '../config';
+import { buildCacheKey } from '../cache';
 
 export interface LlmDescriptionResult {
   description: string;
@@ -98,7 +99,11 @@ export async function getLlmDescription(
   functionNames: string[],
   category: string,
 ): Promise<LlmDescriptionResult | null> {
-  const cacheKey = `${address}:${category}`;
+  // buildCacheKey escapes each segment independently (#894) — this key has
+  // no fixed namespace prefix at all, so without escaping a ':'-bearing
+  // address/category could collide with an unrelated (address, category)
+  // pair.
+  const cacheKey = buildCacheKey('llm-desc', address, category);
   const cached = descriptionCache.get(cacheKey);
   if (cached && cached.expiresAt > Date.now()) {
     return { ...cached.result, cached: true };

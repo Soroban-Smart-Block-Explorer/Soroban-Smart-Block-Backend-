@@ -12,6 +12,7 @@
 
 import { prismaWrite as prisma } from '../../db';
 import { getTokenMetadata } from '../token-metadata';
+import { uuidv7 } from '../../utils/uuidv7';
 
 export type DexProtocol = 'soroswap' | 'aquarius' | 'phoenix' | 'comet' | 'unknown';
 
@@ -278,6 +279,7 @@ export async function processPoolEvent(input: PoolEventInput): Promise<void> {
     ));
     await prisma.poolSwap.create({
       data: {
+        id: uuidv7(),
         poolAddress,
         transactionHash: input.transactionHash,
         ledgerSequence: input.ledgerSequence,

@@ -10,7 +10,7 @@ import { asyncHandler } from '../middleware/asyncHandler';
  *   description: >
  *     In-memory Soroban sandbox for developing and testing smart contracts locally.
  *     Live VM state is kept in memory; sessions persist to the database.
- *     Note: sandbox router is not currently mounted in router.ts.
+ *
  */
 export const sandboxRouter = Router();
 
@@ -185,10 +185,12 @@ function getSessionId(params: unknown): string {
 
 /**
  * @swagger
- * /api/v1/sandbox/templates:
+ * /sandbox/templates:
  *   get:
  *     summary: List contract templates
- *     description: Returns all built-in sandbox templates, optionally filtered by search term or category. Note: sandbox router is not currently mounted in router.ts.
+ *     description: >-
+ *       Returns all built-in sandbox templates, optionally filtered by search term
+ *       or category.
  *     tags: [Sandbox]
  *     parameters:
  *       - in: query
@@ -232,10 +234,10 @@ sandboxRouter.get(
 
 /**
  * @swagger
- * /api/v1/sandbox/templates/{id}:
+ * /sandbox/templates/{id}:
  *   get:
  *     summary: Get a template by ID
- *     description: Returns the full template record for the given ID. Note: sandbox router is not currently mounted in router.ts.
+ *     description: Returns the full template record for the given ID.
  *     tags: [Sandbox]
  *     parameters:
  *       - in: path
@@ -274,10 +276,10 @@ sandboxRouter.get(
 
 /**
  * @swagger
- * /api/v1/sandbox/templates:
+ * /sandbox/templates:
  *   post:
  *     summary: Submit a custom template
- *     description: Creates or updates a contract template in the in-memory registry and persists it to the database. Note: sandbox router is not currently mounted in router.ts.
+ *     description: Creates or updates a contract template in the in-memory registry and persists it to the database.
  *     tags: [Sandbox]
  *     requestBody:
  *       required: true
@@ -331,10 +333,10 @@ sandboxRouter.post(
 
 /**
  * @swagger
- * /api/v1/sandbox/templates/{id}/params:
+ * /sandbox/templates/{id}/params:
  *   get:
  *     summary: Get template deployment parameters
- *     description: Returns the default constructor arguments, ABI, and deployment guide for a template. Note: sandbox router is not currently mounted in router.ts.
+ *     description: Returns the default constructor arguments, ABI, and deployment guide for a template.
  *     tags: [Sandbox]
  *     parameters:
  *       - in: path
@@ -373,10 +375,10 @@ sandboxRouter.get(
 
 /**
  * @swagger
- * /api/v1/sandbox/session:
+ * /sandbox/session:
  *   post:
  *     summary: Create a sandbox session
- *     description: Creates a new in-memory Soroban sandbox session with pre-funded accounts and a configurable ledger starting state. Note: sandbox router is not currently mounted in router.ts.
+ *     description: Creates a new in-memory Soroban sandbox session with pre-funded accounts and a configurable ledger starting state.
  *     tags: [Sandbox]
  *     requestBody:
  *       content:
@@ -445,10 +447,10 @@ sandboxRouter.post(
 
 /**
  * @swagger
- * /api/v1/sandbox/session/{sessionId}:
+ * /sandbox/session/{sessionId}:
  *   get:
  *     summary: Get session details
- *     description: Returns the current state summary for a sandbox session, including live ledger position, account count, and call history counts. Note: sandbox router is not currently mounted in router.ts.
+ *     description: Returns the current state summary for a sandbox session, including live ledger position, account count, and call history counts.
  *     tags: [Sandbox]
  *     parameters:
  *       - in: path
@@ -484,10 +486,10 @@ sandboxRouter.get(
 
 /**
  * @swagger
- * /api/v1/sandbox/session/{sessionId}:
+ * /sandbox/session/{sessionId}:
  *   delete:
  *     summary: Destroy a sandbox session
- *     description: Marks the session as destroyed in the database and removes it from the in-memory active sessions map. Note: sandbox router is not currently mounted in router.ts.
+ *     description: Marks the session as destroyed in the database and removes it from the in-memory active sessions map.
  *     tags: [Sandbox]
  *     parameters:
  *       - in: path
@@ -527,10 +529,10 @@ sandboxRouter.delete(
 
 /**
  * @swagger
- * /api/v1/sandbox/session/{sessionId}/pause:
+ * /sandbox/session/{sessionId}/pause:
  *   post:
  *     summary: Pause a session
- *     description: Sets the session status to paused and persists the current runtime state. Note: sandbox router is not currently mounted in router.ts.
+ *     description: Sets the session status to paused and persists the current runtime state.
  *     tags: [Sandbox]
  *     parameters:
  *       - in: path
@@ -566,10 +568,10 @@ sandboxRouter.post(
 
 /**
  * @swagger
- * /api/v1/sandbox/session/{sessionId}/reset:
+ * /sandbox/session/{sessionId}/reset:
  *   post:
  *     summary: Reset session to genesis state
- *     description: Restores the runtime block to the original genesis state, clearing all contracts and account mutations. Note: sandbox router is not currently mounted in router.ts.
+ *     description: Restores the runtime block to the original genesis state, clearing all contracts and account mutations.
  *     tags: [Sandbox]
  *     parameters:
  *       - in: path
@@ -605,10 +607,10 @@ sandboxRouter.post(
 
 /**
  * @swagger
- * /api/v1/sandbox/session/{sessionId}/snapshot:
+ * /sandbox/session/{sessionId}/snapshot:
  *   post:
  *     summary: Take a named snapshot
- *     description: Saves the current runtime state as a named snapshot that can be restored later. Note: sandbox router is not currently mounted in router.ts.
+ *     description: Saves the current runtime state as a named snapshot that can be restored later.
  *     tags: [Sandbox]
  *     parameters:
  *       - in: path
@@ -657,10 +659,10 @@ sandboxRouter.post(
 
 /**
  * @swagger
- * /api/v1/sandbox/session/{sessionId}/snapshots:
+ * /sandbox/session/{sessionId}/snapshots:
  *   get:
  *     summary: List snapshots for a session
- *     description: Returns all named snapshots for the session, newest first. Note: sandbox router is not currently mounted in router.ts.
+ *     description: Returns all named snapshots for the session, newest first.
  *     tags: [Sandbox]
  *     parameters:
  *       - in: path
@@ -698,10 +700,10 @@ sandboxRouter.get(
 
 /**
  * @swagger
- * /api/v1/sandbox/session/{sessionId}/restore/{snapshotId}:
+ * /sandbox/session/{sessionId}/restore/{snapshotId}:
  *   post:
  *     summary: Restore a snapshot
- *     description: Replaces the current runtime block with the state captured in the named snapshot. Note: sandbox router is not currently mounted in router.ts.
+ *     description: Replaces the current runtime block with the state captured in the named snapshot.
  *     tags: [Sandbox]
  *     parameters:
  *       - in: path
@@ -743,10 +745,10 @@ sandboxRouter.post(
 
 /**
  * @swagger
- * /api/v1/sandbox/session/{sessionId}/advance:
+ * /sandbox/session/{sessionId}/advance:
  *   post:
  *     summary: Advance the ledger clock
- *     description: Increments the ledger sequence and optionally moves the ledger timestamp forward. Useful for testing time-dependent logic. Note: sandbox router is not currently mounted in router.ts.
+ *     description: Increments the ledger sequence and optionally moves the ledger timestamp forward. Useful for testing time-dependent logic.
  *     tags: [Sandbox]
  *     parameters:
  *       - in: path
@@ -799,10 +801,10 @@ sandboxRouter.post(
 
 /**
  * @swagger
- * /api/v1/sandbox/session/{sessionId}/fund:
+ * /sandbox/session/{sessionId}/fund:
  *   post:
  *     summary: Fund an account
- *     description: Adds the given amount to an account's balance within the session. Note: sandbox router is not currently mounted in router.ts.
+ *     description: Adds the given amount to an account's balance within the session.
  *     tags: [Sandbox]
  *     parameters:
  *       - in: path
@@ -856,10 +858,10 @@ sandboxRouter.post(
 
 /**
  * @swagger
- * /api/v1/sandbox/session/{sessionId}/accounts:
+ * /sandbox/session/{sessionId}/accounts:
  *   post:
  *     summary: Create a new account
- *     description: Generates a new deterministic Stellar key pair and adds it to the session. Note: sandbox router is not currently mounted in router.ts.
+ *     description: Generates a new deterministic Stellar key pair and adds it to the session.
  *     tags: [Sandbox]
  *     parameters:
  *       - in: path
@@ -920,10 +922,10 @@ sandboxRouter.post(
 
 /**
  * @swagger
- * /api/v1/sandbox/session/{sessionId}/accounts:
+ * /sandbox/session/{sessionId}/accounts:
  *   get:
  *     summary: List session accounts
- *     description: Returns all accounts currently live in the session's runtime block. Note: sandbox router is not currently mounted in router.ts.
+ *     description: Returns all accounts currently live in the session's runtime block.
  *     tags: [Sandbox]
  *     parameters:
  *       - in: path
@@ -961,10 +963,10 @@ sandboxRouter.get(
 
 /**
  * @swagger
- * /api/v1/sandbox/session/{sessionId}/register-token:
+ * /sandbox/session/{sessionId}/register-token:
  *   post:
  *     summary: Register a token contract
- *     description: Deploys a SEP-41 token template into the session using the provided metadata. Note: sandbox router is not currently mounted in router.ts.
+ *     description: Deploys a SEP-41 token template into the session using the provided metadata.
  *     tags: [Sandbox]
  *     parameters:
  *       - in: path
@@ -1021,10 +1023,10 @@ sandboxRouter.post(
 
 /**
  * @swagger
- * /api/v1/sandbox/deploy:
+ * /sandbox/deploy:
  *   post:
  *     summary: Deploy a contract
- *     description: Deploys a Wasm contract (provided as base64) into the session's runtime state. Note: sandbox router is not currently mounted in router.ts.
+ *     description: Deploys a Wasm contract (provided as base64) into the session's runtime state.
  *     tags: [Sandbox]
  *     requestBody:
  *       required: true
@@ -1087,10 +1089,10 @@ sandboxRouter.post(
 
 /**
  * @swagger
- * /api/v1/sandbox/deploy-from-template:
+ * /sandbox/deploy-from-template:
  *   post:
  *     summary: Deploy from a built-in template
- *     description: Looks up a template by templateId, then deploys it with the template's Wasm and default ABI. Note: sandbox router is not currently mounted in router.ts.
+ *     description: Looks up a template by templateId, then deploys it with the template's Wasm and default ABI.
  *     tags: [Sandbox]
  *     requestBody:
  *       required: true
@@ -1143,10 +1145,10 @@ sandboxRouter.post(
 
 /**
  * @swagger
- * /api/v1/sandbox/deploy-from-mainnet:
+ * /sandbox/deploy-from-mainnet:
  *   post:
  *     summary: Fork a mainnet contract into the sandbox
- *     description: Looks up the contract by address on mainnet, copies its ABI and name, then deploys a local copy. Note: sandbox router is not currently mounted in router.ts.
+ *     description: Looks up the contract by address on mainnet, copies its ABI and name, then deploys a local copy.
  *     tags: [Sandbox]
  *     requestBody:
  *       required: true
@@ -1197,10 +1199,10 @@ sandboxRouter.post(
 
 /**
  * @swagger
- * /api/v1/sandbox/call:
+ * /sandbox/call:
  *   post:
  *     summary: Call a contract function
- *     description: Invokes a function on a deployed sandbox contract and returns the result, events, and execution trace. Note: sandbox router is not currently mounted in router.ts.
+ *     description: Invokes a function on a deployed sandbox contract and returns the result, events, and execution trace.
  *     tags: [Sandbox]
  *     requestBody:
  *       required: true
@@ -1256,10 +1258,10 @@ sandboxRouter.post(
 
 /**
  * @swagger
- * /api/v1/sandbox/call-batch:
+ * /sandbox/call-batch:
  *   post:
  *     summary: Execute multiple contract calls in sequence
- *     description: Runs an ordered list of contract calls within a single session, sharing a batch ID. Note: sandbox router is not currently mounted in router.ts.
+ *     description: Runs an ordered list of contract calls within a single session, sharing a batch ID.
  *     tags: [Sandbox]
  *     requestBody:
  *       required: true
@@ -1324,10 +1326,10 @@ sandboxRouter.post(
 
 /**
  * @swagger
- * /api/v1/sandbox/session/{sessionId}/contracts:
+ * /sandbox/session/{sessionId}/contracts:
  *   get:
  *     summary: List deployed contracts
- *     description: Returns all contracts currently live in the session's runtime block. Note: sandbox router is not currently mounted in router.ts.
+ *     description: Returns all contracts currently live in the session's runtime block.
  *     tags: [Sandbox]
  *     parameters:
  *       - in: path
@@ -1365,10 +1367,10 @@ sandboxRouter.get(
 
 /**
  * @swagger
- * /api/v1/sandbox/session/{sessionId}/contracts/{address}/state:
+ * /sandbox/session/{sessionId}/contracts/{address}/state:
  *   get:
  *     summary: Get contract storage state
- *     description: Returns the raw key/value storage map for the given contract. Note: sandbox router is not currently mounted in router.ts.
+ *     description: Returns the raw key/value storage map for the given contract.
  *     tags: [Sandbox]
  *     parameters:
  *       - in: path
@@ -1413,10 +1415,10 @@ sandboxRouter.get(
 
 /**
  * @swagger
- * /api/v1/sandbox/session/{sessionId}/contracts/{address}/abi:
+ * /sandbox/session/{sessionId}/contracts/{address}/abi:
  *   get:
  *     summary: Get contract ABI
- *     description: Returns the ABI (function signatures and types) for the given contract. Note: sandbox router is not currently mounted in router.ts.
+ *     description: Returns the ABI (function signatures and types) for the given contract.
  *     tags: [Sandbox]
  *     parameters:
  *       - in: path
@@ -1470,10 +1472,10 @@ sandboxRouter.get(
 
 /**
  * @swagger
- * /api/v1/sandbox/debug:
+ * /sandbox/debug:
  *   post:
  *     summary: Debug a contract call
- *     description: Executes a contract function and returns the full call result extended with a debugger object containing host-function steps, a state diff, and gas metrics. Note: sandbox router is not currently mounted in router.ts.
+ *     description: Executes a contract function and returns the full call result extended with a debugger object containing host-function steps, a state diff, and gas metrics.
  *     tags: [Sandbox]
  *     requestBody:
  *       required: true
@@ -1557,10 +1559,10 @@ sandboxRouter.post(
 
 /**
  * @swagger
- * /api/v1/sandbox/session/{sessionId}/debugger-ui:
+ * /sandbox/session/{sessionId}/debugger-ui:
  *   get:
  *     summary: Debugger UI page
- *     description: Returns a minimal HTML page showing the live session state. Intended for browser-based debugging. Note: sandbox router is not currently mounted in router.ts.
+ *     description: Returns a minimal HTML page showing the live session state. Intended for browser-based debugging.
  *     tags: [Sandbox]
  *     parameters:
  *       - in: path
@@ -1601,10 +1603,10 @@ sandboxRouter.get(
 
 /**
  * @swagger
- * /api/v1/sandbox/debug/set-breakpoint:
+ * /sandbox/debug/set-breakpoint:
  *   post:
  *     summary: Set a debugger breakpoint (stub)
- *     description: Stub endpoint that echoes the breakpoint payload back. Full breakpoint support is not yet implemented. Note: sandbox router is not currently mounted in router.ts.
+ *     description: Stub endpoint that echoes the breakpoint payload back. Full breakpoint support is not yet implemented.
  *     tags: [Sandbox]
  *     requestBody:
  *       content:
@@ -1636,10 +1638,10 @@ sandboxRouter.post(
 
 /**
  * @swagger
- * /api/v1/sandbox/debug/continue:
+ * /sandbox/debug/continue:
  *   post:
  *     summary: Continue from a breakpoint (stub)
- *     description: Stub endpoint that echoes the payload back. Full step-through execution is not yet implemented. Note: sandbox router is not currently mounted in router.ts.
+ *     description: Stub endpoint that echoes the payload back. Full step-through execution is not yet implemented.
  *     tags: [Sandbox]
  *     requestBody:
  *       content:
@@ -1671,10 +1673,10 @@ sandboxRouter.post(
 
 /**
  * @swagger
- * /api/v1/sandbox/session/{sessionId}/calls:
+ * /sandbox/session/{sessionId}/calls:
  *   get:
  *     summary: List call history
- *     description: Returns all persisted call records for a session, newest first. Note: sandbox router is not currently mounted in router.ts.
+ *     description: Returns all persisted call records for a session, newest first.
  *     tags: [Sandbox]
  *     parameters:
  *       - in: path
@@ -1725,10 +1727,10 @@ sandboxRouter.get(
 
 /**
  * @swagger
- * /api/v1/sandbox/session/{sessionId}/calls/{callId}:
+ * /sandbox/session/{sessionId}/calls/{callId}:
  *   get:
  *     summary: Get a call record
- *     description: Returns the persisted call record for the given ID. Note: sandbox router is not currently mounted in router.ts.
+ *     description: Returns the persisted call record for the given ID.
  *     tags: [Sandbox]
  *     parameters:
  *       - in: path
@@ -1781,10 +1783,10 @@ sandboxRouter.get(
 
 /**
  * @swagger
- * /api/v1/sandbox/compare:
+ * /sandbox/compare:
  *   post:
  *     summary: Compare two contracts
- *     description: Diffs the ABI, storage state, and metadata of two contracts. Each side can be a live session contract ID, a template ID, or a mainnet contract address. Note: sandbox router is not currently mounted in router.ts.
+ *     description: Diffs the ABI, storage state, and metadata of two contracts. Each side can be a live session contract ID, a template ID, or a mainnet contract address.
  *     tags: [Sandbox]
  *     requestBody:
  *       required: true
@@ -1852,10 +1854,10 @@ sandboxRouter.post(
 
 /**
  * @swagger
- * /api/v1/sandbox/session/{sessionId}/state-diff:
+ * /sandbox/session/{sessionId}/state-diff:
  *   get:
  *     summary: Diff current state against a snapshot
- *     description: Returns the keys that differ between the current runtime block and the state captured in the given snapshot. Note: sandbox router is not currently mounted in router.ts.
+ *     description: Returns the keys that differ between the current runtime block and the state captured in the given snapshot.
  *     tags: [Sandbox]
  *     parameters:
  *       - in: path
@@ -1911,10 +1913,10 @@ sandboxRouter.get(
 
 /**
  * @swagger
- * /api/v1/sandbox/fuzz/start:
+ * /sandbox/fuzz/start:
  *   post:
  *     summary: Start a fuzz run
- *     description: Runs one or more fuzz strategies against a contract and returns findings. Note: sandbox router is not currently mounted in router.ts.
+ *     description: Runs one or more fuzz strategies against a contract and returns findings.
  *     tags: [Sandbox]
  *     requestBody:
  *       required: true
@@ -1984,10 +1986,10 @@ sandboxRouter.post(
 
 /**
  * @swagger
- * /api/v1/sandbox/fuzz/stop/{runId}:
+ * /sandbox/fuzz/stop/{runId}:
  *   post:
  *     summary: Cancel a fuzz run
- *     description: Sets the fuzz run status to cancelled. Note: sandbox router is not currently mounted in router.ts.
+ *     description: Sets the fuzz run status to cancelled.
  *     tags: [Sandbox]
  *     parameters:
  *       - in: path
@@ -2015,10 +2017,10 @@ sandboxRouter.post(
 
 /**
  * @swagger
- * /api/v1/sandbox/fuzz/run/{runId}:
+ * /sandbox/fuzz/run/{runId}:
  *   get:
  *     summary: Get a fuzz run
- *     description: Returns the fuzz run record for the given ID. Note: sandbox router is not currently mounted in router.ts.
+ *     description: Returns the fuzz run record for the given ID.
  *     tags: [Sandbox]
  *     parameters:
  *       - in: path
@@ -2119,10 +2121,10 @@ sandboxRouter.get(
 
 /**
  * @swagger
- * /api/v1/sandbox/fuzz/run/{runId}/findings:
+ * /sandbox/fuzz/run/{runId}/findings:
  *   get:
  *     summary: List findings for a fuzz run
- *     description: Returns all findings for the given fuzz run, newest first. Note: sandbox router is not currently mounted in router.ts.
+ *     description: Returns all findings for the given fuzz run, newest first.
  *     tags: [Sandbox]
  *     parameters:
  *       - in: path
@@ -2152,10 +2154,10 @@ sandboxRouter.get(
 
 /**
  * @swagger
- * /api/v1/sandbox/fuzz/runs:
+ * /sandbox/fuzz/runs:
  *   get:
  *     summary: List fuzz runs
- *     description: Returns all fuzz runs, optionally filtered by session, newest first. Note: sandbox router is not currently mounted in router.ts.
+ *     description: Returns all fuzz runs, optionally filtered by session, newest first.
  *     tags: [Sandbox]
  *     parameters:
  *       - in: query
@@ -2186,10 +2188,10 @@ sandboxRouter.get(
 
 /**
  * @swagger
- * /api/v1/sandbox/fuzz/run/{runId}/replay/{findingId}:
+ * /sandbox/fuzz/run/{runId}/replay/{findingId}:
  *   post:
  *     summary: Replay a fuzz finding
- *     description: Re-executes the call sequence from a specific finding to reproduce the issue. Note: sandbox router is not currently mounted in router.ts.
+ *     description: Re-executes the call sequence from a specific finding to reproduce the issue.
  *     tags: [Sandbox]
  *     parameters:
  *       - in: path
@@ -2235,10 +2237,10 @@ sandboxRouter.post(
 
 /**
  * @swagger
- * /api/v1/sandbox/ci/execute:
+ * /sandbox/ci/execute:
  *   post:
  *     summary: Run a CI pipeline
- *     description: Executes an ordered list of deploy, call, and assert steps in a fresh or existing session. Note: sandbox router is not currently mounted in router.ts.
+ *     description: Executes an ordered list of deploy, call, and assert steps in a fresh or existing session.
  *     tags: [Sandbox]
  *     requestBody:
  *       required: true
@@ -2316,10 +2318,10 @@ sandboxRouter.post(
 
 /**
  * @swagger
- * /api/v1/sandbox/ci/result/{runId}:
+ * /sandbox/ci/result/{runId}:
  *   get:
  *     summary: Get a CI run result
- *     description: Returns the persisted CI run record for the given run ID. Note: sandbox router is not currently mounted in router.ts.
+ *     description: Returns the persisted CI run record for the given run ID.
  *     tags: [Sandbox]
  *     parameters:
  *       - in: path
@@ -2366,10 +2368,10 @@ sandboxRouter.get(
 
 /**
  * @swagger
- * /api/v1/sandbox/session/{sessionId}/share:
+ * /sandbox/session/{sessionId}/share:
  *   post:
  *     summary: Create a share link
- *     description: Captures the current session state as a view-only snapshot and returns a share record. Note: sandbox router is not currently mounted in router.ts.
+ *     description: Captures the current session state as a view-only snapshot and returns a share record.
  *     tags: [Sandbox]
  *     parameters:
  *       - in: path
@@ -2423,10 +2425,10 @@ sandboxRouter.post(
 
 /**
  * @swagger
- * /api/v1/sandbox/share/{shareId}:
+ * /sandbox/share/{shareId}:
  *   get:
  *     summary: View a shared session
- *     description: Returns the view-only share record for the given share ID. Note: sandbox router is not currently mounted in router.ts.
+ *     description: Returns the view-only share record for the given share ID.
  *     tags: [Sandbox]
  *     parameters:
  *       - in: path
@@ -2462,10 +2464,10 @@ sandboxRouter.get(
 
 /**
  * @swagger
- * /api/v1/sandbox/session/{sessionId}/export:
+ * /sandbox/session/{sessionId}/export:
  *   post:
  *     summary: Export a session
- *     description: Serialises the session's runtime state as a JSON document or generates a code scaffold in JavaScript or Python. Note: sandbox router is not currently mounted in router.ts.
+ *     description: Serialises the session's runtime state as a JSON document or generates a code scaffold in JavaScript or Python.
  *     tags: [Sandbox]
  *     parameters:
  *       - in: path
@@ -2522,10 +2524,10 @@ sandboxRouter.post(
 
 /**
  * @swagger
- * /api/v1/sandbox/session/{sessionId}/import:
+ * /sandbox/session/{sessionId}/import:
  *   post:
  *     summary: Import session state
- *     description: Replaces the session's runtime block with the state from the given payload. Note: sandbox router is not currently mounted in router.ts.
+ *     description: Replaces the session's runtime block with the state from the given payload.
  *     tags: [Sandbox]
  *     parameters:
  *       - in: path
@@ -2573,10 +2575,10 @@ sandboxRouter.post(
 
 /**
  * @swagger
- * /api/v1/sandbox/optimize:
+ * /sandbox/optimize:
  *   post:
  *     summary: Optimize a contract
- *     description: Analyses one or all contracts in a session and returns CPU/memory optimization recommendations. Note: sandbox router is not currently mounted in router.ts.
+ *     description: Analyses one or all contracts in a session and returns CPU/memory optimization recommendations.
  *     tags: [Sandbox]
  *     requestBody:
  *       required: true
@@ -2626,10 +2628,10 @@ sandboxRouter.post(
 
 /**
  * @swagger
- * /api/v1/sandbox/verify/invariant:
+ * /sandbox/verify/invariant:
  *   post:
  *     summary: Verify a contract invariant
- *     description: Checks whether a named invariant (e.g. "balance <= totalSupply") holds for the given contract's current state. Note: sandbox router is not currently mounted in router.ts.
+ *     description: Checks whether a named invariant (e.g. "balance <= totalSupply") holds for the given contract's current state.
  *     tags: [Sandbox]
  *     requestBody:
  *       required: true
@@ -2691,10 +2693,10 @@ sandboxRouter.post(
 
 /**
  * @swagger
- * /api/v1/sandbox/verify/assertion:
+ * /sandbox/verify/assertion:
  *   post:
  *     summary: Verify a contract assertion
- *     description: Checks whether an assertion holds for the given contract's current state. Delegates to the invariant checker. Note: sandbox router is not currently mounted in router.ts.
+ *     description: Checks whether an assertion holds for the given contract's current state. Delegates to the invariant checker.
  *     tags: [Sandbox]
  *     requestBody:
  *       required: true
@@ -2746,10 +2748,10 @@ sandboxRouter.post(
 
 /**
  * @swagger
- * /api/v1/sandbox/generate/sdk:
+ * /sandbox/generate/sdk:
  *   post:
  *     summary: Generate a TypeScript SDK
- *     description: Returns a TypeScript client class scaffold for a deployed contract's ABI. Note: sandbox router is not currently mounted in router.ts.
+ *     description: Returns a TypeScript client class scaffold for a deployed contract's ABI.
  *     tags: [Sandbox]
  *     requestBody:
  *       required: true
@@ -2804,10 +2806,10 @@ sandboxRouter.post(
 
 /**
  * @swagger
- * /api/v1/sandbox/generate/docs:
+ * /sandbox/generate/docs:
  *   post:
  *     summary: Generate contract documentation
- *     description: Returns a Markdown documentation string generated from a deployed contract's ABI. Note: sandbox router is not currently mounted in router.ts.
+ *     description: Returns a Markdown documentation string generated from a deployed contract's ABI.
  *     tags: [Sandbox]
  *     requestBody:
  *       required: true
@@ -2858,10 +2860,10 @@ sandboxRouter.post(
 
 /**
  * @swagger
- * /api/v1/sandbox/generate/tests:
+ * /sandbox/generate/tests:
  *   post:
  *     summary: Generate test scaffolding
- *     description: Returns a TypeScript test file skeleton for a deployed contract. Note: sandbox router is not currently mounted in router.ts.
+ *     description: Returns a TypeScript test file skeleton for a deployed contract.
  *     tags: [Sandbox]
  *     requestBody:
  *       required: true
@@ -2913,10 +2915,10 @@ sandboxRouter.post(
 
 /**
  * @swagger
- * /api/v1/sandbox/benchmark:
+ * /sandbox/benchmark:
  *   post:
  *     summary: Benchmark a contract
- *     description: Returns throughput, latency, storage-growth, and memory-profile metrics for a deployed contract's key functions. Note: sandbox router is not currently mounted in router.ts.
+ *     description: Returns throughput, latency, storage-growth, and memory-profile metrics for a deployed contract's key functions.
  *     tags: [Sandbox]
  *     requestBody:
  *       required: true
@@ -2988,10 +2990,10 @@ sandboxRouter.post(
 
 /**
  * @swagger
- * /api/v1/sandbox/replay/{txHash}:
+ * /sandbox/replay/{txHash}:
  *   post:
  *     summary: Replay a mainnet transaction
- *     description: Scaffolds a mainnet transaction replay pipeline. Full live-RPC integration is not yet wired up. Note: sandbox router is not currently mounted in router.ts.
+ *     description: Scaffolds a mainnet transaction replay pipeline. Full live-RPC integration is not yet wired up.
  *     tags: [Sandbox]
  *     parameters:
  *       - in: path
@@ -3038,10 +3040,10 @@ sandboxRouter.post(
 
 /**
  * @swagger
- * /api/v1/sandbox/replay/{txHash}/comparison:
+ * /sandbox/replay/{txHash}/comparison:
  *   get:
  *     summary: Compare mainnet vs sandbox replay
- *     description: Returns the replay result wrapped with the transaction hash under a comparison key. Full live-RPC integration is not yet wired up. Note: sandbox router is not currently mounted in router.ts.
+ *     description: Returns the replay result wrapped with the transaction hash under a comparison key. Full live-RPC integration is not yet wired up.
  *     tags: [Sandbox]
  *     parameters:
  *       - in: path
@@ -3086,10 +3088,10 @@ sandboxRouter.get(
 
 /**
  * @swagger
- * /api/v1/sandbox/fork/{contractAddress}:
+ * /sandbox/fork/{contractAddress}:
  *   post:
  *     summary: Fork a mainnet contract
- *     description: Copies the ABI and name of a mainnet contract and deploys a local fork into the session. Equivalent to deploy-from-mainnet with a generated name. Note: sandbox router is not currently mounted in router.ts.
+ *     description: Copies the ABI and name of a mainnet contract and deploys a local fork into the session. Equivalent to deploy-from-mainnet with a generated name.
  *     tags: [Sandbox]
  *     parameters:
  *       - in: path
@@ -3138,10 +3140,10 @@ sandboxRouter.post(
 
 /**
  * @swagger
- * /api/v1/sandbox/deploy-to-testnet:
+ * /sandbox/deploy-to-testnet:
  *   post:
  *     summary: Export a contract to testnet
- *     description: Returns the Wasm hash and a readiness flag for deploying the contract to the Stellar testnet. Actual testnet submission is not performed. Note: sandbox router is not currently mounted in router.ts.
+ *     description: Returns the Wasm hash and a readiness flag for deploying the contract to the Stellar testnet. Actual testnet submission is not performed.
  *     tags: [Sandbox]
  *     requestBody:
  *       required: true
@@ -3192,10 +3194,10 @@ sandboxRouter.post(
 
 /**
  * @swagger
- * /api/v1/sandbox/deploy-to-mainnet:
+ * /sandbox/deploy-to-mainnet:
  *   post:
  *     summary: Export a contract to mainnet
- *     description: Returns the Wasm hash and a readiness flag for deploying to mainnet. Always returns ready=false and requires manual confirmation before any real submission. Note: sandbox router is not currently mounted in router.ts.
+ *     description: Returns the Wasm hash and a readiness flag for deploying to mainnet. Always returns ready=false and requires manual confirmation before any real submission.
  *     tags: [Sandbox]
  *     requestBody:
  *       required: true
@@ -3247,9 +3249,9 @@ sandboxRouter.post(
 
 function escapeHtml(input: string): string {
   return input
-    .replaceAll('&', '&amp;')
-    .replaceAll('<', '&lt;')
-    .replaceAll('>', '&gt;')
-    .replaceAll('"', '&quot;')
-    .replaceAll("'", '&#39;');
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
 }

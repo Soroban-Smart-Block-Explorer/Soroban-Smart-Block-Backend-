@@ -4,6 +4,9 @@ import { StrKey } from '@stellar/stellar-sdk';
 import { config } from '../config';
 import { prismaRead, prismaWrite } from '../db';
 import { createVerifier } from '../verification/verifier';
+import { estimateTemplateCall } from './gas-model';
+import { serializeMetrics, buildCallMetrics } from './meter';
+import { replayMainnet as replayMainnetOracle } from './replay-oracle';
 import { type WasmFunction, type WasmInstr } from '../verification/symbolic-executor';
 import {
   spec,

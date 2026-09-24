@@ -11,6 +11,8 @@
 import { PrismaClient, Prisma } from '@prisma/client';
 import type { Logger as ILogger, CacheBackend } from './container';
 import { config } from '../config';
+import { logger } from '../logger';
+import { cacheGet, cacheSet, cacheDelete, cacheClear } from '../cache';
 
 // ────────────────────────────────────────────────────────────────────────────
 // Prisma Clients
@@ -84,16 +86,13 @@ class MemoryCacheBackend implements CacheBackend {
  * Uses the existing cache.ts module which handles Redis/memory gracefully.
  */
 export function createCacheBackend(): CacheBackend {
-  // Import the existing cache module's interface functions
-  // This ensures compatibility with the current caching strategy
-  // eslint-disable-next-line @typescript-eslint/no-var-requires
-  const { cacheGet, cacheSet, cacheDel, cacheClear } = require('../cache');
-
   return {
     get: cacheGet,
     set: cacheSet,
-    del: cacheDel,
-    clear: cacheClear,
+    del: cacheDelete,
+    clear: async () => {
+      cacheClear();
+    },
     has: async (key: string) => {
       const val = await cacheGet(key);
       return val !== null;
@@ -117,9 +116,7 @@ export function createMemoryCacheBackend(): CacheBackend {
  * Currently returns the default logger, but allows for custom implementations.
  */
 export function createLogger(): ILogger {
-  // eslint-disable-next-line @typescript-eslint/no-var-requires
-  const { logger: defaultLogger } = require('../logger');
-  return defaultLogger;
+  return logger;
 }
 
 /**

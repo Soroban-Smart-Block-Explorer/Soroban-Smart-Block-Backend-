@@ -5,12 +5,17 @@ import { prismaWrite as prisma, prismaRead } from '../db';
 import { asyncHandler } from '../middleware/asyncHandler';
 import { apiKeyAuth, requireApiKey } from '../middleware/apiKeyAuth';
 import { assertSafeUrl, SsrfBlockedError } from '../webhooks/ssrf-guard';
+import { uuidv7 } from '../utils/uuidv7';
+import { sensitiveReadLog } from '../middleware/sensitiveReadLog';
 
 export const webhooksRouter = Router();
 
 // Apply API key authentication to every route on this router (#478).
 // apiKeyAuth populates req.apiKey; requireApiKey enforces its presence.
 webhooksRouter.use(apiKeyAuth, requireApiKey);
+
+// Audit GET access to webhook config — webhook secrets are sensitive (#890)
+webhooksRouter.use(sensitiveReadLog('webhook_read', (req) => req.path));
 
 // Secret must be at least 32 characters to carry sufficient HMAC entropy (#481).
 const MIN_SECRET_LENGTH = 32;
@@ -92,6 +97,7 @@ webhooksRouter.post(
 
     const sub = await prisma.webhookSubscription.create({
       data: {
+        id: uuidv7(),
         apiKeyId: req.apiKey!.id,
         url: parsed.data.url,
         secret,

@@ -1,5 +1,6 @@
 import { prismaWrite as prisma } from '../db';
 import { logger } from '../logger';
+import { uuidv7 } from '../utils/uuidv7';
 
 export interface ChannelConfig {
   name: string;
@@ -186,6 +187,7 @@ export class ChannelManager {
           enabled: config.enabled ?? true,
         },
         create: {
+          id: uuidv7(),
           name: config.name,
           description: config.description,
           category: config.category,

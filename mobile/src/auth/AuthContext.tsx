@@ -1,6 +1,6 @@
 import React, { createContext, useCallback, useContext, useEffect, useState } from 'react';
 import { AppState } from 'react-native';
-import type { Entitlements } from '@soroban/sdk';
+import type { Entitlements } from '@soroban-explorer/mobile';
 import { authClient } from './client';
 import { createWalletSigner, loadWalletSigner } from './stellarSigner';
 

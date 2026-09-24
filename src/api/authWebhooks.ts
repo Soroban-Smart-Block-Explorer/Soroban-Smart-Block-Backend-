@@ -1,9 +1,9 @@
 import { Router, Request, Response } from 'express';
 import { createHmac, randomBytes } from 'crypto';
-import axios from 'axios';
 import { prismaWrite as prisma } from '../db';
 import { requireAuth } from '../auth/middleware';
 import { asyncHandler } from '../middleware/asyncHandler';
+import { safePost, SsrfBlockedError } from '../webhooks/ssrf-guard';
 
 export const authWebhooksRouter = Router();
 
@@ -27,14 +27,18 @@ export async function deliverWebhookEvent(
     });
     const sig = createHmac('sha256', hook.secret).update(body).digest('hex');
 
-    axios
-      .post(hook.url, JSON.parse(body), {
-        headers: { 'X-Webhook-Signature': `sha256=${sig}`, 'Content-Type': 'application/json' },
-        timeout: 5000,
-      })
-      .catch(() => {
+    // Route through SSRF guard — hook.url is user-supplied and must not be
+    // allowed to target internal services (#893).
+    safePost(
+      hook.url,
+      body,
+      { 'X-Webhook-Signature': `sha256=${sig}`, 'Content-Type': 'application/json' },
+      5000,
+    ).catch((err) => {
+      if (!(err instanceof SsrfBlockedError)) {
         /* non-blocking; could add retry queue */
-      });
+      }
+    });
   }
 }
 
@@ -105,13 +109,17 @@ authWebhooksRouter.post(
     const sig = createHmac('sha256', hook.secret).update(body).digest('hex');
 
     try {
-      await axios.post(hook.url, JSON.parse(body), {
-        headers: { 'X-Webhook-Signature': `sha256=${sig}`, 'Content-Type': 'application/json' },
-        timeout: 5000,
-      });
+      // Route through SSRF guard — hook.url is user-supplied (#893).
+      await safePost(
+        hook.url,
+        body,
+        { 'X-Webhook-Signature': `sha256=${sig}`, 'Content-Type': 'application/json' },
+        5000,
+      );
       res.json({ success: true, status: 'delivered' });
     } catch (err) {
-      res.status(502).json({ success: false, error: 'Webhook delivery failed' });
+      const msg = err instanceof SsrfBlockedError ? err.message : 'Webhook delivery failed';
+      res.status(502).json({ success: false, error: msg });
     }
   }),
 );

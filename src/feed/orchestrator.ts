@@ -1,9 +1,9 @@
 import { EventEmitter } from 'events';
 import { ChannelManager } from './channelManager';
 import { feedPublisher } from './publisher';
+import { eventBus, EventNames } from '../events/eventBus';
 import { deliveryService } from './deliveryService';
 import { SubscriptionManager } from './subscriptionManager';
-import { FeedWebSocketServer } from './websocketServer';
 import { streamingServer } from './streamingServer';
 import { getTokenMetadata } from '../indexer/token-metadata';
 import { scheduler } from '../scheduler/cron-scheduler';
@@ -32,9 +32,9 @@ async function runWithConcurrency<T>(
 
 export class FeedOrchestrator extends EventEmitter {
   private subscriptionManager = new SubscriptionManager();
-  private wsServer?: FeedWebSocketServer;
   private metricsJobId = 'feed-orchestrator-metrics';
   private logger: Logger;
+  private feedMessageUnsubscribe: (() => void) | null = null;
 
   /**
    * Create a FeedOrchestrator with optional dependency injection.
@@ -45,21 +45,21 @@ export class FeedOrchestrator extends EventEmitter {
     this.logger = loggerDep || container.getLogger();
   }
 
-  async initialize(httpServer?: any) {
+  async initialize() {
     // Initialize default channels
     await ChannelManager.initializeDefaultChannels();
 
     // Initialize sequence counter
     await feedPublisher.initializeSequence();
 
-    // Setup WebSocket server if HTTP server provided
-    if (httpServer) {
-      this.wsServer = new FeedWebSocketServer(httpServer);
-    }
+    // WebSocket connections are handled by the unified WebSocket server
+    // (src/ws/websocketServer.ts) attached to the HTTP server; nothing to do here.
 
-    // Listen for feed messages and distribute to subscribers
-    feedPublisher.on('message', async (message) => {
-      await this.distributeMessage(message);
+    // Listen for feed messages (local + cross-instance) and distribute to subscribers
+    this.feedMessageUnsubscribe = eventBus.subscribe(EventNames.FeedMessage, (message) => {
+      this.distributeMessage(message.payload).catch((error) => {
+        this.logger.error('Failed to distribute feed message:', error);
+      });
     });
 
     // Start metrics collection
@@ -274,11 +274,12 @@ export class FeedOrchestrator extends EventEmitter {
 
     streamingServer.shutdown();
 
-    if (this.wsServer) {
-      this.wsServer.shutdown();
-    }
-
     await deliveryService.shutdown();
+
+    if (this.feedMessageUnsubscribe) {
+      this.feedMessageUnsubscribe();
+      this.feedMessageUnsubscribe = null;
+    }
 
     this.removeAllListeners();
 

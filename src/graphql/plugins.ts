@@ -2,24 +2,37 @@ import { Plugin } from 'graphql-yoga';
 import depthLimit from 'graphql-depth-limit';
 import { GraphQLError } from 'graphql';
 
-const MAX_COMPLEXITY = parseInt(process.env.GQL_MAX_COMPLEXITY ?? '1000');
-const MAX_DEPTH = parseInt(process.env.GQL_MAX_DEPTH ?? '5');
+const DEFAULT_MAX_COMPLEXITY = 1000;
+const DEFAULT_MAX_DEPTH = 5;
+
+/** Read env limits at execution time so tests/tuning can override per-process. */
+function maxComplexity(): number {
+  const parsed = parseInt(process.env.GQL_MAX_COMPLEXITY ?? '', 10);
+  return Number.isFinite(parsed) ? parsed : DEFAULT_MAX_COMPLEXITY;
+}
+
+function maxDepth(): number {
+  const parsed = parseInt(process.env.GQL_MAX_DEPTH ?? '', 10);
+  return Number.isFinite(parsed) ? parsed : DEFAULT_MAX_DEPTH;
+}
 
 export const complexityPlugin: Plugin = {
   onExecute({ args }) {
+    const limit = maxComplexity();
     const complexity = calculateComplexity(args.document);
-    if (complexity > MAX_COMPLEXITY) {
-      throw new GraphQLError(`Query too complex: ${complexity} exceeds limit of ${MAX_COMPLEXITY}`);
+    if (complexity > limit) {
+      throw new GraphQLError(`Query too complex: ${complexity} exceeds limit of ${limit}`);
     }
   },
 };
 
 export const depthLimitPlugin: Plugin = {
   onExecute({ args }) {
-    const rule = depthLimit(MAX_DEPTH) as any;
+    const limit = maxDepth();
+    const rule = depthLimit(limit) as any;
     const errors = rule(null, args.document);
     if (errors && errors.length > 0) {
-      throw new GraphQLError(`Query exceeds maximum depth of ${MAX_DEPTH}`);
+      throw new GraphQLError(`Query exceeds maximum depth of ${limit}`);
     }
   },
 };

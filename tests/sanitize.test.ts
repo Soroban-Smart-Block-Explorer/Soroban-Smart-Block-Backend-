@@ -125,7 +125,7 @@ describe('sanitizeInputs middleware', () => {
 // ── isValidStellarAddress ────────────────────────────────────────────────────
 describe('isValidStellarAddress', () => {
   it('validates G-address', () => {
-    expect(isValidStellarAddress('GAHJJJKMOKYE4RVPZEWZTKH5FVI4PA3VL7GK2LFNUBSGBV3PSQK2VQ7')).toBe(
+    expect(isValidStellarAddress('GCUYFZRXP3NBCCIBXXS34F6V4XPTFC7S2CHP3W6OBELH626J7TIOZCVQ')).toBe(
       true,
     );
   });
@@ -139,7 +139,7 @@ describe('validateAddressParam', () => {
   it('calls next for valid address', () => {
     const mw = validateAddressParam('address');
     const req = {
-      params: { address: 'GAHJJJKMOKYE4RVPZEWZTKH5FVI4PA3VL7GK2LFNUBSGBV3PSQK2VQ7' },
+      params: { address: 'GCUYFZRXP3NBCCIBXXS34F6V4XPTFC7S2CHP3W6OBELH626J7TIOZCVQ' },
     } as unknown as Request;
     const next = vi.fn() as NextFunction;
     mw(req, {} as Response, next);

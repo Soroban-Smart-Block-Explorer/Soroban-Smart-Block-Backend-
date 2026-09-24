@@ -10,6 +10,7 @@
 
 import * as cron from 'node-cron';
 import { logger } from '../logger';
+import { cronJobRunsTotal, cronJobDurationSeconds, cronJobLastSuccessTimestamp } from '../metrics';
 
 export interface ScheduledJob {
   id: string;
@@ -19,6 +20,14 @@ export interface ScheduledJob {
   maxDuration?: number; // ms timeout for task execution
   retryOnFailure?: boolean;
   retryDelayMs?: number; // delay before retry if enabled
+  /**
+   * Expected time between successful runs, used for staleness detection
+   * (#906). Defaults to a best-effort parse of `cronExpression` — pass this
+   * explicitly for expressions the heuristic in `approxCronIntervalMs` can't
+   * read (e.g. day-of-week/month schedules), or staleness detection is
+   * skipped for that job.
+   */
+  expectedIntervalMs?: number;
 }
 
 interface JobInstance {
@@ -30,9 +39,148 @@ interface JobInstance {
   executionCount: number;
 }
 
+/**
+ * #906 — background job health tracking.
+ *
+ * `success`/`failure` mirror the outcome of the most recent run;
+ * `never_run` means the job has been registered/observed but has not
+ * completed a run yet (still healthy — just no data).
+ */
+export type JobExecutionStatus = 'success' | 'failure' | 'never_run';
+
+export interface JobHealthEntry {
+  id: string;
+  taskName: string;
+  lastRunTimestamp: number | null; // epoch ms, null if never run
+  executionStatus: JobExecutionStatus;
+  consecutiveFailures: number;
+  expectedIntervalMs: number | null; // null = staleness unknown/not tracked
+}
+
+export interface JobHealthSnapshot extends JobHealthEntry {
+  /** True when this job has missed its expected window by more than the configured multiplier. */
+  stale: boolean;
+}
+
+export interface WorkerHealthSummary {
+  status: 'healthy' | 'degraded' | 'unhealthy';
+  jobs: JobHealthSnapshot[];
+}
+
+/**
+ * Best-effort parse of common cron shorthand into an approximate interval in
+ * milliseconds, for staleness detection when a job doesn't supply
+ * `expectedIntervalMs` explicitly. Handles the "every N seconds/minutes"
+ * patterns actually used in this codebase (5-field `* * * * *`, stepped
+ * variants such as `N * * * *` with N being a step like 5, and 6-field
+ * stepped variants); anything else (day-of-week/month schedules) returns
+ * null, meaning "don't flag this job as stale".
+ */
+export function approxCronIntervalMs(expression: string): number | null {
+  const parts = expression.trim().split(/\s+/);
+
+  if (parts.length === 5) {
+    const [minute] = parts;
+    if (minute === '*') return 60_000;
+    const everyN = minute.match(/^\*\/(\d+)$/);
+    if (everyN) return parseInt(everyN[1], 10) * 60_000;
+    return null;
+  }
+
+  if (parts.length === 6) {
+    const [second, minute] = parts;
+    if (second === '*') return 1000;
+    const everySec = second.match(/^\*\/(\d+)$/);
+    if (everySec) return parseInt(everySec[1], 10) * 1000;
+    if (minute === '*') return 60_000;
+    const everyMin = minute.match(/^\*\/(\d+)$/);
+    if (everyMin) return parseInt(everyMin[1], 10) * 60_000;
+    return null;
+  }
+
+  return null;
+}
+
 class CronScheduler {
   private jobs = new Map<string, JobInstance>();
   private isShuttingDown = false;
+  private healthRegistry = new Map<string, JobHealthEntry>();
+
+  /**
+   * Record the outcome of a job run — either a run driven by this scheduler
+   * (called automatically from `executeJob`) or an externally-managed
+   * recurring task (price updater, key rotation, etc. — anything still using
+   * its own `setInterval`) that wants to report into the same health
+   * registry so `/health` can see it. See src/health.ts `checkWorkerHealth`.
+   */
+  public recordHeartbeat(
+    id: string,
+    status: 'success' | 'failure',
+    meta?: { taskName?: string; expectedIntervalMs?: number },
+  ): void {
+    // #911 — emit per-job metrics for externally-managed recurring tasks too
+    // (price updates, key rotation, reconciliation sweeps) so their health is
+    // visible in /metrics, not just logs. Duration is only tracked for
+    // scheduler-managed jobs (executeJob has the start time).
+    cronJobRunsTotal.inc({ job: id, status });
+    if (status === 'success') {
+      cronJobLastSuccessTimestamp.set({ job: id }, Date.now() / 1000);
+    }
+
+    const existing = this.healthRegistry.get(id);
+    const consecutiveFailures = status === 'failure' ? (existing?.consecutiveFailures ?? 0) + 1 : 0;
+
+    this.healthRegistry.set(id, {
+      id,
+      taskName: meta?.taskName ?? existing?.taskName ?? id,
+      lastRunTimestamp: Date.now(),
+      executionStatus: status,
+      consecutiveFailures,
+      expectedIntervalMs: meta?.expectedIntervalMs ?? existing?.expectedIntervalMs ?? null,
+    });
+  }
+
+  /** Raw per-job health entries, no staleness computed yet. */
+  public getJobHealth(): JobHealthEntry[] {
+    return Array.from(this.healthRegistry.values());
+  }
+
+  /**
+   * Computes overall worker health from every job that has ever reported a
+   * heartbeat (cron-managed or external).
+   *
+   * - `unhealthy`  — any job has >= `maxConsecutiveFailures` failures in a row.
+   * - `degraded`   — otherwise, any job with a known interval hasn't run in
+   *                  more than `staleIntervalMultiplier` * its expected interval.
+   * - `healthy`    — otherwise (including no jobs having reported yet).
+   */
+  public getHealthSummary(
+    staleIntervalMultiplier: number,
+    maxConsecutiveFailures: number,
+  ): WorkerHealthSummary {
+    const now = Date.now();
+
+    const jobs: JobHealthSnapshot[] = this.getJobHealth().map((entry) => {
+      const stale =
+        entry.expectedIntervalMs != null &&
+        entry.lastRunTimestamp != null &&
+        now - entry.lastRunTimestamp > entry.expectedIntervalMs * staleIntervalMultiplier;
+      return { ...entry, stale };
+    });
+
+    const unhealthy = jobs.some((j) => j.consecutiveFailures >= maxConsecutiveFailures);
+    const degraded = !unhealthy && jobs.some((j) => j.stale);
+
+    return {
+      status: unhealthy ? 'unhealthy' : degraded ? 'degraded' : 'healthy',
+      jobs,
+    };
+  }
+
+  /** Exposed for testing only — do not call in production code. */
+  public _clearHealthRegistry(): void {
+    this.healthRegistry.clear();
+  }
 
   /**
    * Register and start a scheduled job.
@@ -117,6 +265,20 @@ class CronScheduler {
       jobInstance.lastError = undefined;
       jobInstance.executionCount++;
 
+      // #911 — per-job Prometheus metrics. Runs/outcome counters and the
+      // last-success timestamp are emitted centrally in recordHeartbeat()
+      // (the single funnel for scheduler-managed AND externally-managed
+      // jobs); only the duration needs the start time captured here.
+      cronJobDurationSeconds.observe({ job: jobConfig.id }, duration / 1000);
+
+      this.recordHeartbeat(jobConfig.id, 'success', {
+        taskName: jobConfig.taskName,
+        expectedIntervalMs:
+          jobConfig.expectedIntervalMs ??
+          approxCronIntervalMs(jobConfig.cronExpression) ??
+          undefined,
+      });
+
       logger.info(
         `[scheduler] ✓ ${jobConfig.id} (${jobConfig.taskName}) completed in ${duration}ms (execution #${jobInstance.executionCount})`,
       );
@@ -124,8 +286,20 @@ class CronScheduler {
       const duration = Date.now() - startTime;
       const errorMessage = error instanceof Error ? error.message : String(error);
 
+      // #911 — per-job Prometheus metrics (see success path; runs/outcome
+      // counters flow through recordHeartbeat()).
+      cronJobDurationSeconds.observe({ job: jobConfig.id }, duration / 1000);
+
       jobInstance.lastError = error instanceof Error ? error : new Error(String(error));
       jobInstance.executionCount++;
+
+      this.recordHeartbeat(jobConfig.id, 'failure', {
+        taskName: jobConfig.taskName,
+        expectedIntervalMs:
+          jobConfig.expectedIntervalMs ??
+          approxCronIntervalMs(jobConfig.cronExpression) ??
+          undefined,
+      });
 
       logger.error(
         `[scheduler] ✗ ${jobConfig.id} (${jobConfig.taskName}) failed after ${duration}ms: ${errorMessage}`,
@@ -289,6 +463,10 @@ class CronScheduler {
     }
 
     this.jobs.clear();
+    // Reset the flag so the scheduler can be reused (tests and hot-reloads
+    // shut down and re-register jobs against the same singleton). Without
+    // this, every later run is skipped and shutdown calls short-circuit.
+    this.isShuttingDown = false;
     logger.info('[scheduler] Graceful shutdown complete');
   }
 }

@@ -7,6 +7,9 @@ vi.mock('../../src/db', () => {
   const mockUpdate = vi.fn();
   const mockFindMany = vi.fn();
   const mockDelete = vi.fn();
+  const mockCount = vi.fn().mockResolvedValue(0);
+  const mockDeadCreate = vi.fn().mockResolvedValue({});
+  const mockDeadCount = vi.fn().mockResolvedValue(0);
 
   return {
     prismaWrite: {
@@ -16,6 +19,13 @@ vi.mock('../../src/db', () => {
         update: mockUpdate,
         findMany: mockFindMany,
         delete: mockDelete,
+        count: mockCount,
+      },
+      // #912 — retryFailures() refreshes the queue-depth gauges each cycle
+      // and enqueueFailure() dead-letters via prismaWrite.deadLetterItem.
+      deadLetterItem: {
+        create: mockDeadCreate,
+        count: mockDeadCount,
       },
     },
   };

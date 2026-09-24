@@ -1,5 +1,5 @@
 import * as LocalAuthentication from 'expo-local-authentication';
-import type { BiometricProvider, BiometricType } from '@soroban/sdk';
+import type { BiometricProvider, BiometricType } from '@soroban-explorer/mobile';
 
 function mapType(types: LocalAuthentication.AuthenticationType[]): BiometricType {
   if (types.includes(LocalAuthentication.AuthenticationType.FACIAL_RECOGNITION)) return 'faceid';

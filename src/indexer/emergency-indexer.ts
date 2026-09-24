@@ -1,5 +1,5 @@
 import { prismaWrite, prismaRead } from '../db';
-import { broadcastEmergencyEvent } from '../ws/eventBroadcaster';
+import { broadcastEmergencyEvent } from '../ws/websocketServer';
 import { logger } from '../logger';
 
 // Pause-related event topic symbols

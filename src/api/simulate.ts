@@ -24,7 +24,7 @@ export const simulateRouter = Router();
 
 /**
  * @swagger
- * /api/v1/simulate:
+ * /simulate:
  *   post:
  *     summary: Simulate a Soroban transaction
  *     description: >

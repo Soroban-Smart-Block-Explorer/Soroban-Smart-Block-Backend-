@@ -54,6 +54,7 @@ import { getCategoryBenchmark } from '../lib/audit-benchmark';
 import { auditBotRouter } from './audit-bot-router';
 import { auditIncidentsRouter } from './audit-incidents';
 import { auditEmbedRouter } from './audit-embed';
+import { asyncHandler } from '../middleware/asyncHandler';
 
 export const auditRouter = Router();
 
@@ -284,7 +285,6 @@ auditRouter.post(
 
 // Lazy import logger to avoid circular deps in the route file
 import { logger } from '../logger';
-import { asyncHandler } from '../middleware/asyncHandler';
 
 // ── GET /contracts/:address/audit/status ─────────────────────────────────────
 

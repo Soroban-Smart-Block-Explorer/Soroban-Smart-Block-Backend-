@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { asyncHandler } from '../middleware/asyncHandler';
 import { validateQuery, validateParams } from '../middleware/validation';
 import { paginationSchema, stellarAddress, safeLabel } from '../schemas/common';
+import { eventService } from '../services/event.service';
 
 /**
  * @swagger
@@ -19,12 +20,15 @@ const eventListQuerySchema = paginationSchema.merge(
     contract: stellarAddress.optional(),
     type: safeLabel.optional(),
     topic: safeLabel.optional(),
+    // #914 — cursor-based pagination (preferred for deep pages); page/limit
+    // remains supported as a compatibility shim.
+    cursor: z.string().optional(),
   }),
 );
 
 /**
  * @swagger
- * /api/v1/events:
+ * /events:
  *   get:
  *     summary: List decoded contract events
  *     tags: [Events]
@@ -49,6 +53,10 @@ const eventListQuerySchema = paginationSchema.merge(
  *         name: limit
  *         schema: { type: integer, minimum: 1, maximum: 100, default: 20 }
  *         description: Page size
+ *       - in: query
+ *         name: cursor
+ *         schema: { type: string }
+ *         description: Event id to resume after (cursor pagination, preferred for deep pages). Takes precedence over `page` when set.
  *     responses:
  *       200:
  *         description: Paginated list of events (summary fields only)
@@ -74,6 +82,7 @@ const eventListQuerySchema = paginationSchema.merge(
  *                 total: { type: integer, description: 'Total number of events matching the filter' }
  *                 page: { type: integer }
  *                 limit: { type: integer }
+ *                 nextCursor: { type: string, nullable: true, description: 'Pass as `cursor` to fetch the next page' }
  *               example:
  *                 data:
  *                   - id: '3389e9f0f1a4e32477b1c0d9e8a6f5b4c3d2e1f0a9b8c7d6e5f40312233445566-AAAADwAAAAh0cmFuc2Zlcg=='
@@ -111,41 +120,14 @@ eventRouter.get(
   validateQuery(eventListQuerySchema),
   asyncHandler(async (req: Request, res: Response) => {
     const query = (req as any).validatedQuery as z.infer<typeof eventListQuerySchema>;
-    const skip = (query.page - 1) * query.limit;
-
-    const where = {
-      ...(query.contract && { contractAddress: query.contract }),
-      ...(query.type && { eventType: query.type }),
-      ...(query.topic && { topicSymbol: query.topic }),
-    };
-
-    const [events, total] = await Promise.all([
-      prismaRead.event.findMany({
-        where,
-        orderBy: { ledgerSequence: 'desc' },
-        skip,
-        take: query.limit,
-        select: {
-          id: true,
-          transactionHash: true,
-          contractAddress: true,
-          eventType: true,
-          topicSymbol: true,
-          decoded: true,
-          ledgerSequence: true,
-          ledgerCloseTime: true,
-        },
-      }),
-      prismaRead.event.count({ where }),
-    ]);
-
-    res.json({ data: events, total, page: query.page, limit: query.limit });
+    const result = await eventService.listEvents(query);
+    res.json(result);
   }),
 );
 
 /**
  * @swagger
- * /api/v1/events/{id}:
+ * /events/{id}:
  *   get:
  *     summary: Get a single event by ID
  *     tags: [Events]
@@ -178,7 +160,7 @@ eventRouter.get(
   validateParams(z.object({ id: z.string() })),
   asyncHandler(async (req: Request, res: Response) => {
     const params = (req as any).validatedParams as { id: string };
-    const event = await prisma.event.findUnique({ where: { id: params.id } });
+    const event = await eventService.getEventById(params.id);
     if (!event) return res.status(404).json({ error: 'Event not found' });
     res.json(event);
   }),

@@ -1,5 +1,5 @@
 import * as SecureStore from 'expo-secure-store';
-import type { SecureStorageProvider } from '@soroban/sdk';
+import type { SecureStorageProvider } from '@soroban-explorer/mobile';
 
 /**
  * SecureStorageProvider backed by `expo-secure-store` (iOS Keychain /

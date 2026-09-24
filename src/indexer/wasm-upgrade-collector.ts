@@ -1,4 +1,5 @@
 import { prismaWrite as prisma } from '../db';
+import { uuidv7 } from '../utils/uuidv7';
 
 /**
  * Detect and record WASM bytecode upgrades from update_current_contract_wasm operations.
@@ -23,6 +24,7 @@ export async function collectWasmUpgrades(
 
   await prisma.wasmUpgradeHistory.create({
     data: {
+      id: uuidv7(),
       contractAddress,
       previousHash,
       newHash: newWasmHash,

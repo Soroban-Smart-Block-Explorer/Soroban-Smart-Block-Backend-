@@ -308,6 +308,69 @@ export function buildSafeAxios(
 }
 
 /**
+ * GET `url` with SSRF protection on every hop.
+ *
+ * - Validates the initial URL before the first request.
+ * - On a 3xx response, validates the redirect target before following.
+ * - Maximum 5 redirects.
+ *
+ * @param params  - Optional query-string parameters (merged into the URL).
+ * @param headers - Optional request headers.
+ * @param timeoutMs - Per-request timeout in milliseconds (default: 15s).
+ *
+ * Returns the final Axios response.
+ */
+export async function safeGet(
+  url: string,
+  params?: Record<string, unknown>,
+  headers?: Record<string, string>,
+  timeoutMs = 15_000,
+): Promise<{ status: number; data: unknown; headers: Record<string, string> }> {
+  const MAX_REDIRECTS = 5;
+
+  // Merge params into URL if provided
+  let currentUrl = url;
+  if (params && Object.keys(params).length > 0) {
+    const u = new URL(url);
+    for (const [k, v] of Object.entries(params)) {
+      if (v !== undefined && v !== null) {
+        u.searchParams.set(k, String(v));
+      }
+    }
+    currentUrl = u.toString();
+  }
+
+  for (let hop = 0; hop <= MAX_REDIRECTS; hop++) {
+    // Re-validate URL and DNS on every hop (catches redirect-based bypasses).
+    const parsed = new URL(currentUrl);
+    const pinnedIps = await assertSafeUrl(currentUrl);
+
+    // Build a fresh axios instance pinned to the validated IPs for this hop.
+    const client = buildSafeAxios(timeoutMs, parsed.hostname, pinnedIps);
+
+    const response = await client.get(currentUrl, { headers });
+
+    if (response.status >= 300 && response.status < 400) {
+      const location = (response.headers as Record<string, string>)['location'];
+      if (!location) {
+        throw new SsrfBlockedError('Redirect response missing Location header');
+      }
+      // Resolve relative redirects
+      currentUrl = new URL(location, currentUrl).toString();
+      continue;
+    }
+
+    return {
+      status: response.status,
+      data: response.data,
+      headers: response.headers as Record<string, string>,
+    };
+  }
+
+  throw new SsrfBlockedError(`Exceeded maximum redirect limit (${MAX_REDIRECTS})`);
+}
+
+/**
  * POST `body` to `url` with SSRF protection on every hop.
  *
  * - Validates the initial URL before the first request.
@@ -323,13 +386,17 @@ export async function safePost(
   timeoutMs: number,
 ): Promise<{ status: number; data: unknown }> {
   const MAX_REDIRECTS = 5;
-  const client = buildSafeAxios(timeoutMs);
 
   let currentUrl = url;
 
   for (let hop = 0; hop <= MAX_REDIRECTS; hop++) {
-    // Re-validate URL and DNS on every hop (catches redirect-based bypasses)
-    await assertSafeUrl(currentUrl);
+    // Re-validate URL and DNS on every hop (catches redirect-based bypasses).
+    // assertSafeUrl returns the validated IPs so we can pin them to the axios instance.
+    const parsed = new URL(currentUrl);
+    const pinnedIps = await assertSafeUrl(currentUrl);
+
+    // Build a fresh axios instance pinned to the validated IPs for this hop.
+    const client = buildSafeAxios(timeoutMs, parsed.hostname, pinnedIps);
 
     const response = await client.post(currentUrl, body, { headers });
 

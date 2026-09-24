@@ -34,6 +34,7 @@ import { Router } from 'express';
 import { z } from 'zod';
 import { prismaRead, prismaWrite } from '../db';
 import { asyncHandler } from '../middleware/asyncHandler';
+import { uuidv7 } from '../utils/uuidv7';
 import { getItemRarityDetail, getCollectionRarityOverview } from '../services/nft-rarity-engine';
 import { getWashTradingAnalysis, getWashTradingLeaderboard } from '../services/nft-wash-trading';
 import {
@@ -145,7 +146,7 @@ nftRouter.post(
     if (existing) return res.status(409).json({ error: 'Collection already registered' });
 
     const collection = await prismaWrite.nftCollection.create({
-      data: { contractAddress: address, detectedAt: new Date(), ...body },
+      data: { id: uuidv7(), contractAddress: address, detectedAt: new Date(), ...body },
     });
     res.status(201).json(formatCollection(collection as unknown as Record<string, unknown>));
   }),
@@ -790,6 +791,7 @@ nftRouter.post(
     // Persist via AlertConfiguration model (reusing existing alerts table)
     const alert = await prismaWrite.alertConfiguration.create({
       data: {
+        id: uuidv7(),
         userId: 'nft-alert',
         contractAddress: body.collection,
         name: `NFT ${body.type} alert`,

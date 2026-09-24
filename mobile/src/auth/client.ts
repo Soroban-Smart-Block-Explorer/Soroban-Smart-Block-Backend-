@@ -1,4 +1,4 @@
-import { SorobanExplorerAuth } from '@soroban/sdk';
+import { SorobanExplorerAuth } from '@soroban-explorer/mobile';
 import { secureStorage } from './secureStorage';
 import { biometricProvider } from './biometricProvider';
 

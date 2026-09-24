@@ -18,6 +18,7 @@ import { Router, Request, Response } from 'express';
 import { z } from 'zod';
 import { prismaRead as prisma, prismaWrite } from '../db';
 import { asyncHandler } from '../middleware/asyncHandler';
+import { uuidv7 } from '../utils/uuidv7';
 import {
   SUPPORTED_LANGUAGES,
   SupportedLanguage,
@@ -178,7 +179,7 @@ i18nRouter.post(
         .parse(req.body);
 
       const translationKey = await prismaWrite.translationKey.create({
-        data: { key, defaultText, context },
+        data: { id: uuidv7(), key, defaultText, context },
       });
 
       const lang = resolveLanguage(req);
@@ -417,6 +418,7 @@ i18nRouter.post(
       const translation = await prismaWrite.translation.upsert({
         where: { keyId_language: { keyId, language: lang } },
         create: {
+          id: uuidv7(),
           keyId,
           language: lang,
           translatedText,
@@ -498,7 +500,7 @@ i18nRouter.post(
         // Upsert the key
         const tkRecord = await prismaWrite.translationKey.upsert({
           where: { key },
-          create: { key, defaultText },
+          create: { id: uuidv7(), key, defaultText },
           update: { defaultText },
         });
 
@@ -511,7 +513,7 @@ i18nRouter.post(
         for (const { language, text } of pairs) {
           await prismaWrite.translation.upsert({
             where: { keyId_language: { keyId: tkRecord.id, language } },
-            create: { keyId: tkRecord.id, language, translatedText: text },
+            create: { id: uuidv7(), keyId: tkRecord.id, language, translatedText: text },
             update: { translatedText: text },
           });
         }

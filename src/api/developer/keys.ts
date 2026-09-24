@@ -292,7 +292,10 @@ keysRouter.post(
           existing.allowedDomains !== null
             ? (existing.allowedDomains as unknown as Prisma.InputJsonValue)
             : Prisma.JsonNull,
-      },
+        // Chain the audit trail: new key records which key it replaced (#888)
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        rotatedFromKeyId: existing.id,
+      } as any,
       select: { id: true, name: true, keyPrefix: true, status: true, createdAt: true },
     });
 
@@ -399,7 +402,10 @@ keysRouter.post(
               existingKey.allowedEndpoints !== null
                 ? (existingKey.allowedEndpoints as unknown as Prisma.InputJsonValue)
                 : Prisma.JsonNull,
-          },
+            // Chain the audit trail: new key records which key it replaced (#888)
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            rotatedFromKeyId: existingKey.id,
+          } as any,
           select: { id: true, name: true, keyPrefix: true, status: true, createdAt: true },
         });
 

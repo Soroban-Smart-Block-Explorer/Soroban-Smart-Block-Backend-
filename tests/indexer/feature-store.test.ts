@@ -92,13 +92,20 @@ describe('FeatureStore computeAndStoreFeatures', () => {
     const createdRows = vi.mocked(prismaWrite.featureValue.createMany).mock.calls[0][0]
       .data as Array<Record<string, unknown>>;
 
+    // featureValue.featureId references FeatureDefinition.id (a uuidv7), so map
+    // each definition slug to the id the create-mock generated for it.
+    const defIdByName = Object.fromEntries(
+      vi
+        .mocked(prismaWrite.featureDefinition.create)
+        .mock.calls.map(([{ data }]) => [data.name, data.id]),
+    );
     const rowsByName = Object.fromEntries(createdRows.map((row) => [row.featureId, row]));
-    expect(rowsByName['tx_volume'].value).toBe(3);
-    expect(rowsByName['unique_source_accounts'].value).toBe(3);
-    expect(rowsByName['contracts_with_events'].value).toBe(1);
-    expect(rowsByName['tx_failure_ratio'].value).toBeCloseTo(1 / 3, 5);
-    expect(rowsByName['data_freshness_seconds'].value).toBe(300);
-    expect(rowsByName['tx_volume_7d_ma'].value).toBe(0);
+    expect(rowsByName[defIdByName['tx_volume']].value).toBe(3);
+    expect(rowsByName[defIdByName['unique_source_accounts']].value).toBe(3);
+    expect(rowsByName[defIdByName['contracts_with_events']].value).toBe(1);
+    expect(rowsByName[defIdByName['tx_failure_ratio']].value).toBeCloseTo(1 / 3, 5);
+    expect(rowsByName[defIdByName['data_freshness_seconds']].value).toBe(300);
+    expect(rowsByName[defIdByName['tx_volume_7d_ma']].value).toBe(0);
   });
 });
 

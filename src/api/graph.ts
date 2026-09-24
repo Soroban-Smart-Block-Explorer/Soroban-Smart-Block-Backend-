@@ -27,7 +27,7 @@ export const graphRouter = Router();
 
 /**
  * @swagger
- * /api/v1/graph/dependencies:
+ * /graph/dependencies:
  *   get:
  *     summary: Get contract dependency graph as JSON with hierarchy
  *     tags: [Graph]
@@ -76,7 +76,7 @@ graphRouter.get(
 
 /**
  * @swagger
- * /api/v1/graph/dependencies/svg:
+ * /graph/dependencies/svg:
  *   get:
  *     summary: Get contract dependency graph as SVG visualization
  *     tags: [Graph]
@@ -108,7 +108,7 @@ const cypherQuerySchema = z.object({
 
 /**
  * @swagger
- * /api/v1/graph/query:
+ * /graph/query:
  *   post:
  *     summary: Execute parameterized Cypher query
  *     tags: [Graph]
@@ -212,7 +212,7 @@ const explorerSchema = z.object({
 
 /**
  * @swagger
- * /api/v1/graph/explorer:
+ * /graph/explorer:
  *   get:
  *     summary: Get graph data for visual exploration (D3.js/Cytoscape compatible)
  *     tags: [Graph]
@@ -402,7 +402,7 @@ graphRouter.get(
 // Template endpoints
 /**
  * @swagger
- * /api/v1/graph/templates/shortest-path:
+ * /graph/templates/shortest-path:
  *   post:
  *     summary: Find shortest path between wallets (money laundering investigation)
  *     tags: [Graph Templates]
@@ -441,7 +441,7 @@ graphRouter.post(
 
 /**
  * @swagger
- * /api/v1/graph/templates/k-hop:
+ * /graph/templates/k-hop:
  *   post:
  *     summary: Get k-hop neighborhood for wallet risk assessment
  *     tags: [Graph Templates]
@@ -472,7 +472,7 @@ graphRouter.post(
 
 /**
  * @swagger
- * /api/v1/graph/templates/community-detection:
+ * /graph/templates/community-detection:
  *   post:
  *     summary: Detect communities (Sybil cluster identification)
  *     tags: [Graph Templates]
@@ -505,7 +505,7 @@ graphRouter.post(
 
 /**
  * @swagger
- * /api/v1/graph/templates/influence:
+ * /graph/templates/influence:
  *   post:
  *     summary: Identify most influential contracts (DeFi hubs)
  *     tags: [Graph Templates]
@@ -534,7 +534,7 @@ graphRouter.post(
 
 /**
  * @swagger
- * /api/v1/graph/templates/pagerank:
+ * /graph/templates/pagerank:
  *   post:
  *     summary: Calculate PageRank for contract importance scoring
  *     tags: [Graph Templates]
@@ -569,7 +569,7 @@ graphRouter.post(
 
 /**
  * @swagger
- * /api/v1/graph/templates/transaction-flow:
+ * /graph/templates/transaction-flow:
  *   post:
  *     summary: Trace wallet transaction flow
  *     tags: [Graph Templates]
@@ -603,7 +603,7 @@ graphRouter.post(
 
 /**
  * @swagger
- * /api/v1/graph/templates/token-network:
+ * /graph/templates/token-network:
  *   post:
  *     summary: Analyze token transfer network
  *     tags: [Graph Templates]
@@ -634,7 +634,7 @@ graphRouter.post(
 
 /**
  * @swagger
- * /api/v1/graph/templates/contract-calls:
+ * /graph/templates/contract-calls:
  *   post:
  *     summary: Visualize contract call graph
  *     tags: [Graph Templates]
@@ -675,7 +675,7 @@ const upstreamQuerySchema = z.object({
 
 /**
  * @swagger
- * /api/v1/graph/contracts/:address/upstream:
+ * /graph/contracts/:address/upstream:
  *   get:
  *     summary: Get upstream contract dependencies using frontier-paginated BFS
  *     tags: [Graph]
@@ -745,7 +745,7 @@ const downstreamQuerySchema = z.object({
 
 /**
  * @swagger
- * /api/v1/graph/contracts/:address/downstream:
+ * /graph/contracts/:address/downstream:
  *   get:
  *     summary: Get downstream contract dependencies using frontier-paginated BFS
  *     tags: [Graph]

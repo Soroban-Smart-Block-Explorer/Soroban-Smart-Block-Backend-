@@ -11,6 +11,7 @@
 import { Router, Request, Response } from 'express';
 import { z } from 'zod';
 import { prismaRead } from '../db';
+import { asyncHandler } from '../middleware/asyncHandler';
 
 export const resourceAuditRouter = Router();
 

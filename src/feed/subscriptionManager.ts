@@ -1,4 +1,5 @@
 import { prismaWrite as prisma } from '../db';
+import { uuidv7 } from '../utils/uuidv7';
 
 export interface SubscriptionConfig {
   userId?: string;
@@ -29,6 +30,7 @@ export class SubscriptionManager {
   async createSubscription(config: SubscriptionConfig) {
     const subscription = await prisma.feedSubscription.create({
       data: {
+        id: uuidv7(),
         userId: config.userId,
         channelName: config.channelName,
         filters: config.filters,

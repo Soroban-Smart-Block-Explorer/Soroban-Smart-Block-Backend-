@@ -1,7 +1,9 @@
+import { config } from '../config';
 import { EnsembleForecaster } from './ensemble';
 import { generateDeterministicSeries } from './random';
 import { ArimaSimulation, XgboostSimulation, LstmSimulation } from './models';
 import { LinearTrendModel, SeasonalMeanModel } from './production-models';
+import { modelTrainingService } from './training-service';
 
 export type ForecastMode = 'demo' | 'production';
 

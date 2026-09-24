@@ -8,6 +8,13 @@ Thanks for your interest in contributing! This project is part of the **Stellar 
 - Node.js 20+
 - PostgreSQL 16+ (or Docker)
 - Git
+- **npm** (the sole supported package manager — see note below)
+
+> **Package manager policy (#899):** This repository uses **npm** exclusively.
+> `package-lock.json` is the single source of truth for dependency resolution.
+> Do **not** use `bun`, `yarn`, or `pnpm` — their lockfiles (`bun.lock`,
+> `yarn.lock`, `pnpm-lock.yaml`) are not committed and will conflict with CI.
+> CI validates lockfile sync on every run via `npm ci --dry-run`.
 
 ### Steps
 

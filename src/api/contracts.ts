@@ -67,7 +67,7 @@ export async function getContractFunctionStats(address: string, since?: Date) {
 
 /**
  * @swagger
- * /api/v1/contracts:
+ * /contracts:
  *   get:
  *     summary: List all indexed contracts
  *     tags: [Contracts]
@@ -113,7 +113,7 @@ contractRouter.get(
 
 /**
  * @swagger
- * /api/v1/contracts/{address}/stats:
+ * /contracts/{address}/stats:
  *   get:
  *     summary: Per-function call statistics for a contract
  *     tags: [Contracts]
@@ -189,7 +189,7 @@ contractRouter.get(
 
 /**
  * @swagger
- * /api/v1/contracts/{address}:
+ * /contracts/{address}:
  *   get:
  *     summary: Get a contract with its 10 most recent transactions and events
  *     tags: [Contracts]
@@ -265,7 +265,7 @@ contractRouter.get(
 
 /**
  * @swagger
- * /api/v1/contracts:
+ * /contracts:
  *   post:
  *     summary: Register or update contract ABI metadata
  *     tags: [Contracts]
