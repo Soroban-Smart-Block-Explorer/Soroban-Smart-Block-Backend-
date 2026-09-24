@@ -14,6 +14,7 @@ import { attachWebSocketServer } from './ws/eventBroadcaster';
 import { attachPrivacyWebSocket as attachPrivacyWebSocketReal } from './ws/privacyBroadcaster';
 import { attachComposabilityWebSocket as attachComposabilityWebSocketImpl } from './ws/composabilityBroadcaster';
 import { attachArbitrageWebSocket as attachArbitrageWebSocketImpl } from './ws/arbitrageBroadcaster';
+import { attachMevPredictWebSocket } from './ws/mevPredictBroadcaster';
 import { attachAuditWebSocket } from './ws/auditBroadcaster';
 
 export interface HttpServerHandle {
@@ -28,6 +29,7 @@ export function createHttpServer(app: Express, disabledServices: string[]): Http
   const enablePrivacyWs = process.env.ENABLE_PRIVACY_WS === 'true';
   const enableComposabilityWs = process.env.ENABLE_COMPOSABILITY_WS === 'true';
   const enableArbitrageWs = process.env.ENABLE_ARBITRAGE_WS === 'true';
+  const enableMevPredictWs = process.env.ENABLE_MEV_PREDICT_WS === 'true';
 
   if (enablePrivacyWs) {
     attachPrivacyWebSocketReal(httpServer);
@@ -59,6 +61,18 @@ export function createHttpServer(app: Express, disabledServices: string[]): Http
   } else {
     disabledServices.push('arbitrageWS');
     logger.debug('Arbitrage WebSocket disabled (ENABLE_ARBITRAGE_WS not set)');
+  }
+
+  if (enableMevPredictWs) {
+    try {
+      attachMevPredictWebSocket(httpServer);
+      logger.info('MEV prediction WebSocket attached');
+    } catch (err) {
+      logger.warn('MEV prediction WebSocket attachment failed', { error: String(err) });
+    }
+  } else {
+    disabledServices.push('mevPredictWS');
+    logger.debug('MEV prediction WebSocket disabled (ENABLE_MEV_PREDICT_WS not set)');
   }
 
   // /ws/audit — score alerts, finding alerts, signals

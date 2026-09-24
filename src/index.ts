@@ -14,6 +14,7 @@ import { prismaWrite as prisma, prismaRead, prismaBackfill } from './db';
 import { stopIndexerService } from './indexer/indexer';
 import { stopP2pNode } from './p2p';
 import { shutdownWebSocketServer } from './ws/eventBroadcaster';
+import { stopMevPredictionPublisher } from './ws/mevPredictBroadcaster';
 import { stopBridgeWorker } from './bridge-tracker';
 import { feedOrchestrator } from './feed/orchestrator';
 import { stopPriceUpdater } from './services/pricing';
@@ -103,6 +104,9 @@ async function gracefulShutdown(signal: string): Promise<void> {
       wssRef.close();
       logger.info('[shutdown] WebSocket server closed');
     }
+
+    stopMevPredictionPublisher();
+    logger.info('[shutdown] MEV prediction publisher stopped');
 
     stopBridgeWorker();
     logger.info('[shutdown] Bridge worker stopped');

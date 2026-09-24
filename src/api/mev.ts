@@ -8,6 +8,17 @@ import {
   classifyLedger,
   classifyAndStore,
 } from '../indexer/mev-classifier';
+import {
+  MEV_SIGNAL_TYPES,
+  MevSignalType,
+  generateMevPredictions,
+  ingestPendingTransaction,
+  listPendingTransactions,
+  clearPendingTransactions,
+  resolveSensitivity,
+  getSensitivityPresets,
+} from '../indexer/mev-predictor';
+import { broadcastMevPrediction } from '../ws/mevPredictBroadcaster';
 
 /**
  * @swagger
@@ -2063,6 +2074,347 @@ mevRouter.post(
       const classifications = await classifyLedger(ledgerSeq);
       const stored = await Promise.all(classifications.map((c) => classifyAndStore(c)));
       res.json({ classified: stored.length, ledgerSeq });
+    } catch (e) {
+      if (e instanceof z.ZodError) return res.status(400).json({ error: e.errors });
+      res.status(500).json({ error: String(e) });
+    }
+  }),
+);
+
+// ══════════════════════════════════════════════════════════════════════════════
+// Forward-looking MEV prediction stream
+//
+// Ranks contracts/transactions where arbitrage, sandwich, or liquidation
+// activity is *likely*, scoring pending + recent transactions against DEX
+// state. Delivery: REST snapshot (below) and WebSocket push at
+// /ws/mev/predictions. Pass preview=true for a read-only, sandbox-safe
+// recomputation that neither buffers pending txs nor broadcasts signals.
+// ══════════════════════════════════════════════════════════════════════════════
+
+function parseSignalTypes(raw?: string): MevSignalType[] | undefined {
+  if (!raw) return undefined;
+  const requested = raw
+    .split(',')
+    .map((t) => t.trim().toLowerCase())
+    .filter((t): t is MevSignalType => (MEV_SIGNAL_TYPES as string[]).includes(t));
+  return requested.length > 0 ? requested : undefined;
+}
+
+const predictionQuerySchema = z.object({
+  types: z.string().optional(),
+  minScore: z.coerce.number().min(0).max(100).default(0),
+  // Accepts a numeric sensitivity or a named preset (conservative|balanced|aggressive)
+  sensitivity: z.string().optional(),
+  limit: z.coerce.number().int().min(1).max(100).default(25),
+  lookbackMinutes: z.coerce.number().int().min(1).max(1440).default(15),
+  stage: z.enum(['pending', 'recent', 'all']).default('all'),
+  preview: z.enum(['true', 'false']).optional(),
+});
+
+/**
+ * @swagger
+ * /api/v1/mev/predictions:
+ *   get:
+ *     summary: Ranked forward-looking MEV predictions
+ *     description: >
+ *       Scores pending + recent transactions against DEX state (pool prices,
+ *       TWAPs, liquidity) and cross-DEX deviations to rank contracts and
+ *       transactions where arbitrage, sandwich, or liquidation activity is
+ *       likely. Read-only; with preview=true no signals are broadcast.
+ *     tags: [MEV]
+ *     parameters:
+ *       - in: query
+ *         name: types
+ *         schema: { type: string }
+ *         description: Comma-separated subset of arbitrage,sandwich,liquidation
+ *       - in: query
+ *         name: minScore
+ *         schema: { type: number, minimum: 0, maximum: 100, default: 0 }
+ *         description: Hard floor on score, combined with the sensitivity threshold
+ *       - in: query
+ *         name: sensitivity
+ *         schema: { type: string, default: balanced }
+ *         description: Numeric 0-1 or a preset (conservative|balanced|aggressive)
+ *       - in: query
+ *         name: limit
+ *         schema: { type: integer, default: 25, maximum: 100 }
+ *       - in: query
+ *         name: lookbackMinutes
+ *         schema: { type: integer, default: 15, maximum: 1440 }
+ *       - in: query
+ *         name: stage
+ *         schema: { type: string, enum: [pending, recent, all], default: all }
+ *       - in: query
+ *         name: preview
+ *         schema: { type: string, enum: ['true', 'false'] }
+ *         description: Sandbox-safe mode — recompute without broadcasting
+ *     responses:
+ *       200:
+ *         description: Ranked predictions plus scoring metadata
+ *         content:
+ *           application/json:
+ *             schema: { $ref: '#/components/schemas/MevPredictionResult' }
+ *       400:
+ *         description: Invalid query parameters
+ *         content:
+ *           application/json:
+ *             schema: { $ref: '#/components/schemas/ZodValidationError' }
+ *       500:
+ *         description: Server error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               allOf: [{ $ref: '#/components/schemas/Error' }]
+ *               example: { error: 'Database connection failed' }
+ */
+// GET /api/v1/mev/predictions
+mevRouter.get(
+  '/predictions',
+  asyncHandler(async (req: Request, res: Response) => {
+    try {
+      const q = predictionQuerySchema.parse(req.query);
+      const preview = q.preview === 'true';
+      const result = await generateMevPredictions({
+        types: parseSignalTypes(q.types),
+        minScore: q.minScore,
+        sensitivity: resolveSensitivity(q.sensitivity),
+        limit: q.limit,
+        lookbackMinutes: q.lookbackMinutes,
+        stage: q.stage,
+      });
+
+      if (!preview) {
+        for (const prediction of result.predictions) broadcastMevPrediction(prediction);
+      }
+
+      res.json({
+        ...result,
+        preview,
+        stream: {
+          webSocketPath: '/ws/mev/predictions',
+          sensitivityPresets: getSensitivityPresets(),
+        },
+      });
+    } catch (e) {
+      if (e instanceof z.ZodError) return res.status(400).json({ error: e.errors });
+      res.status(500).json({ error: String(e) });
+    }
+  }),
+);
+
+/**
+ * @swagger
+ * /api/v1/mev/predictions/config:
+ *   get:
+ *     summary: Prediction engine configuration
+ *     description: Sensitivity presets, selectable signal types, and stream path.
+ *     tags: [MEV]
+ *     responses:
+ *       200:
+ *         description: Engine configuration
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 signalTypes: { type: array, items: { type: string } }
+ *                 sensitivityPresets: { type: object, additionalProperties: { type: number } }
+ *                 defaultSensitivity: { type: number }
+ *                 webSocketPath: { type: string }
+ *               example:
+ *                 signalTypes: [arbitrage, sandwich, liquidation]
+ *                 sensitivityPresets: { conservative: 0.25, balanced: 0.5, aggressive: 0.8 }
+ *                 defaultSensitivity: 0.5
+ *                 webSocketPath: /ws/mev/predictions
+ *       500:
+ *         description: Server error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               allOf: [{ $ref: '#/components/schemas/Error' }]
+ *               example: { error: 'Internal error' }
+ */
+// GET /api/v1/mev/predictions/config
+mevRouter.get('/predictions/config', (_req: Request, res: Response) => {
+  res.json({
+    signalTypes: MEV_SIGNAL_TYPES,
+    sensitivityPresets: getSensitivityPresets(),
+    defaultSensitivity: resolveSensitivity(undefined),
+    webSocketPath: '/ws/mev/predictions',
+  });
+});
+
+/**
+ * @swagger
+ * /api/v1/mev/predictions/pending:
+ *   get:
+ *     summary: List buffered pending transactions
+ *     description: Process-local buffer feeding the predictor, deduped by hash with a 2-minute TTL.
+ *     tags: [MEV]
+ *     responses:
+ *       200:
+ *         description: Buffered pending transactions
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 pending:
+ *                   type: array
+ *                   items: { $ref: '#/components/schemas/PendingTransaction' }
+ *                 count: { type: integer, example: 2 }
+ *       500:
+ *         description: Server error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               allOf: [{ $ref: '#/components/schemas/Error' }]
+ *               example: { error: 'Internal error' }
+ */
+// GET /api/v1/mev/predictions/pending
+mevRouter.get('/predictions/pending', (_req: Request, res: Response) => {
+  const pending = listPendingTransactions();
+  res.json({ pending, count: pending.length });
+});
+
+/**
+ * @swagger
+ * /api/v1/mev/predictions/pending:
+ *   delete:
+ *     summary: Clear the pending transaction buffer
+ *     tags: [MEV]
+ *     responses:
+ *       200:
+ *         description: Buffer cleared
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success: { type: boolean }
+ *                 cleared: { type: integer, example: 3 }
+ *       500:
+ *         description: Server error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               allOf: [{ $ref: '#/components/schemas/Error' }]
+ *               example: { error: 'Internal error' }
+ */
+// DELETE /api/v1/mev/predictions/pending
+mevRouter.delete('/predictions/pending', (_req: Request, res: Response) => {
+  const cleared = listPendingTransactions().length;
+  clearPendingTransactions();
+  res.json({ success: true, cleared });
+});
+
+const pendingTxSchema = z.object({
+  hash: z.string().min(1),
+  sourceAccount: z.string().min(1),
+  contractAddress: z.string().optional().nullable(),
+  functionName: z.string().optional().nullable(),
+  functionArgs: z.record(z.unknown()).optional().nullable(),
+  ledgerSequence: z.number().int().nonnegative().optional().nullable(),
+  submittedAt: z.string().datetime().optional().nullable(),
+  notionalUsd: z.number().nonnegative().optional().nullable(),
+  slippageTolerance: z.number().nonnegative().optional().nullable(),
+  usesPrivateMempool: z.boolean().optional().nullable(),
+});
+
+const ingestPredictionsSchema = z.object({
+  transactions: z.array(pendingTxSchema).min(1).max(100),
+  preview: z.boolean().optional().default(false),
+  sensitivity: z.string().optional(),
+  minScore: z.coerce.number().min(0).max(100).optional(),
+  limit: z.coerce.number().int().min(1).max(100).optional(),
+});
+
+/**
+ * @swagger
+ * /api/v1/mev/predictions/ingest:
+ *   post:
+ *     summary: Ingest pending transactions and score them
+ *     description: >
+ *       Adds pending transactions to the process-local buffer (unless
+ *       preview=true) and immediately recomputes ranked predictions,
+ *       broadcasting new signals to /ws/mev/predictions subscribers in
+ *       non-preview mode.
+ *     tags: [MEV]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [transactions]
+ *             properties:
+ *               preview: { type: boolean, default: false }
+ *               sensitivity: { type: string, example: aggressive }
+ *               minScore: { type: number, minimum: 0, maximum: 100 }
+ *               limit: { type: integer, minimum: 1, maximum: 100 }
+ *               transactions:
+ *                 type: array
+ *                 minItems: 1
+ *                 maxItems: 100
+ *                 items: { $ref: '#/components/schemas/PendingTransaction' }
+ *     responses:
+ *       200:
+ *         description: Ingestion result and refreshed predictions
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 accepted: { type: integer, example: 1 }
+ *                 preview: { type: boolean, example: false }
+ *                 result: { $ref: '#/components/schemas/MevPredictionResult' }
+ *       400:
+ *         description: Invalid request body
+ *         content:
+ *           application/json:
+ *             schema: { $ref: '#/components/schemas/ZodValidationError' }
+ *       500:
+ *         description: Server error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               allOf: [{ $ref: '#/components/schemas/Error' }]
+ *               example: { error: 'Database connection failed' }
+ */
+// POST /api/v1/mev/predictions/ingest
+mevRouter.post(
+  '/predictions/ingest',
+  asyncHandler(async (req: Request, res: Response) => {
+    try {
+      const body = ingestPredictionsSchema.parse(req.body);
+      if (!body.preview) {
+        for (const tx of body.transactions) {
+          ingestPendingTransaction({
+            hash: tx.hash,
+            sourceAccount: tx.sourceAccount,
+            contractAddress: tx.contractAddress ?? null,
+            functionName: tx.functionName ?? null,
+            functionArgs: tx.functionArgs ?? null,
+            ledgerSequence: tx.ledgerSequence ?? null,
+            submittedAt: tx.submittedAt ?? null,
+            notionalUsd: tx.notionalUsd ?? null,
+            slippageTolerance: tx.slippageTolerance ?? null,
+            usesPrivateMempool: tx.usesPrivateMempool ?? null,
+          });
+        }
+      }
+
+      const result = await generateMevPredictions({
+        sensitivity: resolveSensitivity(body.sensitivity),
+        minScore: body.minScore,
+        limit: body.limit,
+      });
+
+      if (!body.preview) {
+        for (const prediction of result.predictions) broadcastMevPrediction(prediction);
+      }
+
+      res.json({ accepted: body.transactions.length, preview: body.preview, result });
     } catch (e) {
       if (e instanceof z.ZodError) return res.status(400).json({ error: e.errors });
       res.status(500).json({ error: String(e) });
