@@ -46,6 +46,7 @@ import { composabilityRouter } from './composability';
 // ── DEX & Pricing & Market Intelligence ────────────────────────────────────────
 import { dexRouter } from './dex';
 import { dexAnalyticsRouter } from './dex-analytics';
+import { seriesRouter } from './series';
 import { marketRouter } from './market';
 import { tokenPricesRouter } from './token-prices';
 import { portfolioRouter } from './portfolio';
@@ -121,6 +122,8 @@ router.use('/composability', composabilityRouter);
 // ── DEX & Pricing ──────────────────────────────────────────────────────────────
 router.use('/dex', dexRouter);
 router.use('/dex-analytics', dexAnalyticsRouter);
+// ── Time-series analytics (pool/token dashboards) ─────────────────────────────
+router.use('/series', seriesRouter);
 
 // ── Token Pricing & Valuation ─────────────────────────────────────────────────
 router.use('/token-prices', tokenPricesRouter);
@@ -177,6 +180,7 @@ router.use('/webhooks', webhooksRouter);
 // Treasury mounts before the base router so /governance/treasury/... wins
 // over the /governance/:wildcard-style proposal routes.
 import { governanceTreasuryRouter } from './governance-treasury';
+import { governanceRouter } from './governance';
 router.use('/governance/treasury', governanceTreasuryRouter);
 router.use('/governance', governanceRouter);
 router.use('/systemic', systemicRouter);
