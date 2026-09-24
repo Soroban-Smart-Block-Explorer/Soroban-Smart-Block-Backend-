@@ -212,3 +212,54 @@ export interface SyncStatus {
   storageUsedMB: number;
   isSyncing: boolean;
 }
+
+// ── On-device persistence (recent searches, watchlist, last-viewed) ───────────
+
+/** Entity kinds the app can search for, watch, or open. */
+export type EntityType = 'transaction' | 'contract' | 'wallet' | 'event' | 'token' | 'proposal';
+
+/** A stable reference to an explorer entity. */
+export interface EntityRef {
+  type: EntityType;
+  id: string;
+}
+
+/** A single entry in the persisted search history. */
+export interface RecentSearch {
+  query: string;
+  searchedAt: string;
+  resultCount?: number;
+}
+
+/** A watched entity plus its locally cached hydration summary. */
+export interface WatchlistEntry extends EntityRef {
+  label?: string;
+  addedAt: string;
+  summary?: HydrationEntitySummary;
+}
+
+/** The last entity the user opened, with its cached hydration summary. */
+export interface LastViewedEntity extends EntityRef {
+  label?: string;
+  viewedAt: string;
+  summary?: HydrationEntitySummary;
+}
+
+/**
+ * Small server-rendered description of an entity, used to rehydrate the
+ * recent-search / watchlist / last-viewed lists without fetching full records.
+ */
+export interface HydrationEntitySummary extends EntityRef {
+  label: string;
+  sublabel?: string;
+  status?: string;
+  updatedAt?: string;
+}
+
+/** Snapshot persisted on-device so the app is usable offline. */
+export interface PersistedLocalState {
+  version: number;
+  recentSearches: RecentSearch[];
+  watchlist: WatchlistEntry[];
+  lastViewed: LastViewedEntity[];
+}

@@ -28,6 +28,7 @@ import { renderRouter } from './render';
 import { simulateRouter } from './simulate';
 import { verifyRouter } from './verify';
 import { syncStateRouter } from './sync-state';
+import { hydrationRouter } from './hydration';
 import { networkRouter } from './network';
 import { tokenMetadataRouter } from './token-metadata';
 import { protocolRouter } from './protocol';
@@ -116,6 +117,8 @@ router.use('/verify', requireApiKey, verifyRouter);
 router.use('/compiler', requireKeyTier('developer'), compilerRouter);
 router.use('/sandbox', sandboxRouter);
 router.use('/sync-state', syncStateRouter);
+// Lightweight entity summaries for the mobile SDK's on-device cache rehydration
+router.use('/hydration', hydrationRouter);
 router.use('/network', networkRouter);
 router.use('/token-metadata', tokenMetadataRouter);
 router.use('/protocol', protocolRouter);
