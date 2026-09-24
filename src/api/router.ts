@@ -69,6 +69,9 @@ import { rateLimitAdminRouter } from './rate-limits';
 import { alertsRouter } from './alerts';
 import { oracleIntelligenceRouter } from './oracle-intelligence';
 
+// ── Saved Searches & Notifications ────────────────────────────────────────────
+import { savedSearchesRouter } from './saved-searches';
+
 // ── SAC Trustlines (#637) ─────────────────────────────────────────────────────
 import { sacTrustlinesRouter } from './sac-trustlines';
 // ── ECO08 Grants & Bounties Explorer (#1019) ───────────────────────────────────
@@ -153,6 +156,8 @@ router.use('/admin', adminRateLimit);
 router.use('/admin/rate-limits', adminRateLimitsOverrideRateLimit, rateLimitAdminRouter);
 router.use('/market/alerts', alertsRouter);
 router.use('/oracles/intelligence', oracleIntelligenceRouter);
+// Saved searches — auth is enforced inside savedSearchesRouter itself.
+router.use('/saved-searches', savedSearchesRouter);
 
 // ── Predictive Analytics ──────────────────────────────────────────────────────
 router.use('/fraud', fraudRouter);

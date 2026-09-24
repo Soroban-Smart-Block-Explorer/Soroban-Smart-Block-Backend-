@@ -25,6 +25,7 @@ import { enqueueInitialAudit } from './audit-pipeline';
 import { amIResponsibleFor, getRangeCursor, isP2pEnabled, setRangeCursor } from '../p2p';
 import { logger } from '../logger';
 import { uuidv7 } from '../utils/uuidv7';
+import { startSavedSearchScheduler, stopSavedSearchScheduler } from './savedSearchRunner';
 
 const BATCH = config.indexerBatchSize;
 const WORKERS = config.indexerCatchupWorkers;
@@ -810,9 +811,12 @@ export async function startIndexerService() {
   const worker = new SorobanEventWorker();
   currentWorker = worker;
   await worker.start();
+  // Match newly indexed contracts/events against stored saved searches (#966).
+  startSavedSearchScheduler();
 }
 
 export function stopIndexerService(): void {
+  stopSavedSearchScheduler();
   if (currentWorker) {
     currentWorker.stop();
     currentWorker = null;
