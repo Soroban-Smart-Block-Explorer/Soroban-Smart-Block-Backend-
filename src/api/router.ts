@@ -68,6 +68,7 @@ import { auditRouter } from './audit';
 import { rateLimitAdminRouter } from './rate-limits';
 import { alertsRouter } from './alerts';
 import { oracleIntelligenceRouter } from './oracle-intelligence';
+import { alertRulesRouter } from './alert-rules';
 
 // ── Saved Searches & Notifications ────────────────────────────────────────────
 import { savedSearchesRouter } from './saved-searches';
@@ -158,6 +159,11 @@ router.use('/market/alerts', alertsRouter);
 router.use('/oracles/intelligence', oracleIntelligenceRouter);
 // Saved searches — auth is enforced inside savedSearchesRouter itself.
 router.use('/saved-searches', savedSearchesRouter);
+
+// ── Suspicious Activity Alerts ────────────────────────────────────────────────
+// Central rule-based alert feed. Reads/config are tenant-scoped; ingest
+// requires an API key.
+router.use('/alert-rules', alertRulesRouter);
 
 // ── Predictive Analytics ──────────────────────────────────────────────────────
 router.use('/fraud', fraudRouter);
