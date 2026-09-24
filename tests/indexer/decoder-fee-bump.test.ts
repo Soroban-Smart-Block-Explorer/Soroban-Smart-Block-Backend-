@@ -33,7 +33,7 @@ vi.mock('../../src/indexer/registry', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../../src/indexer/registry')>();
   return {
     ...actual,
-    getContractAbi: vi.fn().mockResolvedValue(null),
+    getContractContext: vi.fn().mockResolvedValue({ contract: null, abi: null }),
   };
 });
 

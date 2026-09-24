@@ -35,6 +35,21 @@ export {
   type PortfolioHistoryPoint,
 } from './portfolio';
 export {
+  computePortfolioPnl,
+  getPortfolioPnl,
+  upsertPositions,
+  persistPortfolioPnl,
+  listBalanceSnapshots,
+  deriveCostBasisFromEvents,
+  type PortfolioPnlResult,
+  type PortfolioPnlInput,
+  type NetworkPortfolioInput,
+  type NetworkHoldingInput,
+  type AssetPnl,
+  type ChainPnl,
+  type BalanceSnapshotRecord,
+} from './pnl';
+export {
   getCrossChainPrices,
   findArbitrageOpportunities,
   type CrossChainPrice,

@@ -60,7 +60,6 @@ const PENDING_SCHEMA_ROUTERS = new Set([
   'dtcc-settlement.ts',
   'factory-tracker.ts',
   'fuzzing.ts',
-  'graph.ts',
   'intelligence.ts',
   'oracle-audit.ts',
   'oracle-feeds.ts',

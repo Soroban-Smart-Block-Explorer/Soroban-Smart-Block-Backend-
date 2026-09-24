@@ -153,6 +153,23 @@ export class ChannelManager {
         },
       },
       {
+        name: 'alerts',
+        description: 'Suspicious activity alerts emitted by the rule + anomaly engine',
+        category: 'derived',
+        schema: {
+          type: 'object',
+          properties: {
+            id: { type: 'string' },
+            ruleId: { type: 'string' },
+            severity: { type: 'string' },
+            subject: { type: 'string' },
+            title: { type: 'string' },
+            description: { type: 'string' },
+            detectedAt: { type: 'string' },
+          },
+        },
+      },
+      {
         name: 'governance',
         description: 'Proposal creation, voting, execution events',
         category: 'event',

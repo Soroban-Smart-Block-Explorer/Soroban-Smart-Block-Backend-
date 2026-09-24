@@ -6,6 +6,8 @@ import { archiveRouter } from './archive';
 import { validateAddressParam, isValidStellarAddress } from '../middleware/sanitize';
 import { contractAuditRouter } from './contract-audit';
 import { asyncHandler } from '../middleware/asyncHandler';
+import { config } from '../config';
+import { getProtocolDeployments } from '../indexer/registry';
 
 /**
  * @swagger
@@ -19,18 +21,53 @@ export const contractRouter = Router();
 contractRouter.use('/:address/abi', abiRouter);
 contractRouter.use('/:address/state', archiveRouter);
 
+const stellarAddress = z
+  .string()
+  .refine(isValidStellarAddress, { message: 'Invalid Stellar contract address' });
+
 const abiSchema = z.object({
-  address: z
-    .string()
-    .refine(isValidStellarAddress, { message: 'Invalid Stellar contract address' }),
+  address: stellarAddress,
+  /** Network the address belongs to. Defaults to the active profile. */
+  network: z.string().min(1).max(32).optional(),
+  /** Canonical registry record to attach this deployment to. Defaults to `address`. */
+  canonicalAddress: stellarAddress.optional(),
   name: z.string().max(256).optional(),
   description: z.string().max(2048).optional(),
   abi: z.record(z.unknown()).optional(),
+  /** Network-keyed ABI + version metadata. */
+  abiVersion: z.string().max(64).optional(),
+  abiHash: z.string().max(64).optional(),
+  version: z.string().max(64).optional(),
+  wasmHash: z.string().max(64).optional(),
+  /** Linkage hint grouping the same protocol deployed across networks. */
+  protocolKey: z.string().min(1).max(128).optional(),
+  isCanonical: z.boolean().optional(),
+  deployedAtLedger: z.number().int().nonnegative().optional(),
 });
 
 const contractStatsQuerySchema = z.object({
   since: z.string().datetime({ offset: true }).optional(),
 });
+
+const contractsListQuerySchema = z.object({
+  network: z.string().min(1).max(32).optional(),
+  protocolKey: z.string().min(1).max(128).optional(),
+});
+
+/** Deployment summary fields shared by the list, detail, and protocol routes. */
+const networkDeploymentSelect = {
+  address: true,
+  network: true,
+  abiVersion: true,
+  abiHash: true,
+  version: true,
+  wasmHash: true,
+  protocolKey: true,
+  isCanonical: true,
+  deployedAtLedger: true,
+} as const;
+
+const deploymentOrderBy = [{ isCanonical: 'desc' as const }, { network: 'asc' as const }];
 
 export async function getContractFunctionStats(address: string, since?: Date) {
   const contract = await prismaRead.contract.findUnique({
@@ -102,12 +139,74 @@ export async function getContractFunctionStats(address: string, since?: Date) {
 // GET /contracts
 contractRouter.get(
   '/',
-  asyncHandler(async (_req: Request, res: Response) => {
+  asyncHandler(async (req: Request, res: Response) => {
+    const query = contractsListQuerySchema.parse(req.query);
+
+    // Backwards compatible: without a network/protocol filter, return the same
+    // flat summary as before so existing clients are unaffected.
+    if (!query.network && !query.protocolKey) {
+      const contracts = await prismaRead.contract.findMany({
+        select: { address: true, name: true, description: true, isToken: true, tokenSymbol: true },
+        orderBy: { createdAt: 'desc' },
+      });
+      return res.json(contracts);
+    }
+
+    const deploymentWhere: { network?: string; protocolKey?: string } = {};
+    if (query.network) deploymentWhere.network = query.network;
+    if (query.protocolKey) deploymentWhere.protocolKey = query.protocolKey;
+
     const contracts = await prismaRead.contract.findMany({
-      select: { address: true, name: true, description: true, isToken: true, tokenSymbol: true },
+      where: { networkDeployments: { some: deploymentWhere } },
+      select: {
+        address: true,
+        name: true,
+        description: true,
+        isToken: true,
+        tokenSymbol: true,
+        networkDeployments: {
+          where: deploymentWhere,
+          select: networkDeploymentSelect,
+          orderBy: deploymentOrderBy,
+        },
+      },
       orderBy: { createdAt: 'desc' },
     });
-    res.json(contracts);
+    return res.json(contracts);
+  }),
+);
+
+/**
+ * @swagger
+ * /api/v1/contracts/protocol/{protocolKey}:
+ *   get:
+ *     summary: List every network deployment grouped under one protocol key
+ *     tags: [Contracts]
+ *     parameters:
+ *       - in: path
+ *         name: protocolKey
+ *         required: true
+ *         schema: { type: string }
+ *         description: Linkage hint shared by deployments of the same protocol
+ *     responses:
+ *       200:
+ *         description: Deployments across networks, canonical first then by network
+ *       404:
+ *         description: No deployments registered for this protocol key
+ */
+// GET /contracts/protocol/:protocolKey
+contractRouter.get(
+  '/protocol/:protocolKey',
+  asyncHandler(async (req: Request, res: Response) => {
+    const deployments = await getProtocolDeployments(req.params.protocolKey);
+    if (deployments.length === 0) {
+      return res.status(404).json({ error: 'No deployments found for protocol key' });
+    }
+    return res.json({
+      protocolKey: req.params.protocolKey,
+      networks: [...new Set(deployments.map((d) => d.network))].sort(),
+      deployments,
+    });
   }),
 );
 
@@ -256,6 +355,10 @@ contractRouter.get(
           orderBy: { ledgerSequence: 'desc' },
           select: { id: true, eventType: true, decoded: true, ledgerSequence: true },
         },
+        networkDeployments: {
+          select: networkDeploymentSelect,
+          orderBy: deploymentOrderBy,
+        },
       },
     });
     if (!contract) return res.status(404).json({ error: 'Contract not found' });
@@ -277,14 +380,26 @@ contractRouter.get(
  *             type: object
  *             required: [address]
  *             properties:
- *               address: { type: string, description: 'Stellar contract address (validated)' }
+ *               address: { type: string, description: 'Stellar contract address on `network` (validated)' }
+ *               network: { type: string, maxLength: 32, description: 'Network the address belongs to; defaults to the active profile' }
+ *               canonicalAddress: { type: string, description: 'Canonical Contract record to attach the deployment to; defaults to address' }
  *               name: { type: string, maxLength: 256 }
  *               description: { type: string, maxLength: 2048 }
- *               abi: { type: object, description: 'ABI metadata (functions, events, types)' }
+ *               abi: { type: object, description: 'Network-keyed ABI metadata (functions, events, types)' }
+ *               abiVersion: { type: string, maxLength: 64 }
+ *               abiHash: { type: string, maxLength: 64 }
+ *               version: { type: string, maxLength: 64 }
+ *               wasmHash: { type: string, maxLength: 64, description: 'Deployed WASM hash on this network' }
+ *               protocolKey: { type: string, maxLength: 128, description: 'Linkage hint grouping deployments of the same protocol across networks' }
+ *               isCanonical: { type: boolean, description: 'Marks the reference deployment within a protocol group' }
+ *               deployedAtLedger: { type: integer, minimum: 0 }
  *             example:
  *               address: CALLD5GHXR4QSTKHSWQEK4UVMHM4QHU4KZ5G4SBKWY7C7TXKZ45RJ4M5
+ *               network: testnet
  *               name: USD Coin
  *               description: USDC stablecoin token contract
+ *               protocolKey: usdc
+ *               abiVersion: 1.0.0
  *               abi: { functions: [{ name: transfer, inputs: [{ name: to, type: Address }, { name: amount, type: i128 }] }] }
  *     responses:
  *       201:
@@ -301,25 +416,90 @@ contractRouter.get(
  *                 - $ref: '#/components/schemas/Error'
  *               example: { error: 'address is required' }
  */
-// POST /contracts — register ABI metadata
+export type ContractRegistrationInput = z.infer<typeof abiSchema>;
+
+/**
+ * Register or update contract metadata, optionally scoped to a network.
+ *
+ * Without `network` this preserves the original address-keyed Contract upsert.
+ * With `network` it additionally upserts a ContractNetwork deployment, deduped
+ * on (address, network), linked to the canonical Contract record. Network-keyed
+ * ABI/version data then takes precedence in registry lookups.
+ */
+export async function registerContractMetadata(data: ContractRegistrationInput) {
+  // A deployment always resolves to a canonical Contract record; when the
+  // caller does not name a different one, the address doubles as canonical.
+  const canonicalAddress = data.canonicalAddress ?? data.address;
+
+  const contract = await prismaWrite.contract.upsert({
+    where: { address: canonicalAddress },
+    update: {
+      ...(data.name !== undefined ? { name: data.name } : {}),
+      ...(data.description !== undefined ? { description: data.description } : {}),
+      ...(data.abi !== undefined ? { abi: data.abi as object } : {}),
+    },
+    create: {
+      address: canonicalAddress,
+      name: data.name,
+      description: data.description,
+      abi: data.abi as object,
+    },
+  });
+
+  // No network given → keep the original address-only registration path.
+  if (data.network === undefined) return { contract, deployment: null };
+
+  const network = data.network;
+
+  // Dedupe on (address, network): re-registering the same address on the same
+  // network updates the existing deployment instead of inserting a new row.
+  const deployment = await prismaWrite.contractNetwork.upsert({
+    where: { address_network: { address: data.address, network } },
+    update: {
+      contractId: contract.id,
+      ...(data.abi !== undefined ? { abi: data.abi as object } : {}),
+      ...(data.abiVersion !== undefined ? { abiVersion: data.abiVersion } : {}),
+      ...(data.abiHash !== undefined ? { abiHash: data.abiHash } : {}),
+      ...(data.version !== undefined ? { version: data.version } : {}),
+      ...(data.wasmHash !== undefined ? { wasmHash: data.wasmHash } : {}),
+      ...(data.protocolKey !== undefined ? { protocolKey: data.protocolKey } : {}),
+      ...(data.isCanonical !== undefined ? { isCanonical: data.isCanonical } : {}),
+      ...(data.deployedAtLedger !== undefined ? { deployedAtLedger: data.deployedAtLedger } : {}),
+    },
+    create: {
+      address: data.address,
+      network,
+      contractId: contract.id,
+      abi: data.abi as object,
+      abiVersion: data.abiVersion,
+      abiHash: data.abiHash,
+      version: data.version,
+      wasmHash: data.wasmHash,
+      protocolKey: data.protocolKey,
+      isCanonical: data.isCanonical ?? false,
+      deployedAtLedger: data.deployedAtLedger,
+    },
+  });
+
+  return { contract, deployment };
+}
+
+// POST /contracts — register ABI metadata (optionally per network)
 contractRouter.post(
   '/',
   asyncHandler(async (req: Request, res: Response) => {
+    const parsed = abiSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res
+        .status(400)
+        .json({ error: parsed.error.issues[0]?.message ?? 'Invalid request body' });
+    }
+
     try {
-      const data = abiSchema.parse(req.body);
-      const contract = await prismaWrite.contract.upsert({
-        where: { address: data.address },
-        update: { name: data.name, description: data.description, abi: data.abi as object },
-        create: {
-          address: data.address,
-          name: data.name,
-          description: data.description,
-          abi: data.abi as object,
-        },
-      });
-      res.status(201).json(contract);
+      const { contract, deployment } = await registerContractMetadata(parsed.data);
+      return res.status(201).json(deployment ?? contract);
     } catch (e) {
-      res.status(400).json({ error: String(e) });
+      return res.status(400).json({ error: String(e) });
     }
   }),
 );
@@ -335,7 +515,6 @@ import { rpc as sorobanRpc } from '../indexer/rpc';
 import { SorobanRpc, Transaction, FeeBumpTransaction } from '@stellar/stellar-sdk';
 import { buildTrace, extractDiagnosticEvents } from '../indexer/trace-engine';
 import { analyzeSimulationFailure } from '../indexer/revert-analyzer';
-import { config } from '../config';
 
 import { fetchContractSpec } from '../indexer/wasm-spec';
 

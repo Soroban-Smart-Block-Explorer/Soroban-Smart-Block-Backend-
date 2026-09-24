@@ -11,6 +11,8 @@ import {
   Subscription,
   RetryConfig,
   CacheConfig,
+  EntityRef,
+  HydrationEntitySummary,
 } from './types';
 
 const DEFAULT_RETRY: RetryConfig = {
@@ -135,6 +137,21 @@ export class SorobanExplorerClient {
 
   async getSubscriptions(): Promise<Subscription[]> {
     return this.request('GET', '/subscriptions');
+  }
+
+  /**
+   * Fetches small display summaries for a batch of entity refs so the app can
+   * rehydrate its recent-search / watchlist / last-viewed lists without loading
+   * full records. Backed by the lightweight `POST /hydration/entities` endpoint.
+   */
+  async getHydrationEntities(refs: EntityRef[]): Promise<HydrationEntitySummary[]> {
+    if (refs.length === 0) return [];
+    const response = await this.request<{ entities: HydrationEntitySummary[] }>(
+      'POST',
+      '/hydration/entities',
+      { refs },
+    );
+    return response.entities ?? [];
   }
 
   async createSubscription(sub: Omit<Subscription, 'id' | 'createdAt'>): Promise<Subscription> {

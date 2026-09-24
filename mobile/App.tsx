@@ -1,9 +1,12 @@
-import React, { useEffect, useState } from 'react';
+import React from 'react';
 import { NavigationContainer } from '@react-navigation/native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { View, Text, StyleSheet, ActivityIndicator } from 'react-native';
-import * as LocalAuthentication from 'expo-local-authentication';
+import { AuthProvider, useAuth } from './src/auth/AuthContext';
+import { LockScreen } from './src/screens/LockScreen';
+import { LoginScreen } from './src/screens/LoginScreen';
+import { PremiumScreen } from './src/screens/PremiumScreen';
 
 const Tab = createBottomTabNavigator();
 
@@ -17,9 +20,11 @@ function HomeScreen() {
 }
 
 function WalletScreen() {
+  const { address } = useAuth();
   return (
     <View style={styles.container}>
       <Text style={styles.title}>Wallet View</Text>
+      {address ? <Text style={styles.subtitle}>{address}</Text> : null}
     </View>
   );
 }
@@ -41,9 +46,14 @@ function AlertsScreen() {
 }
 
 function SettingsScreen() {
+  const { signOut, address } = useAuth();
   return (
     <View style={styles.container}>
       <Text style={styles.title}>Settings</Text>
+      {address ? <Text style={styles.subtitle}>{address}</Text> : null}
+      <Text style={[styles.subtitle, styles.link]} onPress={signOut}>
+        Sign out
+      </Text>
     </View>
   );
 }
@@ -63,58 +73,16 @@ function HomeTabs() {
       <Tab.Screen name="Wallet" component={WalletScreen} />
       <Tab.Screen name="Contracts" component={ContractScreen} />
       <Tab.Screen name="Alerts" component={AlertsScreen} />
+      <Tab.Screen name="Premium" component={PremiumScreen} />
       <Tab.Screen name="Settings" component={SettingsScreen} />
     </Tab.Navigator>
   );
 }
 
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#0f172a',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  title: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    color: '#f8fafc',
-  },
-  subtitle: {
-    fontSize: 14,
-    color: '#64748b',
-    marginTop: 8,
-  },
-  loading: {
-    flex: 1,
-    backgroundColor: '#0f172a',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-});
+function AuthGate() {
+  const { status } = useAuth();
 
-export default function App() {
-  const [isReady, setIsReady] = useState(false);
-  const [isLocked, setIsLocked] = useState(true);
-
-  useEffect(() => {
-    async function init() {
-      const { hasHardwareAsync, authenticateAsync } = await import('expo-local-authentication');
-      const hasHardware = await hasHardwareAsync();
-      if (hasHardware) {
-        const result = await authenticateAsync({
-          promptMessage: 'Unlock Soroban Explorer',
-        });
-        setIsLocked(!result.success);
-      } else {
-        setIsLocked(false);
-      }
-      setIsReady(true);
-    }
-    init();
-  }, []);
-
-  if (!isReady) {
+  if (status === 'loading') {
     return (
       <View style={styles.loading}>
         <ActivityIndicator size="large" color="#3b82f6" />
@@ -122,33 +90,36 @@ export default function App() {
     );
   }
 
-  if (isLocked) {
-    return (
-      <View style={styles.container}>
-        <Text style={styles.title}>Soroban Explorer</Text>
-        <Text style={styles.subtitle}>Locked</Text>
-      </View>
-    );
-  }
+  if (status === 'signed-out') return <LoginScreen />;
+  if (status === 'locked') return <LockScreen />;
 
   return (
-    <SafeAreaProvider>
-      <NavigationContainer
-        linking={{
-          prefixes: ['soroban://', 'https://soroban.network'],
-          config: {
-            screens: {
-              Home: '',
-              Wallet: 'wallet/:address',
-              Contracts: 'contract/:address',
-              Alerts: 'alerts',
-              Settings: 'settings',
-            },
+    <NavigationContainer
+      linking={{
+        prefixes: ['soroban://', 'https://soroban.network'],
+        config: {
+          screens: {
+            Home: '',
+            Wallet: 'wallet/:address',
+            Contracts: 'contract/:address',
+            Alerts: 'alerts',
+            Premium: 'premium',
+            Settings: 'settings',
           },
-        }}
-      >
-        <HomeTabs />
-      </NavigationContainer>
+        },
+      }}
+    >
+      <HomeTabs />
+    </NavigationContainer>
+  );
+}
+
+export default function App() {
+  return (
+    <SafeAreaProvider>
+      <AuthProvider>
+        <AuthGate />
+      </AuthProvider>
     </SafeAreaProvider>
   );
 }
@@ -169,6 +140,10 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: '#64748b',
     marginTop: 8,
+  },
+  link: {
+    color: '#3b82f6',
+    marginTop: 24,
   },
   loading: {
     flex: 1,

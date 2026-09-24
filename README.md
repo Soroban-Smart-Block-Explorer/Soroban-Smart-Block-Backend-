@@ -243,6 +243,7 @@ Full interactive API documentation is available at:
 | `POST /api/v1/contracts` | Register contract ABI | Add new contract metadata |
 | `GET /api/v1/wallets/:address/transactions` | Wallet history | Account transaction history |
 | `GET /api/v1/tokens` | List tokens | SEP-41 token summary |
+| `GET /api/v1/search/suggest` | Ranked autocomplete across contracts, wallets, transactions, events and tokens | `?q=usd&limit=10&types=token,contract` |
 | `GET /api/v1/dex/analyze` | DEX analytics | Swap analysis & patterns |
 | `GET /api/v1/health` | Health check | Service status |
 

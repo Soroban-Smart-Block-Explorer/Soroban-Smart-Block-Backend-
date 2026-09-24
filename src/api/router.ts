@@ -28,6 +28,7 @@ import { renderRouter } from './render';
 import { simulateRouter } from './simulate';
 import { verifyRouter } from './verify';
 import { syncStateRouter } from './sync-state';
+import { hydrationRouter } from './hydration';
 import { networkRouter } from './network';
 import { tokenMetadataRouter } from './token-metadata';
 import { protocolRouter } from './protocol';
@@ -46,6 +47,7 @@ import { composabilityRouter } from './composability';
 // ── DEX & Pricing & Market Intelligence ────────────────────────────────────────
 import { dexRouter } from './dex';
 import { dexAnalyticsRouter } from './dex-analytics';
+import { seriesRouter } from './series';
 import { marketRouter } from './market';
 import { tokenPricesRouter } from './token-prices';
 import { portfolioRouter } from './portfolio';
@@ -66,11 +68,17 @@ import { auditRouter } from './audit';
 import { rateLimitAdminRouter } from './rate-limits';
 import { alertsRouter } from './alerts';
 import { oracleIntelligenceRouter } from './oracle-intelligence';
+import { alertRulesRouter } from './alert-rules';
+
+// ── Saved Searches & Notifications ────────────────────────────────────────────
+import { savedSearchesRouter } from './saved-searches';
 
 // ── SAC Trustlines (#637) ─────────────────────────────────────────────────────
 import { sacTrustlinesRouter } from './sac-trustlines';
 // ── ECO08 Grants & Bounties Explorer (#1019) ───────────────────────────────────
 import { grantsBountiesRouter } from './grants-bounties';
+// ── Public Status Page & Uptime History API (PLT10 / #1031) ─────────────────
+import { statusRouter } from './status';
 
 // ── Admin ─────────────────────────────────────────────────────────────────────
 import { adminErrorsRouter } from './admin/errors';
@@ -113,6 +121,8 @@ router.use('/verify', requireApiKey, verifyRouter);
 router.use('/compiler', requireKeyTier('developer'), compilerRouter);
 router.use('/sandbox', sandboxRouter);
 router.use('/sync-state', syncStateRouter);
+// Lightweight entity summaries for the mobile SDK's on-device cache rehydration
+router.use('/hydration', hydrationRouter);
 router.use('/network', networkRouter);
 router.use('/token-metadata', tokenMetadataRouter);
 router.use('/protocol', protocolRouter);
@@ -131,6 +141,8 @@ router.use('/composability', composabilityRouter);
 // ── DEX & Pricing ──────────────────────────────────────────────────────────────
 router.use('/dex', dexRouter);
 router.use('/dex-analytics', dexAnalyticsRouter);
+// ── Time-series analytics (pool/token dashboards) ─────────────────────────────
+router.use('/series', seriesRouter);
 
 // ── Token Pricing & Valuation ─────────────────────────────────────────────────
 router.use('/token-prices', tokenPricesRouter);
@@ -145,6 +157,13 @@ router.use('/admin', adminRateLimit);
 router.use('/admin/rate-limits', adminRateLimitsOverrideRateLimit, rateLimitAdminRouter);
 router.use('/market/alerts', alertsRouter);
 router.use('/oracles/intelligence', oracleIntelligenceRouter);
+// Saved searches — auth is enforced inside savedSearchesRouter itself.
+router.use('/saved-searches', savedSearchesRouter);
+
+// ── Suspicious Activity Alerts ────────────────────────────────────────────────
+// Central rule-based alert feed. Reads/config are tenant-scoped; ingest
+// requires an API key.
+router.use('/alert-rules', alertRulesRouter);
 
 // ── Predictive Analytics ──────────────────────────────────────────────────────
 router.use('/fraud', fraudRouter);
@@ -294,3 +313,6 @@ router.use('/compliance/commodity', commodityComplianceRouter);
 router.use('/compliance/rwa', rwaComplianceRouter);
 router.use('/compliance/dtcc-settlement', dtccSettlementRouter);
 router.use('/compliance/settlement-batch', settlementBatchRouter);
+
+// ── Public Status Page & Uptime History API (PLT10 / #1031) ─────────────────
+router.use('/status', statusRouter);

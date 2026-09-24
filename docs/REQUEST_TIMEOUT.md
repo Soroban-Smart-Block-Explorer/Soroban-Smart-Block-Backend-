@@ -126,6 +126,8 @@ Custom routes are checked first, so they take precedence over built-in patterns.
 | `/api/v1/contracts` | List contracts, contract detail, register ABI |
 | `/api/v1/wallets/:addr/transactions` | Wallet transaction history |
 | `/api/v1/wallets/:addr/events` | Wallet event history |
+| `/api/v1/wallets/:addr/history` | Unified Soroban + classic history |
+| `/api/v1/wallets/:addr/journey` | Unified chronological journey (txs, events, votes, token changes) |
 | `/api/v1/tokens` | Token list, detail, transfer history |
 | `/api/graphql` | GraphQL queries |
 | `/api/billing` | Billing-related endpoints |
