@@ -20,7 +20,7 @@ const paginationSchema = z.object({
 
 /**
  * @swagger
- * /api/v1/authorizations:
+ * /authorizations:
  *   get:
  *     summary: List session authorizations
  *     description: Returns paginated session authorizations with expiry countdown and active/expired status.
@@ -109,7 +109,7 @@ authorizationRouter.get(
 
 /**
  * @swagger
- * /api/v1/authorizations/dashboard:
+ * /authorizations/dashboard:
  *   get:
  *     summary: Authorization expiry dashboard
  *     description: Returns the top 50 active authorizations with block countdown to expiry.
@@ -160,7 +160,7 @@ authorizationRouter.get(
 
 /**
  * @swagger
- * /api/v1/authorizations/{id}:
+ * /authorizations/{id}:
  *   get:
  *     summary: Get a single authorization by ID
  *     tags: [Authorizations]

@@ -4,11 +4,12 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 vi.mock('../../src/db', () => {
   const findMany = vi.fn();
   return {
-    prisma: { contractDependency: { findMany } },
+    prismaRead: { contractDependency: { findMany } },
+    prismaWrite: { contractDependency: { findMany } },
   };
 });
 
-import { prisma } from '../../src/db';
+import { prismaRead as prisma } from '../../src/db';
 const findMany = (prisma.contractDependency as { findMany: ReturnType<typeof vi.fn> }).findMany;
 
 import { traverseUpstream, traverseDownstream } from '../../src/indexer/graph-traversal-db';

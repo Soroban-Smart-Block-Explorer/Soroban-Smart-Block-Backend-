@@ -158,7 +158,15 @@ export function errorHandler(err: Error, req: Request, res: Response, _next: Nex
 
   const errorObj: any = {
     code,
-    message: err.message || 'Internal Server Error',
+    // In production, only expose messages from known AppError instances.
+    // Raw err.message can contain SQL queries, file paths, or internal stack
+    // details that help attackers fingerprint the stack. (#891)
+    message:
+      config.nodeEnv !== 'production' || err instanceof AppError
+        ? err.message || 'Internal Server Error'
+        : statusCode < 500
+          ? err.message || 'Bad request'
+          : 'Internal Server Error',
   };
 
   if (details) {
@@ -230,6 +238,11 @@ export function errorHandler(err: Error, req: Request, res: Response, _next: Nex
   });
 
   // Send response
+  // Always echo the correlation ID as a header so clients can correlate
+  // error responses with logs even if they only read headers. (#891)
+  if (!res.headersSent) {
+    res.setHeader('X-Request-Id', requestId);
+  }
   res.status(statusCode).json(responseBody);
 } // <--- Closes the errorHandler function properly
 

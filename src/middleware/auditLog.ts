@@ -48,27 +48,40 @@ export function auditLogMiddleware(req: Request, res: Response, next: NextFuncti
 
     const endpoint = req.path.replace(/\/[0-9a-f-]{8,}/gi, '/:id').replace(/\/\d+/g, '/:id');
 
-    prismaWrite.apiAuditLog
-      .create({
-        data: {
-          id: randomUUID(),
-          apiKeyId: keyCtx?.id ?? null,
-          keyName: keyCtx?.keyName ?? null,
-          tier,
-          ip,
-          method: req.method,
-          endpoint,
-          statusCode: res.statusCode,
-          responseTimeMs,
-          rateLimitRemaining: rl?.remaining ?? null,
-          rateLimitLimit: rl?.limit ?? null,
-          userAgent: req.headers['user-agent'] ?? null,
-          requestId,
-          isRateLimited: res.statusCode === 429,
-          month,
-        },
-      })
-      .catch((err: unknown) => logger.warn(`[audit-log] Failed to persist: ${String(err)}`));
+    // Audit logging is best-effort by design: it runs after the response is
+    // sent and must never crash the process or surface as an unhandled
+    // rejection. Guard the access so a missing/partial client (e.g. a test
+    // double that only stubs prismaRead) degrades to a warn log.
+    try {
+      const auditModel = prismaWrite?.apiAuditLog;
+      if (!auditModel?.create) {
+        logger.warn('[audit-log] Skipped: audit client unavailable');
+        return;
+      }
+      auditModel
+        .create({
+          data: {
+            id: randomUUID(),
+            apiKeyId: keyCtx?.id ?? null,
+            keyName: keyCtx?.keyName ?? null,
+            tier,
+            ip,
+            method: req.method,
+            endpoint,
+            statusCode: res.statusCode,
+            responseTimeMs,
+            rateLimitRemaining: rl?.remaining ?? null,
+            rateLimitLimit: rl?.limit ?? null,
+            userAgent: req.headers['user-agent'] ?? null,
+            requestId,
+            isRateLimited: res.statusCode === 429,
+            month,
+          },
+        })
+        .catch((err: unknown) => logger.warn(`[audit-log] Failed to persist: ${String(err)}`));
+    } catch (err) {
+      logger.warn(`[audit-log] Failed to persist: ${String(err)}`);
+    }
   });
 
   next();

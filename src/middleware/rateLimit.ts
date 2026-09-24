@@ -4,6 +4,7 @@ import { NextFunction, Request, Response } from 'express';
 import { config } from '../config';
 import { prismaRead } from '../db';
 import { logger } from '../logger';
+import { buildCacheKey } from '../cache';
 import { TIER_CONFIG } from '../auth/rbac';
 import {
   checkTokenBucket,
@@ -11,6 +12,30 @@ import {
   setRateLimitRedisClient,
   TokenBucketResult,
 } from './tokenBucket';
+
+/** Standard rate-limit response headers (RFC 6585 + tier policy headers). */
+export type RateLimitHeaderName =
+  | 'X-RateLimit-Limit'
+  | 'X-RateLimit-Remaining'
+  | 'X-RateLimit-Reset'
+  | 'X-RateLimit-Tier'
+  | 'X-RateLimit-Policy'
+  | 'X-RateLimit-Warn'
+  | 'X-RateLimit-Predicted'
+  | 'Retry-After';
+
+/**
+ * Apply rate-limit headers to a response, skipping undefined/empty values so
+ * caller code can pass conditional headers (e.g. only on 429s) uniformly.
+ */
+export function setRateLimitHeaders(
+  res: Response,
+  headers: Partial<Record<RateLimitHeaderName, string | undefined>>,
+): void {
+  for (const [name, value] of Object.entries(headers)) {
+    if (value !== undefined && value !== '') res.setHeader(name, value);
+  }
+}
 
 /**
  * #715 — API keys must never be stored as plaintext in memory.
@@ -158,11 +183,16 @@ function applyAdaptiveThrottle(
 function getRequestBucketKey(req: Request, tier: TierName, userIdentifier?: string): string {
   const endpoint = req.path || req.originalUrl || '/';
   const keySource = userIdentifier ?? req.ip ?? 'unknown';
-  return `${tier}:${keySource}:${endpoint}`;
+  // keySource (an API-key identifier or client IP/header value) and endpoint
+  // are both attacker-influenced; buildCacheKey escapes each segment
+  // independently (#894) so one client can't forge a bucket key that
+  // collides with a different client's or a different endpoint's bucket.
+  return buildCacheKey(tier, keySource, endpoint);
 }
 
 async function getUserOverride(identifier: string, endpoint: string): Promise<TierConfig | null> {
-  const cacheKey = `override:${identifier}:${endpoint}`;
+  // See getRequestBucketKey above — same segment-collision concern (#894).
+  const cacheKey = buildCacheKey('override', identifier, endpoint);
   const cached = overrideCache.get(cacheKey);
   if (cached && cached.expiresAt > Date.now()) return cached.config;
 

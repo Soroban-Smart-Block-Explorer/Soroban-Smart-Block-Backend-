@@ -10,12 +10,13 @@ import { createServer, Server } from 'http';
 import type { Express } from 'express';
 
 import { logger } from './logger';
-import { attachWebSocketServer } from './ws/eventBroadcaster';
+import { attachWebSocketServer } from './ws/websocketServer';
 import { attachPrivacyWebSocket as attachPrivacyWebSocketReal } from './ws/privacyBroadcaster';
 import { attachComposabilityWebSocket as attachComposabilityWebSocketImpl } from './ws/composabilityBroadcaster';
 import { attachArbitrageWebSocket as attachArbitrageWebSocketImpl } from './ws/arbitrageBroadcaster';
 import { attachMevPredictWebSocket } from './ws/mevPredictBroadcaster';
 import { attachAuditWebSocket } from './ws/auditBroadcaster';
+import { featureFlags } from './feature-flags';
 
 export interface HttpServerHandle {
   httpServer: Server;
@@ -26,41 +27,45 @@ export function createHttpServer(app: Express, disabledServices: string[]): Http
   const httpServer: Server = createServer(app);
   const wssRef = attachWebSocketServer(httpServer);
 
-  const enablePrivacyWs = process.env.ENABLE_PRIVACY_WS === 'true';
-  const enableComposabilityWs = process.env.ENABLE_COMPOSABILITY_WS === 'true';
-  const enableArbitrageWs = process.env.ENABLE_ARBITRAGE_WS === 'true';
-  const enableMevPredictWs = process.env.ENABLE_MEV_PREDICT_WS === 'true';
-
-  if (enablePrivacyWs) {
+  if (featureFlags.shouldStartSync('privacyWs')) {
     attachPrivacyWebSocketReal(httpServer);
     logger.info('Privacy WebSocket attached');
+  } else if (!featureFlags.isEnabledSync('privacyWs')) {
+    disabledServices.push('privacyWS (flag off)');
+    logger.debug('Privacy WebSocket disabled (feature flag privacyWs off)');
   } else {
-    disabledServices.push('privacyWS');
-    logger.debug('Privacy WebSocket disabled (ENABLE_PRIVACY_WS not set)');
+    disabledServices.push('privacyWS (schema unavailable)');
+    logger.debug('Privacy WebSocket disabled (required tables missing)');
   }
 
-  if (enableComposabilityWs) {
+  if (featureFlags.shouldStartSync('composabilityWs')) {
     try {
       attachComposabilityWebSocketImpl(httpServer);
       logger.info('Composability WebSocket attached');
     } catch (err) {
       logger.warn('Composability WebSocket attachment failed', { error: String(err) });
     }
+  } else if (!featureFlags.isEnabledSync('composabilityWs')) {
+    disabledServices.push('composabilityWS (flag off)');
+    logger.debug('Composability WebSocket disabled (feature flag composabilityWs off)');
   } else {
-    disabledServices.push('composabilityWS');
-    logger.debug('Composability WebSocket disabled (ENABLE_COMPOSABILITY_WS not set)');
+    disabledServices.push('composabilityWS (schema unavailable)');
+    logger.debug('Composability WebSocket disabled (required tables missing)');
   }
 
-  if (enableArbitrageWs) {
+  if (featureFlags.shouldStartSync('arbitrageWs')) {
     try {
       attachArbitrageWebSocketImpl(httpServer);
       logger.info('Arbitrage WebSocket attached');
     } catch (err) {
       logger.warn('Arbitrage WebSocket attachment failed', { error: String(err) });
     }
+  } else if (!featureFlags.isEnabledSync('arbitrageWs')) {
+    disabledServices.push('arbitrageWS (flag off)');
+    logger.debug('Arbitrage WebSocket disabled (feature flag arbitrageWs off)');
   } else {
-    disabledServices.push('arbitrageWS');
-    logger.debug('Arbitrage WebSocket disabled (ENABLE_ARBITRAGE_WS not set)');
+    disabledServices.push('arbitrageWS (schema unavailable)');
+    logger.debug('Arbitrage WebSocket disabled (required tables missing)');
   }
 
   if (enableMevPredictWs) {

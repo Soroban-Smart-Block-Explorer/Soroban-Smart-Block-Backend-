@@ -427,11 +427,12 @@ npm run test:coverage    # Generate coverage report
 
 **Code quality:**
 ```bash
-npm run lint             # ESLint check
+npm run lint             # ESLint — fails on errors and new warnings (ratchet)
 npm run lint:fix         # ESLint fix
 npm run format           # Prettier check
 npm run format:fix       # Prettier fix
-npm run build:strict     # TypeScript strict check
+npm run build            # Emit dist/ + dist-esm/ and verify runtime artifacts
+npm run typecheck        # tsc --noEmit (zero-tolerance type check)
 ```
 
 **Database operations:**
@@ -638,6 +639,22 @@ curl -X POST http://localhost:3000/api/v1/analytics/query \
 ```
 
 See [ANALYTICS_ARCHITECTURE.md](./ANALYTICS_ARCHITECTURE.md) for full architecture.
+
+## Code Quality & CI Gates
+
+Every pull request is gated by the CI pipeline (`.github/workflows/ci.yml`), which runs:
+
+1. **Build** — `npm run build` emits `dist/` + `dist-esm/` and fails if runtime artifacts are missing.
+2. **Migrations** — `prisma migrate deploy` is executed against a fresh PostgreSQL to prove a new clone can boot (this is what the docker-compose `migrate-*` init containers run).
+3. **Lint** — `npm run lint` fails on any ESLint error; warning growth is blocked by a ratchet (`scripts/lint-budget.ts`).
+4. **Type-check** — `npm run typecheck` runs `tsc --noEmit`; error growth is blocked by a ratchet (`scripts/typecheck-budget.ts`, currently 1059 pre-existing errors being paid down toward 0).
+5. **Format** — `npm run format` enforces Prettier.
+6. **Tests** — `npm run test:full` runs the entire Vitest suite (215 files, guarded against silent omission by `scripts/verify-test-coverage.ts`) plus coverage with enforced thresholds.
+7. **Security** — `npm run audit:ci` (npm audit with dated, reviewed exceptions) and GitHub CodeQL.
+
+## Migrations
+
+`prisma/migrations/` contains a **single clean baseline migration** generated from the current schema. The earlier 54-migration history was internally broken (several migrations referenced tables that no migration created), so `prisma migrate deploy` failed on every fresh database and `docker compose up` could never start. The history was squashed into `20260907000000_clean_baseline/`. If you had applied the old history to a development database, reset it (`prisma migrate reset`) before continuing.
 
 ## Documentation
 

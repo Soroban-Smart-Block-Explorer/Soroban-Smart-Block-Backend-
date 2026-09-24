@@ -179,12 +179,3 @@ export function startGasAnalyticsScheduler(options: GasAnalyticsSchedulerOptions
 export function stopGasAnalyticsScheduler(): void {
   gasAnalyticsProcessor.stopScheduler();
 }
-
-/**
- * Stop the gas analytics scheduler.
- */
-export function stopGasAnalyticsScheduler(): void {
-  if (gasAnalyticsJobId) {
-    scheduler.stop(gasAnalyticsJobId);
-  }
-}

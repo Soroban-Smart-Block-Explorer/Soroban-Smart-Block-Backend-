@@ -1,5 +1,6 @@
 import swaggerJsdoc from 'swagger-jsdoc';
 import path from 'path';
+import fs from 'fs';
 
 const options: swaggerJsdoc.Options = {
   definition: {
@@ -9,9 +10,6 @@ const options: swaggerJsdoc.Options = {
       version: '1.0.0',
       description: 'Human-readable Soroban contract explorer. Decodes raw XDR into plain English.',
     },
-    // TODO(#251): `servers` base is already /api/v1, but route @swagger paths
-    // also include /api/v1 (matching alerts.ts), so rendered URLs are duplicated.
-    // Kept consistent for now — raise with maintainers before changing either side.
     servers: [{ url: '/api/v1', description: 'API v1' }],
     tags: [
       { name: 'Transactions', description: 'Soroban transaction queries and decoding' },
@@ -2383,4 +2381,82 @@ const options: swaggerJsdoc.Options = {
   ],
 };
 
-export const swaggerSpec = swaggerJsdoc(options);
+/** Expand simple directory glob patterns (e.g. `<dir>/*.ts`) without a glob dep. */
+function expandFilePatterns(patterns: string[]): string[] {
+  const files: string[] = [];
+  for (const pattern of patterns) {
+    const dir = path.dirname(pattern);
+    const suffix = path.basename(pattern).replace('*', '');
+    let names: string[] = [];
+    try {
+      names = fs.readdirSync(dir);
+    } catch {
+      continue;
+    }
+    for (const name of names) {
+      if (suffix === '' || name.endsWith(suffix)) files.push(path.join(dir, name));
+    }
+  }
+  return files;
+}
+
+/* eslint-disable @typescript-eslint/no-explicit-any -- OpenAPI docs are loosely-shaped by design. */
+
+/** Deep-merge a partial OpenAPI document into the accumulator. */
+function mergeSpec(target: Record<string, any>, partial: Record<string, any>): void {
+  for (const key of ['paths', 'webhooks']) {
+    const incoming = partial[key];
+    if (!incoming || typeof incoming !== 'object') continue;
+    target[key] = target[key] ?? {};
+    for (const [name, value] of Object.entries(incoming)) {
+      target[key][name] = { ...(target[key][name] ?? {}), ...(value as object) };
+    }
+  }
+  if (partial.components?.schemas && typeof partial.components.schemas === 'object') {
+    target.components = target.components ?? {};
+    target.components.schemas = target.components.schemas ?? {};
+    for (const [name, value] of Object.entries(partial.components.schemas)) {
+      target.components.schemas[name] = value;
+    }
+  }
+}
+
+/**
+ * Build the OpenAPI document.
+ *
+ * A single malformed `@swagger` YAML block in any route file must never take
+ * down API docs — or the whole server (swaggerSpec is imported at boot). We
+ * first try the fast whole-tree parse; if that throws, we isolate the bad
+ * files by parsing per file and merge everything that still parses.
+ */
+function buildSwaggerSpec(): Record<string, any> {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- see file-level disable above
+  const base = JSON.parse(JSON.stringify(options.definition)) as Record<string, any>;
+  base.paths = {};
+
+  try {
+    const spec = swaggerJsdoc(options) as Record<string, any>;
+    return { ...base, ...spec, paths: spec.paths ?? {} };
+  } catch (wholeErr) {
+    const stderr = process.stderr;
+    stderr.write(
+      `[swagger] Whole-tree spec parse failed (${(wholeErr as Error).message}); isolating per file…\n`,
+    );
+    const skipped: string[] = [];
+    for (const file of expandFilePatterns(options.apis ?? [])) {
+      try {
+        const partial = swaggerJsdoc({ ...options, apis: [file] }) as Record<string, any>;
+        mergeSpec(base, partial);
+      } catch (err) {
+        skipped.push(`${path.basename(file)}: ${(err as Error).message}`);
+      }
+    }
+    if (skipped.length > 0) {
+      stderr.write(`[swagger] Skipped ${skipped.length} file(s) with malformed docs:\n`);
+      for (const line of skipped) stderr.write(`  - ${line}\n`);
+    }
+    return base;
+  }
+}
+
+export const swaggerSpec = buildSwaggerSpec();

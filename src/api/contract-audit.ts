@@ -24,7 +24,7 @@
 import { Router, Request, Response } from 'express';
 import { z } from 'zod';
 import { prismaRead, prismaWrite } from '../db';
-import { cacheGet, cacheSet } from '../cache';
+import { cacheGet, cacheSet, buildCacheKey } from '../cache';
 import { logger } from '../logger';
 import { validateAddressParam } from '../middleware/sanitize';
 import { generateBadgeSvg, type BadgeStyle } from './audit-badge';
@@ -34,6 +34,8 @@ import { contractAnchorRouter } from './audit-anchor';
 import { runFormalVerification } from '../lib/formal-verifier';
 import { benchmarkContract } from '../lib/audit-benchmark';
 import { generateRemediation } from '../lib/audit-remediation';
+import { submitExternalAudit } from '../lib/auditor-service';
+import { asyncHandler } from '../middleware/asyncHandler';
 
 export const contractAuditRouter = Router({ mergeParams: true });
 
@@ -705,7 +707,10 @@ contractAuditRouter.get(
     try {
       const { address } = req.params;
       const { style, compact } = badgeStyleSchema.parse(req.query);
-      const cacheKey = `badge:${address}:${style}:${compact}`;
+      // buildCacheKey escapes each segment independently (#894) to prevent
+      // segment-boundary collisions between different (address, style,
+      // compact) combinations.
+      const cacheKey = buildCacheKey('badge', address, style, compact);
 
       const cached = await cacheGet<string>(cacheKey);
       if (cached) {
@@ -779,7 +784,10 @@ contractAuditRouter.get(
     try {
       const { address } = req.params;
       const { days, grain } = scoreHistorySchema.parse(req.query);
-      const cacheKey = `score-history:${address}:${days}:${grain}`;
+      // buildCacheKey escapes each segment independently (#894) to prevent
+      // segment-boundary collisions between different (address, days,
+      // grain) combinations.
+      const cacheKey = buildCacheKey('score-history', address, days, grain);
 
       const cached = await cacheGet(cacheKey);
       if (cached) return res.json(cached);
@@ -1084,9 +1092,6 @@ contractAuditRouter.delete(
 // ═══════════════════════════════════════════════════════════════════════════
 // THIRD-PARTY AUDITOR INTEGRATION
 // ═══════════════════════════════════════════════════════════════════════════
-
-import { submitExternalAudit } from '../lib/auditor-service';
-import { asyncHandler } from '../middleware/asyncHandler';
 
 // ── POST /:address/audit/external — submit external audit ─────────────────────
 //

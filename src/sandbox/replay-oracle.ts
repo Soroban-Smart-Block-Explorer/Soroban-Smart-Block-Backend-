@@ -86,7 +86,7 @@ export async function replayMainnet(txHash: string): Promise<ReplayResult> {
     if (UNSUPPORTED_HOST_FUNCTIONS.has(hostFn)) {
       steps.push({
         opIndex: op.index,
-        hostFunction,
+        hostFunction: hostFn,
         args: op.args,
         result: null,
         gasUsed: 0,
@@ -96,7 +96,7 @@ export async function replayMainnet(txHash: string): Promise<ReplayResult> {
 
     steps.push({
       opIndex: op.index,
-      hostFunction,
+      hostFunction: hostFn,
       args: op.args,
       result: { simulated: true },
       gasUsed: 100,

@@ -8,6 +8,9 @@ export const fuzzingRouter = Router({ mergeParams: true });
 const fuzzStartSchema = z.object({
   maxCases: z.number().int().min(1).max(500).default(50),
   targetFunctions: z.array(z.string()).optional(),
+  // #921 — persist confirmed findings as runnable regression tests in
+  // tests/fuzzing/regressions/ when true.
+  persist: z.boolean().default(false),
   async: z.boolean().default(true),
 });
 
@@ -22,10 +25,10 @@ fuzzingRouter.post(
     const parsed = fuzzStartSchema.safeParse(req.body);
     if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
 
-    const { maxCases, targetFunctions, async: isAsync } = parsed.data;
+    const { maxCases, targetFunctions, persist, async: isAsync } = parsed.data;
 
     if (isAsync) {
-      const jobId = startFuzzJob(address, { maxCases, targetFunctions });
+      const jobId = startFuzzJob(address, { maxCases, targetFunctions, persist });
       return res.status(202).json({
         jobId,
         status: 'running',
@@ -35,7 +38,7 @@ fuzzingRouter.post(
 
     // Synchronous mode
     try {
-      const report = await fuzzContract(address, { maxCases, targetFunctions });
+      const report = await fuzzContract(address, { maxCases, targetFunctions, persist });
       return res.json(report);
     } catch (e) {
       return res.status(500).json({ error: String(e) });
@@ -47,19 +50,22 @@ fuzzingRouter.post(
  * GET /contracts/:address/fuzz/report/:jobId
  * Get fuzzing report for a specific job
  */
-fuzzingRouter.get('/report/:jobId', (req: Request, res: Response) => {
-  const { jobId } = req.params;
-  const job = getFuzzJob(jobId);
-  if (!job) return res.status(404).json({ error: 'Fuzz job not found' });
+fuzzingRouter.get(
+  '/report/:jobId',
+  asyncHandler(async (req: Request, res: Response) => {
+    const { jobId } = req.params;
+    const job = await getFuzzJob(jobId);
+    if (!job) return res.status(404).json({ error: 'Fuzz job not found' });
 
-  if (job.status === 'running') {
-    return res.status(202).json({ jobId, status: 'running', startedAt: job.startedAt });
-  }
-  if (job.status === 'failed') {
-    return res.status(500).json({ jobId, status: 'failed', error: job.error });
-  }
-  return res.json({ jobId, status: 'completed', report: job.report });
-});
+    if (job.status === 'running') {
+      return res.status(202).json({ jobId, status: 'running', startedAt: job.startedAt });
+    }
+    if (job.status === 'failed') {
+      return res.status(500).json({ jobId, status: 'failed', error: job.error });
+    }
+    return res.json({ jobId, status: 'completed', report: job.report });
+  }),
+);
 
 /**
  * GET /contracts/:address/fuzz/report

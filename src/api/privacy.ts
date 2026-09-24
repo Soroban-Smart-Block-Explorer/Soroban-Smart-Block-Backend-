@@ -121,7 +121,7 @@ const protocolEnum = z.enum([
 
 /**
  * @swagger
- * /api/v1/privacy/overview:
+ * /privacy/overview:
  *   get:
  *     summary: Overall privacy landscape
  *     description: Totals, 24h activity, per-protocol counts, and average scores across all privacy transactions.
@@ -222,7 +222,7 @@ privacyRouter.get(
 
 /**
  * @swagger
- * /api/v1/privacy/protocols:
+ * /privacy/protocols:
  *   get:
  *     summary: List all supported privacy protocols
  *     description: Static protocol descriptors enriched with a live transaction count for each.
@@ -298,7 +298,7 @@ privacyRouter.get(
 
 /**
  * @swagger
- * /api/v1/privacy/protocols/{protocol}:
+ * /privacy/protocols/{protocol}:
  *   get:
  *     summary: Analytics for a single privacy protocol
  *     tags: [Privacy]
@@ -429,7 +429,7 @@ privacyRouter.get(
 
 /**
  * @swagger
- * /api/v1/privacy/transactions:
+ * /privacy/transactions:
  *   get:
  *     summary: List privacy transactions (offset-paginated)
  *     tags: [Privacy]
@@ -546,7 +546,7 @@ privacyRouter.get(
 
 /**
  * @swagger
- * /api/v1/privacy/transactions/{txHash}:
+ * /privacy/transactions/{txHash}:
  *   get:
  *     summary: Detailed privacy analysis for one transaction
  *     description: The privacy record plus the base transaction, de-anonymization findings, a compliance report, and protocol descriptors.
@@ -643,7 +643,7 @@ privacyRouter.get(
 
 /**
  * @swagger
- * /api/v1/privacy/history:
+ * /privacy/history:
  *   get:
  *     summary: Privacy adoption trend over time
  *     tags: [Privacy]
@@ -696,7 +696,7 @@ privacyRouter.get(
 
 /**
  * @swagger
- * /api/v1/privacy/history/{protocol}:
+ * /privacy/history/{protocol}:
  *   get:
  *     summary: Trend for a single privacy protocol
  *     tags: [Privacy]
@@ -755,7 +755,7 @@ privacyRouter.get(
 
 /**
  * @swagger
- * /api/v1/privacy/leaderboard:
+ * /privacy/leaderboard:
  *   get:
  *     summary: Top privacy-using contracts
  *     tags: [Privacy]
@@ -848,7 +848,7 @@ privacyRouter.get(
 
 /**
  * @swagger
- * /api/v1/privacy/leaderboard/users:
+ * /privacy/leaderboard/users:
  *   get:
  *     summary: Top privacy-using addresses
  *     tags: [Privacy]
@@ -934,7 +934,7 @@ privacyRouter.get(
 
 /**
  * @swagger
- * /api/v1/privacy/anonymity-sets:
+ * /privacy/anonymity-sets:
  *   get:
  *     summary: Current anonymity set sizes by protocol
  *     description: Latest snapshot per protocol, plus current max and average set sizes grouped by protocol combination.
@@ -1005,7 +1005,7 @@ privacyRouter.get(
 
 /**
  * @swagger
- * /api/v1/privacy/anonymity-sets/{protocol}/history:
+ * /privacy/anonymity-sets/{protocol}/history:
  *   get:
  *     summary: Anonymity set size history for a protocol
  *     tags: [Privacy]
@@ -1058,7 +1058,7 @@ privacyRouter.get(
 
 /**
  * @swagger
- * /api/v1/privacy/scores/transactions:
+ * /privacy/scores/transactions:
  *   get:
  *     summary: Privacy transactions ranked by score
  *     tags: [Privacy]
@@ -1129,7 +1129,7 @@ privacyRouter.get(
 
 /**
  * @swagger
- * /api/v1/privacy/scores/contracts:
+ * /privacy/scores/contracts:
  *   get:
  *     summary: Contracts ranked by average privacy score
  *     tags: [Privacy]
@@ -1219,7 +1219,7 @@ privacyRouter.get(
 
 /**
  * @swagger
- * /api/v1/privacy/compliance/flagged:
+ * /privacy/compliance/flagged:
  *   get:
  *     summary: List flagged compliance reports
  *     tags: [Privacy]
@@ -1279,7 +1279,7 @@ privacyRouter.get(
 
 /**
  * @swagger
- * /api/v1/privacy/compliance/dashboard:
+ * /privacy/compliance/dashboard:
  *   get:
  *     summary: Compliance overview
  *     description: Report totals, flag rate, high-risk count, label breakdown, and recent flags.
@@ -1365,7 +1365,7 @@ privacyRouter.get(
 
 /**
  * @swagger
- * /api/v1/privacy/compliance/reports/periodic:
+ * /privacy/compliance/reports/periodic:
  *   get:
  *     summary: Periodic compliance report summary
  *     tags: [Privacy]
@@ -1434,7 +1434,7 @@ privacyRouter.get(
 
 /**
  * @swagger
- * /api/v1/privacy/compliance/report/{address}/export:
+ * /privacy/compliance/report/{address}/export:
  *   get:
  *     summary: Export a compliance report as a file
  *     description: Returns the report as a downloadable JSON or plain-text attachment.
@@ -1519,7 +1519,7 @@ privacyRouter.get(
 
 /**
  * @swagger
- * /api/v1/privacy/compliance/{address}:
+ * /privacy/compliance/{address}:
  *   get:
  *     summary: Get (or generate) a compliance report for an address
  *     description: >-
@@ -1620,7 +1620,7 @@ privacyRouter.get(
 
 /**
  * @swagger
- * /api/v1/privacy/de-anonymization/findings:
+ * /privacy/de-anonymization/findings:
  *   get:
  *     summary: List de-anonymization findings
  *     tags: [Privacy]
@@ -1699,7 +1699,7 @@ privacyRouter.get(
 
 /**
  * @swagger
- * /api/v1/privacy/de-anonymization/clusters:
+ * /privacy/de-anonymization/clusters:
  *   get:
  *     summary: Address clusters from common-input heuristics
  *     description: Groups addresses likely controlled by the same entity based on shared transaction inputs.
@@ -1752,7 +1752,7 @@ privacyRouter.get(
 
 /**
  * @swagger
- * /api/v1/privacy/de-anonymization/timing/{address}:
+ * /privacy/de-anonymization/timing/{address}:
  *   get:
  *     summary: Timing-correlation analysis for an address
  *     tags: [Privacy]
@@ -1818,7 +1818,7 @@ privacyRouter.get(
 
 /**
  * @swagger
- * /api/v1/privacy/de-anonymization/amount/{address}:
+ * /privacy/de-anonymization/amount/{address}:
  *   get:
  *     summary: Amount-correlation analysis for an address
  *     description: Matches private transaction amounts against public amounts to suggest linkage.
@@ -1878,7 +1878,7 @@ privacyRouter.get(
 
 /**
  * @swagger
- * /api/v1/privacy/de-anonymization/taint/{address}:
+ * /privacy/de-anonymization/taint/{address}:
  *   get:
  *     summary: Taint-tracing analysis for an address
  *     description: Traces value flow through privacy protocols up to the requested depth.
@@ -1947,7 +1947,7 @@ privacyRouter.get(
 
 /**
  * @swagger
- * /api/v1/privacy/anonymity-sets/effective:
+ * /privacy/anonymity-sets/effective:
  *   get:
  *     summary: Effective vs theoretical anonymity sets
  *     description: Compares the theoretical anonymity set size against the effective size after de-anonymization factors.
@@ -2000,7 +2000,7 @@ privacyRouter.get(
 
 /**
  * @swagger
- * /api/v1/privacy/compliance/flag:
+ * /privacy/compliance/flag:
  *   post:
  *     summary: Flag an address for compliance review
  *     description: Creates a compliance report for the address if none exists, otherwise updates the existing one.
@@ -2092,7 +2092,7 @@ privacyRouter.post(
 
 /**
  * @swagger
- * /api/v1/privacy/compliance/unflag/{address}:
+ * /privacy/compliance/unflag/{address}:
  *   post:
  *     summary: Remove the compliance flag from an address
  *     tags: [Privacy]
@@ -2145,7 +2145,7 @@ privacyRouter.post(
 
 /**
  * @swagger
- * /api/v1/privacy/research/graph:
+ * /privacy/research/graph:
  *   post:
  *     summary: Build a transaction graph for a set of addresses
  *     description: >-
@@ -2294,7 +2294,7 @@ privacyRouter.post(
 
 /**
  * @swagger
- * /api/v1/privacy/research/analyze-cluster:
+ * /privacy/research/analyze-cluster:
  *   post:
  *     summary: Analyze a cluster of addresses
  *     description: Aggregates transaction counts, privacy rate, shared protocols, and risk across the given addresses.
@@ -2361,7 +2361,7 @@ privacyRouter.post(
 
 /**
  * @swagger
- * /api/v1/privacy/research/datasets:
+ * /privacy/research/datasets:
  *   get:
  *     summary: List downloadable privacy research datasets
  *     tags: [Privacy]
@@ -2469,7 +2469,7 @@ privacyRouter.get(
 
 /**
  * @swagger
- * /api/v1/privacy/registry:
+ * /privacy/registry:
  *   get:
  *     summary: Privacy protocol registry
  *     description: The supported protocols with verification status and known contracts.
@@ -2540,7 +2540,7 @@ privacyRouter.get(
 
 /**
  * @swagger
- * /api/v1/privacy/compliance/screen:
+ * /privacy/compliance/screen:
  *   post:
  *     summary: Screen an address for compliance risk
  *     description: Computes a risk level and flags from the address recent privacy transactions. Does not persist a report.
@@ -2651,7 +2651,7 @@ privacyRouter.post(
 
 /**
  * @swagger
- * /api/v1/privacy/ml/predict-anonymity:
+ * /privacy/ml/predict-anonymity:
  *   get:
  *     summary: Predict anonymity set trend
  *     description: Simple projection of anonymity set size from recent transactions.
@@ -2737,7 +2737,7 @@ privacyRouter.get(
 
 /**
  * @swagger
- * /api/v1/privacy/cross-protocol/{address}:
+ * /privacy/cross-protocol/{address}:
  *   get:
  *     summary: Cross-protocol privacy profile for an address
  *     description: Per-protocol usage plus aggregate privacy and risk scores for the address.
@@ -2862,7 +2862,7 @@ privacyRouter.get(
 
 /**
  * @swagger
- * /api/v1/privacy/zk/verifiers:
+ * /privacy/zk/verifiers:
  *   get:
  *     summary: List ZK verifier contracts
  *     description: Contracts seen in zk-SNARK or zk-STARK transactions, with usage stats.
@@ -2957,7 +2957,7 @@ privacyRouter.get(
 
 /**
  * @swagger
- * /api/v1/privacy/zk/verifiers/{address}:
+ * /privacy/zk/verifiers/{address}:
  *   get:
  *     summary: ZK verifier detail for a contract
  *     tags: [Privacy]
@@ -3046,7 +3046,7 @@ privacyRouter.get(
 
 /**
  * @swagger
- * /api/v1/privacy/zk/proofs:
+ * /privacy/zk/proofs:
  *   get:
  *     summary: List zero-knowledge proof transactions
  *     description: Privacy transactions tagged with zk-SNARK, zk-STARK, or Bulletproof protocols.
@@ -3113,7 +3113,7 @@ privacyRouter.get(
 
 /**
  * @swagger
- * /api/v1/privacy/zk/benchmarks:
+ * /privacy/zk/benchmarks:
  *   get:
  *     summary: ZK proof system benchmarks
  *     description: Sample counts and average privacy scores per ZK proving system.
@@ -3206,7 +3206,7 @@ privacyRouter.get(
 
 /**
  * @swagger
- * /api/v1/privacy/defi:
+ * /privacy/defi:
  *   get:
  *     summary: DeFi privacy adoption
  *     description: Privacy transaction share across token (DeFi) contracts over the period.
@@ -3296,7 +3296,7 @@ privacyRouter.get(
 
 /**
  * @swagger
- * /api/v1/privacy/bridges:
+ * /privacy/bridges:
  *   get:
  *     summary: Cross-chain bridge privacy activity
  *     description: Recent privacy transactions treated as bridge activity over the period.
@@ -3392,7 +3392,7 @@ privacyRouter.get(
 
 /**
  * @swagger
- * /api/v1/privacy/detect:
+ * /privacy/detect:
  *   post:
  *     summary: Detect privacy techniques and score a parameter set
  *     description: Runs the detector and scorer over the supplied function call shape without persisting anything.

@@ -63,7 +63,7 @@ export class DexAnalyticsProcessor {
       const inIsA = s.tokenIn === tokenA;
       const price = inIsA ? priceA : priceB;
       if (price == null) continue;
-      total += toHuman(BigInt(s.amountIn), inIsA ? decA : decB) * price;
+      total += toHuman(BigInt(s.amountIn.toString()), inIsA ? decA : decB) * price;
     }
     return total;
   }
@@ -99,9 +99,14 @@ export class DexAnalyticsProcessor {
     const priceA = priceARow?.priceUsd ?? null;
     const priceB = priceBRow?.priceUsd ?? null;
 
-    const reserveAHuman = toHuman(BigInt(pool.reserveA), pool.tokenADecimals);
-    const reserveBHuman = toHuman(BigInt(pool.reserveB), pool.tokenBDecimals);
-    const tvl = tvlUsd(reserveAHuman, priceA, reserveBHuman, priceB);
+    const reserveAHuman = toHuman(BigInt(pool.reserveA.toString()), pool.tokenADecimals);
+    const reserveBHuman = toHuman(BigInt(pool.reserveB.toString()), pool.tokenBDecimals);
+    const tvl = tvlUsd(
+      reserveAHuman,
+      priceA != null ? Number(priceA) : null,
+      reserveBHuman,
+      priceB != null ? Number(priceB) : null,
+    );
 
     const swaps = await this.prismaRead.poolSwap.findMany({
       where: { poolAddress, ledgerCloseTime: { gte: new Date(Date.now() - WINDOWS.d30) } },
@@ -271,14 +276,4 @@ export function scheduleDexAnalytics(): void {
  */
 export function stopDexAnalytics(): void {
   dexAnalyticsProcessor.stopScheduler();
-}
-
-/**
- * Stop the DEX analytics scheduler.
- */
-export function stopDexAnalytics(): void {
-  if (dexAnalyticsJobId) {
-    scheduler.stop(dexAnalyticsJobId);
-    dexAnalyticsJobId = null;
-  }
 }

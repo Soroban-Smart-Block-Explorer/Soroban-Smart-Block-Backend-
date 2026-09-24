@@ -11,7 +11,8 @@
     "dev:testnet": "STELLAR_NETWORK=testnet ts-node-dev --respawn --transpile-only src/index.ts",
     "dev:mainnet": "STELLAR_NETWORK=mainnet ts-node-dev --respawn --transpile-only src/index.ts",
     "dev:devnet": "STELLAR_NETWORK=devnet ts-node-dev --respawn --transpile-only src/index.ts",
-    "build": "tsc || echo 'Build completed with type errors'",
+    "build": "node scripts/build.js",
+    "typecheck": "tsc --noEmit",
     "build:strict": "tsc --noEmit",
     "start": "node dist/index.js",
     "start:testnet": "STELLAR_NETWORK=testnet node dist/index.js",
@@ -30,7 +31,7 @@
     "repair:devnet": "STELLAR_NETWORK=devnet ts-node src/indexer/repair.ts",
     "archive": "ts-node src/archival/run.ts",
     "seed": "ts-node prisma/seed.ts",
-    "test": "DATABASE_URL=postgresql://test:test@localhost:5432/test TESTNET_DATABASE_URL=postgresql://test:test@localhost:5432/test STELLAR_NETWORK=testnet vitest run tests/reentrancy-fortress.test.ts tests/api/nlq.test.ts tests/arbitrage-engine.test.ts tests/indexer/token-metadata.test.ts tests/error-handling-integration.test.ts tests/build-queue.test.ts tests/ramp-gateway.test.ts",
+    "test": "vitest run",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
     "test:ui": "vitest --ui",
@@ -42,8 +43,10 @@
     "bench:compare": "ts-node src/benchmarks/cli.ts compare",
     "bench:report": "ts-node src/benchmarks/cli.ts report",
     "postinstall": "prisma generate",
-    "lint": "eslint 'src/**/*.ts' 'tests/**/*.ts' --max-warnings 1750",
+    "lint": "ts-node scripts/lint-budget.ts --max-warnings 157",
     "lint:fix": "eslint 'src/**/*.ts' 'tests/**/*.ts' --fix",
+    "lint:budget": "ts-node scripts/lint-budget.ts --max-warnings 157",
+    "lint:budget:ci": "ts-node scripts/lint-budget.ts --max-warnings 157",
     "format": "prettier --check 'src/**/*.ts' 'tests/**/*.ts'",
     "format:fix": "prettier --write 'src/**/*.ts' 'tests/**/*.ts'",
     "prepare": "husky",
@@ -57,7 +60,12 @@
     "validate:prisma": "ts-node --transpile-only scripts/validate-prisma-references.ts",
     "migrate:impact": "ts-node --transpile-only scripts/validate-prisma-references.ts --diff",
     "typecheck:scripts": "tsc -p tsconfig.scripts.json --noEmit",
-    "test:full": "vitest run"
+    "test:full": "vitest run",
+    "test:guard": "ts-node scripts/verify-test-coverage.ts",
+    "test:exclusions": "ts-node scripts/verify-test-exclusions.ts",
+    "audit:ci": "node scripts/audit-check.js",
+    "typecheck:budget": "ts-node scripts/typecheck-budget.ts --max-errors 1012",
+    "typecheck:budget:ci": "ts-node scripts/typecheck-budget.ts --max-errors 1012"
   },
   "overrides": {
     "@libp2p/interface": "2.11.0"
@@ -66,7 +74,7 @@
     "seed": "ts-node prisma/seed.ts"
   },
   "dependencies": {
-    "@aws-sdk/client-s3": "3.600.0",
+    "@aws-sdk/client-s3": "3.1121.0",
     "@chainsafe/libp2p-gossipsub": "14.1.2",
     "@chainsafe/libp2p-noise": "16.1.5",
     "@chainsafe/libp2p-yamux": "7.0.4",
@@ -128,6 +136,7 @@
     "zod": "^3.22.4"
   },
   "optionalDependencies": {
+    "@rollup/rollup-win32-x64-msvc": "^4.62.5",
     "rate-limit-redis": "^4.2.0"
   },
   "lint-staged": {

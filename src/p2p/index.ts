@@ -1,3 +1,4 @@
+import { existsSync } from 'fs';
 import { join } from 'path';
 import { logger } from '../logger';
 import { markNotReady, markReady } from '../readiness';
@@ -43,8 +44,13 @@ const dynamicImport: (specifier: string) => Promise<unknown> = new Function(
   'return import(specifier)',
 ) as (specifier: string) => Promise<unknown>;
 
-async function loadEsmNodeFactory(): Promise<typeof import('./esm/node-factory.mjs')> {
+export async function loadEsmNodeFactory(): Promise<typeof import('./esm/node-factory.mjs')> {
   const modulePath = join(__dirname, '..', '..', 'dist-esm', 'node-factory.mjs');
+  if (!existsSync(modulePath)) {
+    const errorMsg = `[p2p] Missing P2P ESM node factory artifact at ${modulePath}. Run "npm run build" or "tsc -p tsconfig.p2p.json" to generate dist-esm/node-factory.mjs before starting with P2P_ENABLED=true.`;
+    logger.error(errorMsg);
+    throw new Error(errorMsg);
+  }
   return dynamicImport(modulePath) as Promise<typeof import('./esm/node-factory.mjs')>;
 }
 

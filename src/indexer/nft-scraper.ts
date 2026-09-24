@@ -9,10 +9,10 @@
 
 import fs from 'fs';
 import path from 'path';
-import axios from 'axios';
 import { SorobanRpc, xdr, scValToNative } from '@stellar/stellar-sdk';
 import { config } from '../config';
 import { logger } from '../logger';
+import { safeGet, SsrfBlockedError } from '../webhooks/ssrf-guard';
 
 // ─── Config ───────────────────────────────────────────────────────────────────
 
@@ -149,11 +149,9 @@ function extractUriFromLedgerEntry(xdrBase64: string): { tokenId: string; uri: s
 
 async function fetchJson(uri: string): Promise<Record<string, unknown>> {
   const url = resolveUri(uri);
-  const { data } = await axios.get<Record<string, unknown>>(url, {
-    timeout: FETCH_TIMEOUT_MS,
-    maxContentLength: 1_000_000, // 1 MB cap
-    headers: { Accept: 'application/json' },
-  });
+  // Route through SSRF guard to prevent fetching from internal addresses (#893).
+  const response = await safeGet(url, undefined, { Accept: 'application/json' }, FETCH_TIMEOUT_MS);
+  const data = response.data as Record<string, unknown>;
   if (typeof data !== 'object' || data === null) throw new Error('Non-object JSON response');
   return data;
 }
@@ -231,11 +229,17 @@ export async function scrapeContract(contractAddress: string): Promise<NftMetada
 
   let xdrs: string[] = [];
   try {
-    const { data } = await axios.get<{ entries?: Array<{ xdr: string }> }>(url, {
-      timeout: FETCH_TIMEOUT_MS,
-    });
+    // Route through SSRF guard — the RPC URL is operator-configured but
+    // may point to an environment where redirects could be abused (#893).
+    const response = await safeGet(url, undefined, undefined, FETCH_TIMEOUT_MS);
+    const data = response.data as { entries?: Array<{ xdr: string }> };
     xdrs = (data.entries ?? []).map((e) => e.xdr).filter(Boolean);
-  } catch {
+  } catch (err) {
+    if (err instanceof SsrfBlockedError) {
+      logger.warn(
+        `[nft-scraper] SSRF blocked when fetching contract data for ${contractAddress}: ${(err as Error).message}`,
+      );
+    }
     // Fallback: caller must supply XDRs directly via scrapeNftMetadata
   }
 

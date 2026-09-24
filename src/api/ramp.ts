@@ -109,7 +109,7 @@ const providersQuerySchema = z.object({
 
 /**
  * @swagger
- * /api/v1/ramp/quote:
+ * /ramp/quote:
  *   post:
  *     summary: Get fiat/crypto quotes from all available providers
  *     description: >
@@ -172,7 +172,7 @@ rampRouter.post(
 
 /**
  * @swagger
- * /api/v1/ramp/execute:
+ * /ramp/execute:
  *   post:
  *     summary: Execute a fiat/crypto ramp order
  *     description: >
@@ -322,7 +322,7 @@ rampRouter.post(
 
 /**
  * @swagger
- * /api/v1/ramp/orders:
+ * /ramp/orders:
  *   get:
  *     summary: List the authenticated user's ramp orders
  *     tags: [Ramp]
@@ -365,7 +365,7 @@ rampRouter.get(
 
 /**
  * @swagger
- * /api/v1/ramp/orders/{id}:
+ * /ramp/orders/{id}:
  *   get:
  *     summary: Get a single ramp order by ID, including full audit event log
  *     tags: [Ramp]
@@ -424,7 +424,7 @@ rampRouter.get(
 
 /**
  * @swagger
- * /api/v1/ramp/refund:
+ * /ramp/refund:
  *   post:
  *     summary: Initiate a refund for a completed or failed order
  *     tags: [Ramp]
@@ -507,7 +507,7 @@ rampRouter.post(
 
 /**
  * @swagger
- * /api/v1/ramp/providers:
+ * /ramp/providers:
  *   get:
  *     summary: List provider availability for a given country and payment method
  *     tags: [Ramp]
@@ -546,7 +546,7 @@ rampRouter.get(
 
 /**
  * @swagger
- * /api/v1/ramp/kyc/status:
+ * /ramp/kyc/status:
  *   post:
  *     summary: Get or create the KYC record for the authenticated user
  *     tags: [Ramp]
@@ -579,7 +579,7 @@ rampRouter.post(
 
 /**
  * @swagger
- * /api/v1/ramp/webhook/{provider}:
+ * /ramp/webhook/{provider}:
  *   post:
  *     summary: Receive inbound order status callbacks from a ramp provider
  *     description: >

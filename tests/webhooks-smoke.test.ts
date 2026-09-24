@@ -29,6 +29,22 @@ vi.mock('../src/middleware/asyncHandler', () => ({
   asyncHandler: (fn: unknown) => fn,
 }));
 
+// #478: the webhooks router enforces API-key auth on every route; bypass it
+// here (this suite exercises the route handlers, not the auth middleware).
+vi.mock('../src/middleware/apiKeyAuth', () => ({
+  apiKeyAuth: (_req: unknown, _res: unknown, next: () => void) => next(),
+  requireApiKey: (req: { apiKey?: unknown }, _res: unknown, next: () => void) => {
+    req.apiKey = { id: 'test-api-key' };
+    next();
+  },
+}));
+
+// Unit tests must not depend on live DNS for the SSRF guard.
+vi.mock('../src/webhooks/ssrf-guard', () => ({
+  assertSafeUrl: vi.fn().mockResolvedValue(undefined),
+  SsrfBlockedError: class SsrfBlockedError extends Error {},
+}));
+
 import { prismaWrite, prismaRead } from '../src/db';
 import { webhooksRouter } from '../src/api/webhooks';
 
@@ -83,7 +99,10 @@ describe('POST /webhooks', () => {
     const res = await fetch(`${baseUrl}/webhooks`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ url: 'https://example.com/hook', secret: 'supersecret' }),
+      body: JSON.stringify({
+        url: 'https://example.com/hook',
+        secret: 'supersecret-0123456789abcdefghijklmnop',
+      }),
     });
 
     expect(res.status).toBe(201);
@@ -97,7 +116,7 @@ describe('POST /webhooks', () => {
     const res = await fetch(`${baseUrl}/webhooks`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ secret: 'supersecret' }),
+      body: JSON.stringify({ secret: 'supersecret-0123456789abcdefghijklmnop' }),
     });
     expect(res.status).toBe(400);
   });

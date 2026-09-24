@@ -29,7 +29,7 @@ const batchAccountsSchema = z.object({
 
 /**
  * @swagger
- * /api/v1/batch/events:
+ * /batch/events:
  *   post:
  *     summary: Fetch multiple events by ID (batch operation)
  *     tags: [Batch Operations]
@@ -139,7 +139,7 @@ batchRouter.post(
 
 /**
  * @swagger
- * /api/v1/batch/transactions:
+ * /batch/transactions:
  *   post:
  *     summary: Fetch multiple transactions by hash (batch operation)
  *     tags: [Batch Operations]
@@ -275,7 +275,7 @@ batchRouter.post(
 
 /**
  * @swagger
- * /api/v1/batch/accounts:
+ * /batch/accounts:
  *   post:
  *     summary: Fetch wallet summaries for multiple accounts (batch operation)
  *     tags: [Batch Operations]

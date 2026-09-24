@@ -244,6 +244,79 @@ export async function runDailyAggregation(): Promise<void> {
 }
 
 // ---------------------------------------------------------------------------
+// Staleness tracking (issue #879)
+// ---------------------------------------------------------------------------
+
+/**
+ * In-memory timestamps of when each aggregation job last completed
+ * successfully. Exposed via getStalenessStatus() for /readyz and health checks.
+ */
+const _lastRunAt: Record<'hourly' | 'daily', Date | null> = {
+  hourly: null,
+  daily: null,
+};
+
+export interface AggregationStalenessStatus {
+  hourly: {
+    lastRunAt: string | null;
+    ageMs: number | null;
+    stale: boolean;
+    /** Maximum allowed age in ms before considered stale (1.5× window) */
+    thresholdMs: number;
+  };
+  daily: {
+    lastRunAt: string | null;
+    ageMs: number | null;
+    stale: boolean;
+    thresholdMs: number;
+  };
+}
+
+/**
+ * Threshold = 1.5× the expected period.  If the aggregator misses one full
+ * scheduled run by more than 50% of the window we consider the snapshot stale.
+ */
+const STALE_THRESHOLD_MS: Record<'hourly' | 'daily', number> = {
+  hourly: PERIOD_MS.HOUR * 1.5,
+  daily: PERIOD_MS.DAY * 1.5,
+};
+
+/**
+ * Returns the current staleness status of both aggregation jobs.
+ * Suitable for inclusion in /readyz and Prometheus-style health dashboards.
+ */
+export function getStalenessStatus(): AggregationStalenessStatus {
+  const now = Date.now();
+
+  const hourlyAge = _lastRunAt.hourly ? now - _lastRunAt.hourly.getTime() : null;
+  const dailyAge = _lastRunAt.daily ? now - _lastRunAt.daily.getTime() : null;
+
+  return {
+    hourly: {
+      lastRunAt: _lastRunAt.hourly?.toISOString() ?? null,
+      ageMs: hourlyAge,
+      stale: hourlyAge === null || hourlyAge > STALE_THRESHOLD_MS.hourly,
+      thresholdMs: STALE_THRESHOLD_MS.hourly,
+    },
+    daily: {
+      lastRunAt: _lastRunAt.daily?.toISOString() ?? null,
+      ageMs: dailyAge,
+      stale: dailyAge === null || dailyAge > STALE_THRESHOLD_MS.daily,
+      thresholdMs: STALE_THRESHOLD_MS.daily,
+    },
+  };
+}
+
+/**
+ * Returns true if any aggregation job is considered stale.
+ * Convenient for boolean readiness gates.
+ */
+export function isFeeAggregationStale(): boolean {
+  const s = getStalenessStatus();
+  return s.hourly.stale || s.daily.stale;
+}
+
+// ---------------------------------------------------------------------------
 // Scheduler startup
 // ---------------------------------------------------------------------------
 
@@ -252,10 +325,18 @@ let dailyTimer: ReturnType<typeof setInterval> | null = null;
 
 export function startFeeAggregator(): void {
   // Run immediately on startup, then on schedule
-  runHourlyAggregation().catch((e) => logger.error('[fee-aggregator] hourly error:', e));
+  runHourlyAggregation()
+    .then(() => {
+      _lastRunAt.hourly = new Date();
+    })
+    .catch((e) => logger.error('[fee-aggregator] hourly error:', e));
 
   hourlyTimer = setInterval(() => {
-    runHourlyAggregation().catch((e) => logger.error('[fee-aggregator] hourly error:', e));
+    runHourlyAggregation()
+      .then(() => {
+        _lastRunAt.hourly = new Date();
+      })
+      .catch((e) => logger.error('[fee-aggregator] hourly error:', e));
   }, PERIOD_MS.HOUR);
 
   // Daily at midnight aligned intervals
@@ -268,9 +349,17 @@ export function startFeeAggregator(): void {
   };
 
   setTimeout(() => {
-    runDailyAggregation().catch((e) => logger.error('[fee-aggregator] daily error:', e));
+    runDailyAggregation()
+      .then(() => {
+        _lastRunAt.daily = new Date();
+      })
+      .catch((e) => logger.error('[fee-aggregator] daily error:', e));
     dailyTimer = setInterval(() => {
-      runDailyAggregation().catch((e) => logger.error('[fee-aggregator] daily error:', e));
+      runDailyAggregation()
+        .then(() => {
+          _lastRunAt.daily = new Date();
+        })
+        .catch((e) => logger.error('[fee-aggregator] daily error:', e));
     }, PERIOD_MS.DAY);
   }, msUntilMidnight());
 

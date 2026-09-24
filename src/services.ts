@@ -7,8 +7,6 @@
  * HTTP/WebSocket wiring lives in server.ts; this module only starts services.
  */
 
-import type { Server } from 'http';
-
 import { logger } from './logger';
 import { prismaWrite as prisma } from './db';
 import { cacheConnect, isCacheReady, cacheBackendType } from './cache';
@@ -29,15 +27,14 @@ import { startAuditScheduler } from './indexer/audit-scheduler';
 import { startContinuousAuditMonitor } from './indexer/audit-monitor';
 import { startAuditExpiryChecker } from './indexer/audit-expiry-checker';
 import { startAuditDigestScheduler } from './indexer/audit-digest-scheduler';
+import { startExpiryCheckScheduler } from './auth/keyRotationScheduler';
 import { startPriceUpdater } from './services/pricing';
 import { feedOrchestrator } from './feed/orchestrator';
 import { eventBus } from './events/eventBus';
 import { startGraphqlEventBridge } from './graphql/subscriptions';
+import { featureFlags } from './feature-flags';
 
-export async function initializeServices(
-  httpServer: Server,
-  disabledServices: string[],
-): Promise<void> {
+export async function initializeServices(disabledServices: string[]): Promise<void> {
   await initRateLimitStore();
 
   await cacheConnect();
@@ -50,6 +47,14 @@ export async function initializeServices(
   await prisma.$connect();
   dbConnectionStatus.set(1);
   markReady('db');
+
+  try {
+    const { getLatestLedger } = await import('./indexer/rpc');
+    await getLatestLedger();
+    markReady('rpc');
+  } catch (err) {
+    logger.error('[rpc] Failed to contact RPC node during services init', { error: String(err) });
+  }
 
   await initializeColdStorage();
   markReady('coldStorage');
@@ -72,45 +77,50 @@ export async function initializeServices(
     markReady('indexer');
   }
 
-  const enablePoolMonitor = process.env.ENABLE_POOL_MONITOR === 'true';
-  const enableArbitrageScanner = process.env.ENABLE_ARBITRAGE_SCANNER === 'true';
-  const enableFeeAggregator = process.env.ENABLE_FEE_AGGREGATOR === 'true';
-
   if (!process.env.DISABLE_INDEXER) {
-    if (enablePoolMonitor) {
+    if (featureFlags.shouldStartSync('poolMonitor')) {
       try {
         startPoolPriceMonitorImpl();
         logger.info('Pool price monitor started');
       } catch (err) {
         logger.warn('Pool price monitor failed to start', { error: String(err) });
       }
+    } else if (!featureFlags.isEnabledSync('poolMonitor')) {
+      disabledServices.push('poolMonitor (flag off)');
+      logger.debug('Pool price monitor disabled (feature flag poolMonitor off)');
     } else {
-      disabledServices.push('poolMonitor');
-      logger.debug('Pool price monitor disabled (ENABLE_POOL_MONITOR not set)');
+      disabledServices.push('poolMonitor (schema unavailable)');
+      logger.debug('Pool price monitor disabled (required tables missing)');
     }
 
-    if (enableArbitrageScanner) {
+    if (featureFlags.shouldStartSync('arbitrageScanner')) {
       try {
         startArbitrageScannerImpl();
         logger.info('Arbitrage scanner started');
       } catch (err) {
         logger.warn('Arbitrage scanner failed to start', { error: String(err) });
       }
+    } else if (!featureFlags.isEnabledSync('arbitrageScanner')) {
+      disabledServices.push('arbitrageScanner (flag off)');
+      logger.debug('Arbitrage scanner disabled (feature flag arbitrageScanner off)');
     } else {
-      disabledServices.push('arbitrageScanner');
-      logger.debug('Arbitrage scanner disabled (ENABLE_ARBITRAGE_SCANNER not set)');
+      disabledServices.push('arbitrageScanner (schema unavailable)');
+      logger.debug('Arbitrage scanner disabled (required tables missing)');
     }
 
-    if (enableFeeAggregator) {
+    if (featureFlags.shouldStartSync('feeAggregator')) {
       try {
         startFeeAggregatorImpl();
         logger.info('Fee aggregator started');
       } catch (err) {
         logger.warn('Fee aggregator failed to start', { error: String(err) });
       }
+    } else if (!featureFlags.isEnabledSync('feeAggregator')) {
+      disabledServices.push('feeAggregator (flag off)');
+      logger.debug('Fee aggregator disabled (feature flag feeAggregator off)');
     } else {
-      disabledServices.push('feeAggregator');
-      logger.debug('Fee aggregator disabled (ENABLE_FEE_AGGREGATOR not set)');
+      disabledServices.push('feeAggregator (schema unavailable)');
+      logger.debug('Fee aggregator disabled (required tables missing)');
     }
 
     try {
@@ -176,5 +186,13 @@ export async function initializeServices(
     logger.warn('Price updater failed to start', { error: String(err) });
   }
 
-  await feedOrchestrator.initialize(httpServer);
+  // DevApiKey expiry enforcement — auto-disables expired keys + emits KeyRotationAudit (#888)
+  try {
+    startExpiryCheckScheduler();
+    logger.info('DevApiKey expiry scheduler started');
+  } catch (err) {
+    logger.warn('DevApiKey expiry scheduler failed to start', { error: String(err) });
+  }
+
+  await feedOrchestrator.initialize();
 }

@@ -23,6 +23,7 @@ vi.mock('../../src/cache', () => ({
 
 vi.mock('../../src/config', () => ({
   config: {
+    profile: { name: 'devnet' },
     stellarRpcUrl: 'http://localhost:8000',
     stellarRpcWsUrl: 'ws://localhost:8000',
     horizonUrl: 'https://horizon-testnet.stellar.org',
@@ -111,8 +112,15 @@ describe('rpc module', () => {
       vi.useFakeTimers({ shouldAdvanceTime: true });
       try {
         const fetchPromise = fetchEvents(1000, 1010);
+        // Attach the rejection handler before advancing timers: the retry loop
+        // rejects inside runAllTimersAsync(), so awaiting the assertion after
+        // would leave the rejection temporarily unhandled (Vitest fails the
+        // run on unhandled rejections even when every test passes).
+        const assertion = expect(fetchPromise).rejects.toMatchObject({
+          response: { status: 429 },
+        });
         await vi.runAllTimersAsync();
-        await expect(fetchPromise).rejects.toMatchObject({ response: { status: 429 } });
+        await assertion;
       } finally {
         vi.useRealTimers();
       }

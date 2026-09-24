@@ -6,13 +6,13 @@
  */
 
 import { Router, Request, Response } from 'express';
-import { asyncHandler } from '../middleware/asyncHandler';
+import { asyncHandler } from '../../middleware/asyncHandler';
 import {
   validateQuery,
   validateBody,
   validateParams,
   validateQueryAndBody,
-} from '../middleware/validation';
+} from '../../middleware/validation';
 import {
   paginationSchema,
   listQuerySchema,
@@ -23,9 +23,9 @@ import {
   stellarAddress,
   safeLabel,
   safeRecord,
-} from '../schemas/common';
+} from '../../schemas/common';
 import { z } from 'zod';
-import { prismaRead as prisma } from '../db';
+import { prismaRead as prisma } from '../../db';
 
 export const sampleValidationRouter = Router();
 

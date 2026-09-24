@@ -11,8 +11,15 @@ import { prismaWrite as prisma } from '../db';
 import { invalidateFreezeCache } from '../indexer/freeze-scanner';
 import { adminAuth } from '../middleware/adminAuth';
 import { uuidv7 } from '../utils/uuidv7';
+import { sensitiveReadLog } from '../middleware/sensitiveReadLog';
+import { asyncHandler } from '../middleware/asyncHandler';
 
 export const freezeRouter = Router();
+
+// Audit every GET on the freeze router — these expose freeze/lock state (#890)
+freezeRouter.use(sensitiveReadLog('freeze_read', (req) => req.path));
+// Enforce admin auth for freeze management API (#834)
+freezeRouter.use(adminAuth);
 
 const getActor = (req: Request) => req.actor ?? 'unknown';
 
@@ -35,6 +42,26 @@ async function logAudit(
       reason,
     },
   });
+}
+
+async function linkIncidentComment(
+  incidentId: string | undefined,
+  actor: string,
+  action: string,
+  details: string,
+) {
+  if (!incidentId) return;
+  try {
+    await prisma.incidentComment.create({
+      data: {
+        incidentId,
+        author: actor,
+        body: `[Freeze Action: ${action}] ${details}`,
+      },
+    });
+  } catch {
+    // Non-blocking incident comment attachment
+  }
 }
 
 // ── GET /keys ─────────────────────────────────────────────────────────────────
@@ -86,20 +113,20 @@ freezeRouter.get(
 // ── POST /keys ────────────────────────────────────────────────────────────────
 freezeRouter.post(
   '/keys',
-  adminAuth,
   asyncHandler(async (req: Request, res: Response) => {
     try {
       const schema = z.object({
         ledgerKey: z.string(),
         contractAddress: z.string().optional(),
         reason: z.string().optional(),
+        incidentId: z.string().optional(),
         metadata: z.record(z.any()).optional(),
       });
       const parsed = schema.safeParse(req.body);
       if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
 
       const actor = getActor(req);
-      const { ledgerKey, contractAddress, reason, metadata } = parsed.data;
+      const { ledgerKey, contractAddress, reason, incidentId, metadata } = parsed.data;
 
       // Default frozenAtLedger to current max or 0, this should ideally come from network
       const state = await prisma.indexerState.findUnique({ where: { id: 'singleton' } });
@@ -118,6 +145,12 @@ freezeRouter.post(
 
       invalidateFreezeCache();
       await logAudit(actor, 'CREATE_FREEZE', newKey.id, null, newKey, reason);
+      await linkIncidentComment(
+        incidentId,
+        actor,
+        'CREATE_FREEZE',
+        `Ledger key ${ledgerKey} frozen. Reason: ${reason ?? 'N/A'}`,
+      );
 
       res.status(201).json(newKey);
     } catch (error: any) {
@@ -130,37 +163,40 @@ freezeRouter.post(
 // ── PATCH /keys/:id ───────────────────────────────────────────────────────────
 freezeRouter.patch(
   '/keys/:id',
-  adminAuth,
   asyncHandler(async (req: Request, res: Response) => {
     try {
       const schema = z.object({
         reason: z.string().optional(),
         active: z.boolean().optional(),
+        incidentId: z.string().optional(),
         metadata: z.record(z.any()).optional(),
       });
       const parsed = schema.safeParse(req.body);
       if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
 
       const actor = getActor(req);
+      const { reason, active, incidentId, metadata } = parsed.data;
 
       const existing = await prisma.frozenLedgerKey.findUnique({ where: { id: req.params.id } });
       if (!existing) return res.status(404).json({ error: 'Key not found' });
 
       const updated = await prisma.frozenLedgerKey.update({
         where: { id: req.params.id },
-        data: parsed.data,
+        data: {
+          ...(reason !== undefined && { reason }),
+          ...(active !== undefined && { active }),
+        },
       });
 
-      if (parsed.data.active !== undefined) {
+      if (active !== undefined) {
         invalidateFreezeCache();
       }
-      await logAudit(
+      await logAudit(actor, 'UPDATE_FREEZE', updated.id, existing, updated, reason || 'Update');
+      await linkIncidentComment(
+        incidentId,
         actor,
         'UPDATE_FREEZE',
-        updated.id,
-        existing,
-        updated,
-        parsed.data.reason || 'Update',
+        `Updated key ${updated.id}. Active: ${updated.active}. Reason: ${reason ?? 'Update'}`,
       );
 
       res.json(updated);
@@ -173,11 +209,11 @@ freezeRouter.patch(
 // ── DELETE /keys/:id ──────────────────────────────────────────────────────────
 freezeRouter.delete(
   '/keys/:id',
-  adminAuth,
   asyncHandler(async (req: Request, res: Response) => {
     try {
       const actor = getActor(req);
       const reason = req.body.reason || 'Manual delete';
+      const incidentId = req.body.incidentId;
 
       const existing = await prisma.frozenLedgerKey.findUnique({ where: { id: req.params.id } });
       if (!existing) return res.status(404).json({ error: 'Key not found' });
@@ -186,6 +222,12 @@ freezeRouter.delete(
 
       invalidateFreezeCache();
       await logAudit(actor, 'DELETE_FREEZE', req.params.id, existing, null, reason);
+      await linkIncidentComment(
+        incidentId,
+        actor,
+        'DELETE_FREEZE',
+        `Deleted freeze entry ${req.params.id} for key ${existing.ledgerKey}. Reason: ${reason}`,
+      );
 
       res.json({ message: 'Deleted successfully' });
     } catch (error: any) {
@@ -254,10 +296,12 @@ freezeRouter.patch(
 
       const actor = getActor(req);
 
-      const existing = await prisma.freezeViolation.findUnique({ where: { id: req.params.id } });
-      if (!existing) return res.status(404).json({ error: 'Violation not found' });
+      const violationEntry = await prisma.freezeViolation.findUnique({
+        where: { id: req.params.id },
+      });
+      if (!violationEntry) return res.status(404).json({ error: 'Violation not found' });
 
-      const updated = await prisma.freezeViolation.update({
+      const updatedViolation = await prisma.freezeViolation.update({
         where: { id: req.params.id },
         data: {
           resolution: parsed.data.resolution,
@@ -268,13 +312,13 @@ freezeRouter.patch(
       await logAudit(
         actor,
         'RESOLVE_VIOLATION',
-        updated.id,
-        existing,
-        updated,
+        updatedViolation.id,
+        violationEntry,
+        updatedViolation,
         parsed.data.reason || 'Resolution updated',
       );
 
-      res.json(updated);
+      res.json(updatedViolation);
     } catch (error: any) {
       res.status(500).json({ error: error.message });
     }

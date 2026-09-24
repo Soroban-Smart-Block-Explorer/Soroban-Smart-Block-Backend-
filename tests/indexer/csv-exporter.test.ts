@@ -4,6 +4,7 @@ vi.mock('../../src/db', () => ({
   prismaRead: {
     transaction: { findMany: vi.fn() },
     event: { findMany: vi.fn() },
+    exportJob: { findUnique: vi.fn(), findMany: vi.fn() },
   },
   prismaWrite: {
     exportJob: { create: vi.fn(), findUnique: vi.fn(), update: vi.fn() },
@@ -60,7 +61,7 @@ describe('runExportJob', () => {
   beforeEach(() => vi.clearAllMocks());
 
   it('stores relative filePath on completion', async () => {
-    vi.mocked(db.prismaWrite.exportJob.findUnique).mockResolvedValue({
+    vi.mocked(db.prismaRead.exportJob.findUnique).mockResolvedValue({
       id: 'job-tx',
       exportType: 'transactions',
       filters: {},

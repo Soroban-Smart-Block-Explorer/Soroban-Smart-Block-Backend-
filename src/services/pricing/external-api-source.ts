@@ -90,9 +90,8 @@ async function fetchCoinGeckoPrice(tokenSymbol: string): Promise<ExternalPrice |
       priceChange1h: 0,
       source: 'coingecko',
       confidence: 0.85,
-    };
-
-    await cacheSet(cacheKey, result, 300);
+    }; // #917 — TTL resolved from the per-route registry (se_price → 30s).
+    await cacheSet(cacheKey, result);
     return result;
   } catch {
     return null;
@@ -152,7 +151,8 @@ async function fetchCoinMarketCapPrice(tokenSymbol: string): Promise<ExternalPri
       confidence: 0.9,
     };
 
-    await cacheSet(cacheKey, result, 300);
+    // #917 — TTL resolved from the per-route registry (cmc_price → 30s).
+    await cacheSet(cacheKey, result);
     return result;
   } catch {
     return null;
@@ -178,9 +178,8 @@ async function fetchStellarExpertPrice(tokenAddress: string): Promise<ExternalPr
       priceUsd: parseFloat(data.price),
       source: 'stellarexpert',
       confidence: 0.6,
-    };
-
-    await cacheSet(cacheKey, result, 300);
+    }; // #917 — TTL resolved from the per-route registry (se_price → 30s).
+    await cacheSet(cacheKey, result);
     return result;
   } catch {
     return null;

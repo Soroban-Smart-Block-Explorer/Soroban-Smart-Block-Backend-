@@ -78,7 +78,7 @@ const WebhookSchema = z.object({
 
 /**
  * @swagger
- * /api/v1/tip/advisories:
+ * /tip/advisories:
  *   get:
  *     summary: List threat advisories
  *     description: Paginated advisories, optionally filtered by severity, status, or keyword.
@@ -170,7 +170,7 @@ tipRouter.get(
 
 /**
  * @swagger
- * /api/v1/tip/advisories/{id}:
+ * /tip/advisories/{id}:
  *   get:
  *     summary: Get a threat advisory by id
  *     description: Returns the advisory with its source, review history, and community comments.
@@ -226,7 +226,7 @@ tipRouter.get(
 
 /**
  * @swagger
- * /api/v1/tip/advisories:
+ * /tip/advisories:
  *   post:
  *     summary: Submit a new threat advisory
  *     tags: [Threat Intelligence]
@@ -304,7 +304,7 @@ tipRouter.post(
 
 /**
  * @swagger
- * /api/v1/tip/advisories/{id}:
+ * /tip/advisories/{id}:
  *   patch:
  *     summary: Update an advisory's status, severity, mitigations, or resolved timestamp
  *     tags: [Threat Intelligence]
@@ -379,7 +379,7 @@ tipRouter.patch(
 
 /**
  * @swagger
- * /api/v1/tip/advisories/{id}:
+ * /tip/advisories/{id}:
  *   delete:
  *     summary: Delete a threat advisory
  *     tags: [Threat Intelligence]
@@ -411,7 +411,7 @@ tipRouter.delete(
 
 /**
  * @swagger
- * /api/v1/tip/advisories/{id}/reviews:
+ * /tip/advisories/{id}/reviews:
  *   post:
  *     summary: Submit a review decision for an advisory
  *     description: An "approve" decision also advances the advisory status to "under_review".
@@ -487,7 +487,7 @@ tipRouter.post(
 
 /**
  * @swagger
- * /api/v1/tip/advisories/{id}/comments:
+ * /tip/advisories/{id}/comments:
  *   post:
  *     summary: Post a community comment on an advisory
  *     tags: [Threat Intelligence]
@@ -551,7 +551,7 @@ tipRouter.post(
 
 /**
  * @swagger
- * /api/v1/tip/correlate:
+ * /tip/correlate:
  *   post:
  *     summary: Run advisory deduplication and correlation
  *     description: Merges duplicate advisories and returns the number of records linked.
@@ -583,7 +583,7 @@ tipRouter.post(
 
 /**
  * @swagger
- * /api/v1/tip/advisories/{id}/rescore:
+ * /tip/advisories/{id}/rescore:
  *   post:
  *     summary: Recompute the severity score for an advisory
  *     tags: [Threat Intelligence]
@@ -621,7 +621,7 @@ tipRouter.post(
 
 /**
  * @swagger
- * /api/v1/tip/subscriptions:
+ * /tip/subscriptions:
  *   get:
  *     summary: List all TIP notification subscriptions
  *     tags: [Threat Intelligence]
@@ -650,7 +650,7 @@ tipRouter.get(
 
 /**
  * @swagger
- * /api/v1/tip/subscriptions:
+ * /tip/subscriptions:
  *   post:
  *     summary: Create or reactivate a TIP notification subscription
  *     description: Upserts on (channel, target); reactivates an existing subscription if one exists.
@@ -725,7 +725,7 @@ tipRouter.post(
 
 /**
  * @swagger
- * /api/v1/tip/subscriptions/{id}:
+ * /tip/subscriptions/{id}:
  *   delete:
  *     summary: Delete a TIP subscription
  *     tags: [Threat Intelligence]
@@ -757,7 +757,7 @@ tipRouter.delete(
 
 /**
  * @swagger
- * /api/v1/tip/webhooks:
+ * /tip/webhooks:
  *   get:
  *     summary: List registered TIP webhooks
  *     description: Returns id, url, events, and active status; secret is excluded.
@@ -795,7 +795,7 @@ tipRouter.get(
 
 /**
  * @swagger
- * /api/v1/tip/webhooks:
+ * /tip/webhooks:
  *   post:
  *     summary: Register or update a TIP webhook
  *     description: Upserts on URL; an existing webhook's secret and events are overwritten.
@@ -855,7 +855,7 @@ tipRouter.post(
 
 /**
  * @swagger
- * /api/v1/tip/webhooks/{id}:
+ * /tip/webhooks/{id}:
  *   delete:
  *     summary: Delete a TIP webhook
  *     tags: [Threat Intelligence]
@@ -887,7 +887,7 @@ tipRouter.delete(
 
 /**
  * @swagger
- * /api/v1/tip/feeds/json:
+ * /tip/feeds/json:
  *   get:
  *     summary: JSON feed of recent non-disputed advisories
  *     tags: [Threat Intelligence]
@@ -960,7 +960,7 @@ tipRouter.get(
 
 /**
  * @swagger
- * /api/v1/tip/feeds/rss:
+ * /tip/feeds/rss:
  *   get:
  *     summary: RSS 2.0 feed of recent non-disputed advisories
  *     description: Returns the 50 most recent non-disputed advisories as an RSS 2.0 XML document.
@@ -1025,7 +1025,7 @@ ${entries}
 
 /**
  * @swagger
- * /api/v1/tip/analytics/severity:
+ * /tip/analytics/severity:
  *   get:
  *     summary: Advisory count grouped by severity
  *     tags: [Threat Intelligence]
@@ -1058,7 +1058,7 @@ tipRouter.get(
 
 /**
  * @swagger
- * /api/v1/tip/analytics/trend:
+ * /tip/analytics/trend:
  *   get:
  *     summary: Daily advisory creation trend
  *     description: Returns a per-day bucket of total, critical, and high advisories over the past N days.
@@ -1100,7 +1100,7 @@ tipRouter.get(
 
 /**
  * @swagger
- * /api/v1/tip/analytics/top-contracts:
+ * /tip/analytics/top-contracts:
  *   get:
  *     summary: Contracts most frequently cited in advisories
  *     tags: [Threat Intelligence]
@@ -1139,7 +1139,7 @@ tipRouter.get(
 
 /**
  * @swagger
- * /api/v1/tip/analytics/status:
+ * /tip/analytics/status:
  *   get:
  *     summary: Advisory count grouped by status
  *     tags: [Threat Intelligence]
@@ -1174,7 +1174,7 @@ tipRouter.get(
 
 /**
  * @swagger
- * /api/v1/tip/sources:
+ * /tip/sources:
  *   get:
  *     summary: List vulnerability feed sources
  *     tags: [Threat Intelligence]

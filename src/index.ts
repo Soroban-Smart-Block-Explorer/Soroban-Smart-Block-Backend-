@@ -9,12 +9,11 @@ import type { Socket } from 'net';
 import { createApp } from './app';
 import { createHttpServer } from './server';
 import { initializeServices } from './services';
-import { config } from './config';
+import { config, assertConfig } from './config';
 import { prismaWrite as prisma, prismaRead, prismaBackfill } from './db';
 import { stopIndexerService } from './indexer/indexer';
 import { stopP2pNode } from './p2p';
-import { shutdownWebSocketServer } from './ws/eventBroadcaster';
-import { stopMevPredictionPublisher } from './ws/mevPredictBroadcaster';
+import { shutdownWebSocketServer } from './ws/websocketServer';
 import { stopBridgeWorker } from './bridge-tracker';
 import { feedOrchestrator } from './feed/orchestrator';
 import { stopPriceUpdater } from './services/pricing';
@@ -22,6 +21,8 @@ import { cacheClose } from './cache';
 import { dbConnectionStatus, cacheBackendStatus } from './metrics';
 import { eventBus } from './events/eventBus';
 import { logger } from './logger';
+import { featureFlags } from './feature-flags';
+import { reconcileOrphanedFuzzJobs } from './fuzzing/fuzzer';
 
 let isShuttingDown = false;
 const SERVICE_START_TIME = Date.now();
@@ -29,10 +30,10 @@ let wssRef: ReturnType<typeof createHttpServer>['wssRef'] | null = null;
 let serverRef: Server | null = null;
 const activeConnections = new Set<Socket>();
 
-const SHUTDOWN_TIMEOUT_MS = parseInt(process.env.SHUTDOWN_TIMEOUT_MS ?? '30000');
+const SHUTDOWN_TIMEOUT_MS = config.shutdownTimeoutMs;
 // Default to /tmp/state so the path is writable in read-only container filesystems.
 // /tmp is already mounted as a tmpfs in the Compose security profile.
-const STATE_DUMP_PATH = process.env.STATE_DUMP_PATH ?? '/tmp/state';
+const STATE_DUMP_PATH = config.stateDumpPath;
 
 // Names of optional services that are disabled, reported by /ready.
 const disabledServices: string[] = [];
@@ -172,8 +173,15 @@ async function validateStateDumpPath(): Promise<void> {
 }
 
 async function main() {
+  assertConfig();
+
   registerShutdownHandlers();
   await validateStateDumpPath();
+
+  // Warm the feature-flag cache (DB-backed toggles + schema availability) before
+  // the HTTP/WebSocket servers attach. Best-effort: on failure the flags fall
+  // back to env vars + registry defaults, so boot never blocks on the flag DB.
+  await featureFlags.bootstrap();
 
   const app = createApp({
     isShuttingDown: () => isShuttingDown,
@@ -191,7 +199,10 @@ async function main() {
     });
   });
 
-  await initializeServices(server.httpServer, disabledServices);
+  await initializeServices(disabledServices);
+
+  // Reconcile any orphaned fuzzing jobs from previous startup
+  await reconcileOrphanedFuzzJobs();
 
   server.httpServer.listen(config.port, () => {
     logger.info('Soroban Explorer API started', { port: config.port });

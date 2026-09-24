@@ -222,3 +222,43 @@ export function parseFailureReasonFromString(errorStr: string): string {
 
   return errorStr.length > 200 ? errorStr.slice(0, 200) + '…' : errorStr;
 }
+
+/**
+ * Classify a failure into a bounded reason bucket for metrics/labelling.
+ * The buckets are intentionally coarse so Prometheus label cardinality stays
+ * low (poison / timeout / network / rate_limit / other).
+ */
+export function classifyFailureReason(error: unknown): string {
+  const msg =
+    error instanceof Error ? error.message : typeof error === 'string' ? error : String(error);
+  const lower = msg.toLowerCase();
+
+  if (
+    lower.includes('xdr') ||
+    lower.includes('syntax') ||
+    lower.includes('poison') ||
+    lower.includes('decode') ||
+    lower.includes('parse error')
+  ) {
+    return 'poison';
+  }
+  if (lower.includes('timeout') || lower.includes('timed out')) return 'timeout';
+  if (
+    lower.includes('socket') ||
+    lower.includes('hang up') ||
+    lower.includes('network') ||
+    lower.includes('econnrefused') ||
+    lower.includes('enotfound') ||
+    lower.includes('fetch failed')
+  ) {
+    return 'network';
+  }
+  if (
+    lower.includes('rate limit') ||
+    lower.includes('ratelimit') ||
+    lower.includes('too many requests')
+  ) {
+    return 'rate_limit';
+  }
+  return 'other';
+}

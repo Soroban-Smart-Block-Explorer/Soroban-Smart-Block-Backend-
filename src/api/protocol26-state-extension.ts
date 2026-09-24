@@ -40,7 +40,7 @@ const FootprintSchema = z.object({
 });
 
 // Dummy source account for simulation-only transactions (never submitted)
-const DUMMY_SOURCE = 'GAAZI4TCR3TY5OJHCTJC2A4QSY6CJWJH5IAJTGKIN2ER7LBNVKOCCWN';
+const DUMMY_SOURCE = 'GBZXN7PIRZGNMHGA7MUUUF4GWPY5AYPV6LY4UV2GL6VJGIQRXFDNMADI';
 
 // ── GET / ─────────────────────────────────────────────────────────────────────
 
@@ -195,17 +195,18 @@ protocol26Router.post(
       // Build the ledger key for the contract entry based on entryType
       let ledgerKey: xdr.LedgerKey;
       try {
-        const contractIdBytes = xdr.ScAddress.fromXDR(
-          xdr.ScAddress.envelopeTypeScp().toXDR('base64'),
-        );
         // Use the contract ID hash directly
         const contractIdHash = Buffer.from(contractId, 'hex');
+
+        const contractAddress = xdr.ScAddress.scAddressTypeContract(
+          xdr.Hash.fromXDR(contractIdHash),
+        );
 
         switch (entryType) {
           case 'instance':
             ledgerKey = xdr.LedgerKey.contractData(
               new xdr.LedgerKeyContractData({
-                contract: xdr.ScAddress.contract(xdr.Hash.fromXDR(contractIdHash)),
+                contract: contractAddress,
                 key: xdr.ScVal.scvLedgerKeyContractInstance(),
                 durability: xdr.ContractDataDurability.persistent(),
               }),
@@ -214,7 +215,7 @@ protocol26Router.post(
           case 'persistent':
             ledgerKey = xdr.LedgerKey.contractData(
               new xdr.LedgerKeyContractData({
-                contract: xdr.ScAddress.contract(xdr.Hash.fromXDR(contractIdHash)),
+                contract: contractAddress,
                 key: xdr.ScVal.scvSymbol('__storage_persistent'),
                 durability: xdr.ContractDataDurability.persistent(),
               }),
@@ -223,7 +224,7 @@ protocol26Router.post(
           case 'temporary':
             ledgerKey = xdr.LedgerKey.contractData(
               new xdr.LedgerKeyContractData({
-                contract: xdr.ScAddress.contract(xdr.Hash.fromXDR(contractIdHash)),
+                contract: contractAddress,
                 key: xdr.ScVal.scvSymbol('__storage_temporary'),
                 durability: xdr.ContractDataDurability.temporary(),
               }),
@@ -232,7 +233,7 @@ protocol26Router.post(
           default:
             ledgerKey = xdr.LedgerKey.contractData(
               new xdr.LedgerKeyContractData({
-                contract: xdr.ScAddress.contract(xdr.Hash.fromXDR(contractIdHash)),
+                contract: contractAddress,
                 key: xdr.ScVal.scvLedgerKeyContractInstance(),
                 durability: xdr.ContractDataDurability.persistent(),
               }),
@@ -256,13 +257,17 @@ protocol26Router.post(
         networkPassphrase: config.networkPassphrase,
         // Set the soroban data with the footprint
         sorobanData: new xdr.SorobanTransactionData({
-          extensionPoint: xdr.ExtensionPoint.extensionPointLeV0(),
+          ext: new xdr.ExtensionPoint(0),
           resources: new xdr.SorobanResources({
-            ledgerReadWrite: [ledgerKey],
+            footprint: new xdr.LedgerFootprint({
+              readOnly: [],
+              readWrite: [ledgerKey],
+            }),
             instructions: 0,
             readBytes: 0,
+            writeBytes: 0,
           }),
-          resourceFee: xdr.Int64.fromString('0'),
+          resourceFee: new xdr.Int64(0),
         }),
       })
         .addOperation(extendOp)

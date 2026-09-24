@@ -1,5 +1,5 @@
 import { CallOutcome } from './runtime';
-import { estimateTemplateCall, prepayGas, refundGas } from './gas-model';
+import { estimateTemplateCall, prepayGas, refundGas, DEFAULT_GAS_BUDGET } from './gas-model';
 
 export interface CallMetrics {
   cpuInsnUsed: number;

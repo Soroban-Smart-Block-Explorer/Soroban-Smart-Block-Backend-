@@ -107,7 +107,8 @@ export async function computeCompositePrice(
     breakdown,
   };
 
-  await cacheSet(cacheKey, result, 5);
+  // #917 — TTL resolved from the per-route registry (composite_price → 5s).
+  await cacheSet(cacheKey, result);
 
   if (selectedPrice > 0) {
     await persistPrice(tokenAddress, result, selectedSource);

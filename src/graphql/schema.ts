@@ -1,7 +1,10 @@
 export const typeDefs = `#graphql
-  # ── Federation ─────────────────────────────────────────────────────
-  extend schema
-    @link(url: "https://specs.apollo.dev/federation/v2.3", import: ["@key", "@shareable", "@provides", "@external"])
+  # ── Federation directive declarations ──────────────────────────────
+  # This server is a monolithic (non-federated) GraphQL API. Federation
+  # directives are declared here so schemas that carry @key/@link still parse;
+  # they are inert and have no effect on resolution.
+  directive @key(fields: String!) repeatable on OBJECT | INTERFACE
+  directive @link(url: String!, import: [String!]) on SCHEMA
 
   # ── Scalars ────────────────────────────────────────────────────────
   scalar DateTime
