@@ -65,7 +65,11 @@
     "test:exclusions": "ts-node scripts/verify-test-exclusions.ts",
     "audit:ci": "node scripts/audit-check.js",
     "typecheck:budget": "ts-node scripts/typecheck-budget.ts --max-errors 1012",
-    "typecheck:budget:ci": "ts-node scripts/typecheck-budget.ts --max-errors 1012"
+    "typecheck:budget:ci": "ts-node scripts/typecheck-budget.ts --max-errors 1012",
+    "sdk:generate": "ts-node --transpile-only scripts/sdk/generate.ts",
+    "sdk:check": "ts-node --transpile-only scripts/sdk/generate.ts --check",
+    "sdk:breaking": "ts-node --transpile-only scripts/sdk/check-breaking.ts",
+    "sdk:build": "npm run build -w @soroban-explorer/client"
   },
   "overrides": {
     "@libp2p/interface": "2.11.0"
@@ -96,7 +100,7 @@
     "@opentelemetry/api": "1.9.0",
     "@prisma/client": "^5.10.0",
     "@prisma/engines": "^5.10.0",
-    "@soroban-explorer/client": "1.0.0",
+    "@soroban-explorer/client": "1.1.0",
     "@stellar/stellar-sdk": "^12.0.0",
     "@types/jsonwebtoken": "^9.0.10",
     "@types/node-cron": "^3.0.11",

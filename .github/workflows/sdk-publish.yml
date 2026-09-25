@@ -1,0 +1,42 @@
+name: SDK publish
+
+# Publishes SDKs with provenance. Tag `client-v<version>` for the TypeScript
+# SDK, `python-client-v<version>` for the Python client. The tag must match
+# the package version; generated code is re-verified before publishing.
+
+on:
+  push:
+    tags:
+      - 'client-v*'
+      - 'python-client-v*'
+
+permissions:
+  contents: read
+  id-token: write # npm provenance + PyPI trusted publishing (OIDC)
+
+jobs:
+  typescript:
+    if: startsWith(github.ref_name, 'client-v')
+    runs-on: ubuntu-latest
+    environment: npm
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: npm
+          registry-url: https://registry.npmjs.org
+      - run: npm ci
+      - name: Tag matches package version
+        run: test "client-v$(node -p "require('./packages/client/package.json').version")" = "${GITHUB_REF_NAME}"
+      - run: npm run sdk:check
+      - run: npx vitest run packages/client
+        env:
+          DATABASE_URL: postgresql://test:test@localhost:5432/test
+          TESTNET_DATABASE_URL: postgresql://test:test@localhost:5432/test
+          STELLAR_NETWORK: testnet
+      - run: npm run sdk:build
+      - name: Publish with provenance
+        run: npm publish -w @soroban-explorer/client --provenance --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
