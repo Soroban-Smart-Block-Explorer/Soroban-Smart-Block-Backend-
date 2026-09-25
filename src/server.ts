@@ -68,6 +68,7 @@ export function createHttpServer(app: Express, disabledServices: string[]): Http
     logger.debug('Arbitrage WebSocket disabled (required tables missing)');
   }
 
+  const enableMevPredictWs = process.env.ENABLE_MEV_PREDICT_WS === 'true';
   if (enableMevPredictWs) {
     try {
       attachMevPredictWebSocket(httpServer);

@@ -27,6 +27,8 @@ import { coldStorageRouter } from './middleware/coldStorageRouter';
 import { networkRouter } from './middleware/networkRouter';
 import { swaggerSpec } from './indexer/swaggerSpec';
 import yogaHandler from './graphql';
+import { createTryItRouter, tryItAttribution } from './api/tryit/router';
+import { featureFlags } from './feature-flags';
 import { errorHandler } from './middleware/errorHandler';
 import { requestContext } from './middleware/requestContext';
 import { apiKeyAuth } from './middleware/apiKeyAuth';
@@ -210,6 +212,8 @@ export function createApp(options: AppOptions): express.Express {
   app.use(replicaGuard);
   // Audit log captures status + rate limit headers after response
   app.use(auditLogMiddleware);
+  // Attribute requests sent from the in-browser API console (DX04)
+  app.use(tryItAttribution);
 
   app.use(coldStorageRouter);
 
@@ -221,6 +225,17 @@ export function createApp(options: AppOptions): express.Express {
   }
   app.get('/api/docs.json', (_req, res) => res.json(swaggerSpec));
   app.get('/api/v1/openapi.json', (_req, res) => res.json(swaggerSpec));
+
+  // In-browser API console (DX04) — builds requests from the same spec and
+  // executes them from the browser against /api/v1. Gated by the
+  // `tryItConsole` feature flag (ENABLE_TRY_IT). See docs/try-it/.
+  app.use(
+    '/api/try',
+    createTryItRouter({
+      getSpec: () => swaggerSpec,
+      isEnabled: (developerId) => featureFlags.isEnabledSync('tryItConsole', { developerId }),
+    }),
+  );
 
   app.use('/api/graphql', yogaHandler as unknown as express.RequestHandler);
 

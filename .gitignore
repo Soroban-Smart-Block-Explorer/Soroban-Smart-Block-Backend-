@@ -51,3 +51,9 @@ tests/fuzzing/regressions/*.test.ts
 # Temporary files
 *.tmp
 *.orig
+
+# Python client
+__pycache__/
+*.pyc
+dist-py/
+*.egg-info/

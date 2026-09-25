@@ -1,0 +1,107 @@
+name: Soak
+
+# Load / soak tests with hard budgets (DX03). PRs touching the realtime path
+# run a 60 s smoke at 10× projected peak; the nightly schedule (and manual
+# dispatch) runs the full 30-minute soak at 10× projected peak. The harness
+# exits non-zero when any budget is violated, failing the job.
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'src/graphql/**'
+      - 'src/events/**'
+      - 'src/feed/**'
+      - 'src/api/tryit/**'
+      - 'src/lib/openapi/**'
+      - 'tests/load/**'
+      - '.github/workflows/soak.yml'
+  schedule:
+    - cron: '17 3 * * *'
+  workflow_dispatch:
+    inputs:
+      duration_sec:
+        description: 'Soak duration in seconds'
+        default: '1800'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # The GraphQL subscription path never touches Postgres; config validation
+  # only requires these to be well-formed.
+  DATABASE_URL: postgresql://test:test@localhost:5432/test
+  TESTNET_DATABASE_URL: postgresql://test:test@localhost:5432/test
+  STELLAR_NETWORK: testnet
+  CACHE_URL: memory://
+  SOAK_SUBSCRIBERS: '2000'
+  SOAK_RATE: '400'
+  SOAK_P99_BUDGET_MS: '250'
+  SOAK_HEAP_BUDGET_MB: '256'
+
+jobs:
+  graphql-subscriptions:
+    name: GraphQL subscriptions soak
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run soak (smoke on PRs, full on schedule/dispatch)
+        # explicit `shell: bash` enables pipefail so a budget failure is not
+        # masked by `tee`.
+        shell: bash
+        env:
+          SOAK_DURATION_SEC: ${{ github.event_name == 'pull_request' && '60' || github.event.inputs.duration_sec || '1800' }}
+        run: node --expose-gc -r ts-node/register/transpile-only tests/load/graphql-subscriptions-soak.ts | tee soak-report.json
+
+      - name: Upload soak report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: graphql-subscriptions-soak-report
+          path: soak-report.json
+          retention-days: 30
+
+  tryit-console:
+    name: Try-it console load
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run load test (smoke on PRs, full on schedule/dispatch)
+        shell: bash
+        env:
+          TRYIT_DURATION_SEC: ${{ github.event_name == 'pull_request' && '60' || github.event.inputs.duration_sec || '1800' }}
+          TRYIT_SESSIONS_PER_SEC: '50'
+          TRYIT_P99_BUDGET_MS: '200'
+        run: node --expose-gc -r ts-node/register/transpile-only tests/load/tryit-load.ts | tee tryit-load-report.json
+
+      - name: Upload load report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: tryit-load-report
+          path: tryit-load-report.json
+          retention-days: 30

@@ -35,10 +35,7 @@ import { safePost } from '../webhooks/ssrf-guard';
 export type AlertSeverity = 'low' | 'medium' | 'high' | 'critical';
 
 export type AlertRuleId =
-  | 'rapid_value_movement'
-  | 'unusual_approval'
-  | 'wash_trading'
-  | 'velocity_anomaly';
+  'rapid_value_movement' | 'unusual_approval' | 'wash_trading' | 'velocity_anomaly';
 
 export const ALERT_SEVERITIES: AlertSeverity[] = ['low', 'medium', 'high', 'critical'];
 

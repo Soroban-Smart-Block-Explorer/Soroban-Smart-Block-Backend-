@@ -26,6 +26,12 @@ import { amIResponsibleFor, getRangeCursor, isP2pEnabled, setRangeCursor } from 
 import { logger } from '../logger';
 import { uuidv7 } from '../utils/uuidv7';
 import { startSavedSearchScheduler, stopSavedSearchScheduler } from './savedSearchRunner';
+import {
+  indexContract,
+  indexEvent,
+  indexTransaction,
+  indexSafely,
+} from '../services/search/full-text-search';
 
 const BATCH = config.indexerBatchSize;
 const WORKERS = config.indexerCatchupWorkers;

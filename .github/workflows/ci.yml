@@ -242,6 +242,86 @@ jobs:
           path: coverage/
           retention-days: 30
 
+  # DX01/DX02: OpenAPI-first SDKs. The spec is the source of truth; generated
+  # clients must match it byte-for-byte (drift fails), API-surface changes
+  # must follow semver (docs/sdk/versioning.md), and the quickstart example
+  # runs against a live API instance backed by a real Postgres.
+  sdk:
+    name: SDKs
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: test
+          POSTGRES_PASSWORD: test
+          POSTGRES_DB: test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U test -d test"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      DATABASE_URL: postgresql://test:test@localhost:5432/test
+      TESTNET_DATABASE_URL: postgresql://test:test@localhost:5432/test
+      STELLAR_NETWORK: testnet
+      CACHE_URL: memory://
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Generated SDKs match the OpenAPI spec (drift gate)
+        run: npm run sdk:check
+
+      - name: Semver breaking-change gate
+        run: npm run sdk:breaking -- --base origin/main
+
+      - name: Build TypeScript SDK (strict, no any in generated code)
+        run: |
+          npm run sdk:build
+          if grep -nE '(:|<|\|)\s*any\b' packages/client/src/generated/*.ts; then
+            echo "generated code must not contain any"; exit 1
+          fi
+
+      - name: Start API for runnable examples
+        run: |
+          npx prisma migrate deploy
+          PORT=3000 npx ts-node --transpile-only src/index.ts > api.log 2>&1 &
+          for i in $(seq 1 60); do curl -sf localhost:3000/livez && exit 0; sleep 2; done
+          cat api.log; exit 1
+
+      - name: Run TypeScript quickstart against the live API
+        run: npx ts-node --transpile-only packages/client/examples/quickstart.ts
+        env:
+          SOROBAN_API_URL: http://localhost:3000/api/v1
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Python client tests (stdlib only, real local HTTP server)
+        run: python -m unittest discover -s packages/python-client/tests -v
+
+      - name: Python client builds as a wheel
+        run: python -m pip wheel --no-deps -w /tmp/wheels packages/python-client
+
+      - name: Run Python quickstart against the live API
+        run: python packages/python-client/examples/quickstart.py
+        env:
+          PYTHONPATH: packages/python-client
+          SOROBAN_API_URL: http://localhost:3000/api/v1
+
   # Issue #908: Validate Prometheus alert rule files with promtool.
   # promtool ships inside the prom/prometheus Docker image; we install it
   # directly from the GitHub release to avoid pulling the full image.

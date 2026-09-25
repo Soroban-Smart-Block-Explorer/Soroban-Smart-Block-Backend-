@@ -1,0 +1,70 @@
+name: SDK publish
+
+# Publishes SDKs with provenance. Tag `client-v<version>` for the TypeScript
+# SDK, `python-client-v<version>` for the Python client. The tag must match
+# the package version; generated code is re-verified before publishing.
+
+on:
+  push:
+    tags:
+      - 'client-v*'
+      - 'python-client-v*'
+
+permissions:
+  contents: read
+  id-token: write # npm provenance + PyPI trusted publishing (OIDC)
+
+jobs:
+  typescript:
+    if: startsWith(github.ref_name, 'client-v')
+    runs-on: ubuntu-latest
+    environment: npm
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: npm
+          registry-url: https://registry.npmjs.org
+      - run: npm ci
+      - name: Tag matches package version
+        run: test "client-v$(node -p "require('./packages/client/package.json').version")" = "${GITHUB_REF_NAME}"
+      - run: npm run sdk:check
+      - run: npx vitest run packages/client
+        env:
+          DATABASE_URL: postgresql://test:test@localhost:5432/test
+          TESTNET_DATABASE_URL: postgresql://test:test@localhost:5432/test
+          STELLAR_NETWORK: testnet
+      - run: npm run sdk:build
+      - name: Publish with provenance
+        run: npm publish -w @soroban-explorer/client --provenance --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+  python:
+    if: startsWith(github.ref_name, 'python-client-v')
+    runs-on: ubuntu-latest
+    environment: pypi
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: npm
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: npm ci
+      - name: Tag matches package version
+        run: |
+          v=$(python -c "import tomllib;print(tomllib.load(open('packages/python-client/pyproject.toml','rb'))['project']['version'])")
+          test "python-client-v$v" = "${GITHUB_REF_NAME}"
+      - run: npm run sdk:check
+      - run: python -m unittest discover -s packages/python-client/tests
+      - name: Build sdist + wheel
+        run: python -m pip install build==1.2.2 && python -m build packages/python-client --outdir dist-py
+      - name: Publish to PyPI (trusted publishing, attestations = provenance)
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          packages-dir: dist-py
+          attestations: true

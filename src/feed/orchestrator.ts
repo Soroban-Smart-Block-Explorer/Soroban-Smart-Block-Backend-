@@ -99,6 +99,8 @@ export class FeedOrchestrator extends EventEmitter {
         ledgerSequence: transaction.ledgerSequence,
         timestamp: transaction.ledgerCloseTime,
         sourceAccount: transaction.sourceAccount,
+        contractAddress: transaction.contractAddress ?? null,
+        functionName: transaction.functionName ?? null,
         operations: transaction.operations || [],
         status: transaction.status,
         fee: transaction.feeCharged,
