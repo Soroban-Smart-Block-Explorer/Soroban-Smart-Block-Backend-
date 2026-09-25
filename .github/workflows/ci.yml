@@ -306,6 +306,22 @@ jobs:
         env:
           SOROBAN_API_URL: http://localhost:3000/api/v1
 
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Python client tests (stdlib only, real local HTTP server)
+        run: python -m unittest discover -s packages/python-client/tests -v
+
+      - name: Python client builds as a wheel
+        run: python -m pip wheel --no-deps -w /tmp/wheels packages/python-client
+
+      - name: Run Python quickstart against the live API
+        run: python packages/python-client/examples/quickstart.py
+        env:
+          PYTHONPATH: packages/python-client
+          SOROBAN_API_URL: http://localhost:3000/api/v1
+
   # Issue #908: Validate Prometheus alert rule files with promtool.
   # promtool ships inside the prom/prometheus Docker image; we install it
   # directly from the GitHub release to avoid pulling the full image.

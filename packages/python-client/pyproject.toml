@@ -1,0 +1,27 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "soroban-explorer-client"
+version = "1.0.0"
+description = "Reference Python client for the Soroban Smart Block Explorer API, generated from its OpenAPI spec"
+readme = "README.md"
+license = { text = "MIT" }
+requires-python = ">=3.9"
+dependencies = []
+classifiers = [
+  "Programming Language :: Python :: 3",
+  "License :: OSI Approved :: MIT License",
+  "Typing :: Typed",
+]
+
+[project.urls]
+Source = "https://github.com/Soroban-Smart-Block-Explorer/Soroban-Smart-Block-Backend-/tree/main/packages/python-client"
+Documentation = "https://github.com/Soroban-Smart-Block-Explorer/Soroban-Smart-Block-Backend-/tree/main/docs/sdk/python"
+
+[tool.setuptools]
+packages = ["soroban_explorer"]
+
+[tool.setuptools.package-data]
+soroban_explorer = ["py.typed"]
