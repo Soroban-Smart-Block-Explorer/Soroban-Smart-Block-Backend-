@@ -95,6 +95,13 @@ export const FEATURE_FLAG_DEFINITIONS: FlagDefinition[] = [
     envVar: 'ENABLE_GRAPHQL_SUBSCRIPTIONS',
     defaultEnabled: true,
   },
+  {
+    key: 'tryItConsole',
+    description:
+      'In-browser API console (/api/try) that builds and executes requests against /api/v1 from the OpenAPI spec. Kill switch: /api/try returns 404 FEATURE_DISABLED.',
+    envVar: 'ENABLE_TRY_IT',
+    defaultEnabled: true,
+  },
 ];
 
 const byKey = new Map(FEATURE_FLAG_DEFINITIONS.map((def) => [def.key, def]));

@@ -234,3 +234,46 @@ groups:
           summary: "GraphQL subscription bridge p99 above 5ms (SLO-3)"
           description: "Bridge p99 is {{ $value | humanizeDuration }}."
           runbook_url: "https://github.com/Soroban-Smart-Block-Explorer/Soroban-Smart-Block-Backend-/blob/main/docs/graphql-subscriptions/runbook.md#latency"
+
+  # ── Try-it API console (DX04) ──────────────────────────────────────────────
+  # SLOs: docs/try-it/design.md §SLOs · Runbook: docs/try-it/runbook.md
+  #   SLO-1 catalog availability: ≥ 99.9% of catalog responses are not 503 (30d).
+  #   SLO-2 console requests: ≤ 1% of API requests sent from the console are 5xx.
+  #   SLO-3 catalog build p99 < 1 s.
+  - name: soroban_explorer_tryit
+    interval: 30s
+    rules:
+      - record: tryit:catalog_error_ratio:rate1h
+        expr: |
+          sum(rate(tryit_asset_requests_total{asset="catalog",status="503"}[1h]))
+          /
+          clamp_min(sum(rate(tryit_asset_requests_total{asset="catalog"}[1h])), 1e-9)
+
+      - alert: TryItCatalogUnavailable
+        expr: tryit:catalog_error_ratio:rate1h > (14.4 * 0.001)
+        for: 5m
+        labels:
+          severity: warning
+          team: platform
+        annotations:
+          summary: "Try-it console catalog failing to build (SLO-1 fast burn)"
+          description: >
+            {{ $value | humanizePercentage }} of catalog requests returned 503 over 1h
+            (budget 0.1%). The console shows a fallback link to the raw spec.
+          runbook_url: "https://github.com/Soroban-Smart-Block-Explorer/Soroban-Smart-Block-Backend-/blob/main/docs/try-it/runbook.md#catalog-unavailable"
+
+      - alert: TryItConsoleRequests5xx
+        expr: |
+          sum(rate(tryit_api_requests_total{status_class="5xx"}[15m]))
+          /
+          clamp_min(sum(rate(tryit_api_requests_total[15m])), 1e-9) > 0.01
+        for: 15m
+        labels:
+          severity: warning
+          team: platform
+        annotations:
+          summary: "Requests sent from the try-it console are failing (SLO-2)"
+          description: >
+            {{ $value | humanizePercentage }} of console-originated API requests returned 5xx.
+            Usually mirrors an API incident; check HTTP5xxSurgeRatio first.
+          runbook_url: "https://github.com/Soroban-Smart-Block-Explorer/Soroban-Smart-Block-Backend-/blob/main/docs/try-it/runbook.md#console-requests-failing"

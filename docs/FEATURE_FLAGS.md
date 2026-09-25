@@ -138,3 +138,4 @@ as kill switches that need no restart when flipped via the admin API.
 | Flag | Env var | Default | Effect when off | Docs |
 |------|---------|---------|-----------------|------|
 | `graphqlSubscriptions` | `ENABLE_GRAPHQL_SUBSCRIPTIONS` | on | New GraphQL subscriptions rejected with `SUBSCRIPTIONS_DISABLED`; queries unaffected | `docs/graphql-subscriptions/` |
+| `tryItConsole` | `ENABLE_TRY_IT` | on | `/api/try/*` returns 404 `FEATURE_DISABLED`; API itself unaffected | `docs/try-it/` |

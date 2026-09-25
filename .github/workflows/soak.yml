@@ -12,6 +12,8 @@ on:
       - 'src/graphql/**'
       - 'src/events/**'
       - 'src/feed/**'
+      - 'src/api/tryit/**'
+      - 'src/lib/openapi/**'
       - 'tests/load/**'
       - '.github/workflows/soak.yml'
   schedule:
@@ -71,4 +73,35 @@ jobs:
         with:
           name: graphql-subscriptions-soak-report
           path: soak-report.json
+          retention-days: 30
+
+  tryit-console:
+    name: Try-it console load
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run load test (smoke on PRs, full on schedule/dispatch)
+        shell: bash
+        env:
+          TRYIT_DURATION_SEC: ${{ github.event_name == 'pull_request' && '60' || github.event.inputs.duration_sec || '1800' }}
+          TRYIT_SESSIONS_PER_SEC: '50'
+          TRYIT_P99_BUDGET_MS: '200'
+        run: node --expose-gc -r ts-node/register/transpile-only tests/load/tryit-load.ts | tee tryit-load-report.json
+
+      - name: Upload load report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: tryit-load-report
+          path: tryit-load-report.json
           retention-days: 30
