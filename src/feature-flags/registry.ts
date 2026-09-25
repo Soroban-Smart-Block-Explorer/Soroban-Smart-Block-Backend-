@@ -88,6 +88,13 @@ export const FEATURE_FLAG_DEFINITIONS: FlagDefinition[] = [
     ],
     defaultEnabled: false,
   },
+  {
+    key: 'graphqlSubscriptions',
+    description:
+      'GraphQL subscriptions over SSE on /api/graphql (transactionAdded, eventEmitted, alertTriggered, ledgerHead, contractActivity). Kill switch: new subscriptions are rejected with SUBSCRIPTIONS_DISABLED; queries/mutations are unaffected.',
+    envVar: 'ENABLE_GRAPHQL_SUBSCRIPTIONS',
+    defaultEnabled: true,
+  },
 ];
 
 const byKey = new Map(FEATURE_FLAG_DEFINITIONS.map((def) => [def.key, def]));

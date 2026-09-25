@@ -6,6 +6,7 @@ import { parseQuery, safeString } from '../schemas/common';
 import { config } from '../config';
 import { logger } from '../logger';
 import { buildCacheKey, cacheGet, cacheSet } from '../cache';
+import { searchFullText, rebuildSearchIndex } from '../services/search/full-text-search';
 
 interface _ContractSource {
   contractAddress: string;

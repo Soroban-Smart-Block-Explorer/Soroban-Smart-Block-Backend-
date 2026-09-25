@@ -128,3 +128,13 @@ Flag rows and the schema table set are cached in-process for 30 s. Admin writes
 invalidate the local cache immediately; other instances pick the change up
 within the TTL. This is the standard tradeoff for a small, hot cache — use the
 DB directly for anything that needs stronger consistency.
+
+## Request-scoped flags
+
+Unlike the boot-gated services above, these flags are evaluated on every
+request (per `developerId`, so rollouts and developer overrides apply) and act
+as kill switches that need no restart when flipped via the admin API.
+
+| Flag | Env var | Default | Effect when off | Docs |
+|------|---------|---------|-----------------|------|
+| `graphqlSubscriptions` | `ENABLE_GRAPHQL_SUBSCRIPTIONS` | on | New GraphQL subscriptions rejected with `SUBSCRIPTIONS_DISABLED`; queries unaffected | `docs/graphql-subscriptions/` |

@@ -144,3 +144,93 @@ groups:
             does not persist data across restarts or share state between replicas.
             Rate limiting is operating per-instance. Immediate action required.
           runbook_url: "https://github.com/Soroban-Smart-Block-Explorer/runbooks/blob/main/redis-fallback.md"
+
+  # ── GraphQL subscriptions (DX03) ───────────────────────────────────────────
+  # SLOs and error budgets: docs/graphql-subscriptions/design.md §SLOs.
+  # Runbook: docs/graphql-subscriptions/runbook.md.
+  #   SLO-1 admission availability: ≥ 99.5% of well-formed subscription
+  #         requests are admitted (capacity rejections burn the budget;
+  #         per-client limit and invalid-argument rejections do not).
+  #   SLO-2 bridge integrity: ≤ 0.1% of bridged messages hit handler_error.
+  #   SLO-3 bridge latency: p99 < 5 ms.
+  - name: soroban_explorer_graphql_subscriptions
+    interval: 30s
+    rules:
+      - record: graphql_subscriptions:admission_error_ratio:rate1h
+        expr: |
+          sum(rate(graphql_subscription_admissions_total{outcome="rejected_capacity"}[1h]))
+          /
+          clamp_min(sum(rate(graphql_subscription_admissions_total{outcome=~"accepted|rejected_capacity"}[1h])), 1e-9)
+
+      - record: graphql_subscriptions:admission_error_ratio:rate6h
+        expr: |
+          sum(rate(graphql_subscription_admissions_total{outcome="rejected_capacity"}[6h]))
+          /
+          clamp_min(sum(rate(graphql_subscription_admissions_total{outcome=~"accepted|rejected_capacity"}[6h])), 1e-9)
+
+      # Multi-window burn-rate alerts against the 0.5% error budget (SLO-1).
+      - alert: GraphQLSubscriptionAdmissionBudgetFastBurn
+        expr: graphql_subscriptions:admission_error_ratio:rate1h > (14.4 * 0.005)
+        for: 5m
+        labels:
+          severity: critical
+          team: platform
+        annotations:
+          summary: "GraphQL subscription capacity rejections burning error budget fast"
+          description: >
+            {{ $value | humanizePercentage }} of subscription admissions were rejected for
+            capacity over 1h (budget 0.5%, burn rate > 14.4x). Scale out or raise
+            GQL_SUBSCRIPTION_MAX_GLOBAL; see the runbook.
+          runbook_url: "https://github.com/Soroban-Smart-Block-Explorer/Soroban-Smart-Block-Backend-/blob/main/docs/graphql-subscriptions/runbook.md#capacity-exhausted"
+
+      - alert: GraphQLSubscriptionAdmissionBudgetSlowBurn
+        expr: graphql_subscriptions:admission_error_ratio:rate6h > (6 * 0.005)
+        for: 30m
+        labels:
+          severity: warning
+          team: platform
+        annotations:
+          summary: "GraphQL subscription capacity rejections burning error budget"
+          description: >
+            {{ $value | humanizePercentage }} of subscription admissions were rejected for
+            capacity over 6h (budget 0.5%, burn rate > 6x).
+          runbook_url: "https://github.com/Soroban-Smart-Block-Explorer/Soroban-Smart-Block-Backend-/blob/main/docs/graphql-subscriptions/runbook.md#capacity-exhausted"
+
+      - alert: GraphQLSubscriptionBridgeErrors
+        expr: |
+          sum(rate(graphql_subscription_bridge_dropped_total{reason="handler_error"}[15m]))
+          /
+          clamp_min(sum(rate(graphql_subscription_messages_total[15m])), 1e-9) > 0.001
+        for: 10m
+        labels:
+          severity: critical
+          team: platform
+        annotations:
+          summary: "GraphQL subscription bridge failing to publish (SLO-2)"
+          description: >
+            More than 0.1% of feed messages failed inside the GraphQL bridge over 15m.
+          runbook_url: "https://github.com/Soroban-Smart-Block-Explorer/Soroban-Smart-Block-Backend-/blob/main/docs/graphql-subscriptions/runbook.md#bridge-errors"
+
+      - alert: GraphQLSubscriptionInvalidFeedPayloads
+        expr: sum(rate(graphql_subscription_bridge_dropped_total{reason=~"invalid_payload|malformed_envelope"}[15m])) > 0.1
+        for: 15m
+        labels:
+          severity: warning
+          team: platform
+        annotations:
+          summary: "Feed bus is emitting payloads the GraphQL bridge rejects"
+          description: >
+            {{ $value }} msg/s dropped as invalid — upstream data corruption or a feed
+            schema change. Subscribers are protected; investigate the publisher.
+          runbook_url: "https://github.com/Soroban-Smart-Block-Explorer/Soroban-Smart-Block-Backend-/blob/main/docs/graphql-subscriptions/runbook.md#invalid-payloads"
+
+      - alert: GraphQLSubscriptionBridgeLatencyHigh
+        expr: histogram_quantile(0.99, sum by (le) (rate(graphql_subscription_bridge_duration_seconds_bucket[10m]))) > 0.005
+        for: 15m
+        labels:
+          severity: warning
+          team: platform
+        annotations:
+          summary: "GraphQL subscription bridge p99 above 5ms (SLO-3)"
+          description: "Bridge p99 is {{ $value | humanizeDuration }}."
+          runbook_url: "https://github.com/Soroban-Smart-Block-Explorer/Soroban-Smart-Block-Backend-/blob/main/docs/graphql-subscriptions/runbook.md#latency"

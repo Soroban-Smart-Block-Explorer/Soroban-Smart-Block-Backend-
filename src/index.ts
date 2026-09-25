@@ -14,6 +14,7 @@ import { prismaWrite as prisma, prismaRead, prismaBackfill } from './db';
 import { stopIndexerService } from './indexer/indexer';
 import { stopP2pNode } from './p2p';
 import { shutdownWebSocketServer } from './ws/websocketServer';
+import { stopMevPredictionPublisher } from './ws/mevPredictBroadcaster';
 import { stopBridgeWorker } from './bridge-tracker';
 import { feedOrchestrator } from './feed/orchestrator';
 import { stopPriceUpdater } from './services/pricing';

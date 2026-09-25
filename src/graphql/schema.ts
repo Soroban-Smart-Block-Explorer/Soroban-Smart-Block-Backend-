@@ -186,15 +186,58 @@ export const typeDefs = `#graphql
     ledger(sequence: Int!): Ledger
   }
 
+  # ── Realtime ───────────────────────────────────────────────────────
+  """Where a ledger head observation came from."""
+  enum LedgerHeadSource {
+    """Published on the ledgers feed channel; carries hash and txCount."""
+    LEDGER_FEED
+    """Derived from the ledger sequence of an indexed transaction or event."""
+    DERIVED
+  }
+
+  """The newest ledger this instance has observed. Monotonic per stream."""
+  type LedgerHead {
+    sequence: Int!
+    closeTime: DateTime!
+    hash: String
+    txCount: Int
+    source: LedgerHeadSource!
+  }
+
+  enum ContractActivityKind {
+    TRANSACTION
+    EVENT
+  }
+
+  """A transaction invoking, or an event emitted by, a single contract."""
+  type ContractActivity {
+    kind: ContractActivityKind!
+    contractAddress: String!
+    ledgerSequence: Int!
+    occurredAt: DateTime!
+    """Set when kind = TRANSACTION"""
+    transaction: Transaction
+    """Set when kind = EVENT"""
+    event: Event
+  }
+
   # ── Subscriptions ──────────────────────────────────────────────────
+  # Transport: GraphQL over Server-Sent Events on /api/graphql
+  # (send "Accept: text/event-stream"). See docs/graphql-subscriptions/.
   type Subscription {
-    """Subscribe to new transactions, optionally filtered by contract or account"""
+    """Subscribe to new transactions, optionally filtered by contract (C… strkey) or source account (G…/M… strkey)"""
     transactionAdded(contract: String, account: String): Transaction!
 
-    """Subscribe to new events, optionally filtered by contract, event type, or topic"""
+    """Subscribe to new events, optionally filtered by contract, event type, or topic symbol"""
     eventEmitted(contract: String, eventType: String, topic: String): Event!
 
-    """Subscribe to security or composability alerts"""
+    """Subscribe to security or composability alerts, optionally filtered by severity (case-insensitive)"""
     alertTriggered(severity: String): Alert!
+
+    """Subscribe to the ledger head; emits each time the observed head advances"""
+    ledgerHead: LedgerHead!
+
+    """Subscribe to all activity (transactions and events) for one contract"""
+    contractActivity(address: String!, kinds: [ContractActivityKind!]): ContractActivity!
   }
 `;
