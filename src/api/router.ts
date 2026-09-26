@@ -263,6 +263,8 @@ router.use('/arbitrage', arbitrageRouter);
 router.use('/audit', auditRouter);
 import { vendorAuditsRouter } from './vendor-audits';
 router.use('/vendor-audits', vendorAuditsRouter);
+import { securityScansRouter } from './security-scans';
+router.use('/security-scans', securityScansRouter);
 
 // ── Analytics & Dashboards (#839) ─────────────────────────────────────────────
 import { analyticsRouter } from './analytics';
