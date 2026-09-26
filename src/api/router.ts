@@ -63,6 +63,9 @@ import { scheduleRouter } from './schedule';
 import feedRouter from './feed';
 import backfillRouter from './backfill';
 import feedSSERouter from './feedSSE';
+import { realtimeSSERouter } from './realtimeSSE';
+import { customAlertsRouter } from './customAlerts';
+import { notificationCenterRouter } from './notificationCenter';
 import { arbitrageRouter } from './arbitrage';
 import { auditRouter } from './audit';
 import { rateLimitAdminRouter } from './rate-limits';
@@ -255,6 +258,9 @@ router.use('/schedule', scheduleRouter);
 router.use('/feed', feedRouter);
 router.use('/feed/backfill', backfillRouter);
 router.use('/feed/sse', feedSSERouter);
+router.use('/realtime', realtimeSSERouter);
+router.use('/alerts/custom', customAlertsRouter);
+router.use('/notifications/inbox', notificationCenterRouter);
 // Arbitrage Intelligence Platform
 router.use('/arbitrage', arbitrageRouter);
 // Smart Contract Audit Trail & Certificate Platform
