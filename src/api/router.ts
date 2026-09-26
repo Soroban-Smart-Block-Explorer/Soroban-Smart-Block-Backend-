@@ -316,3 +316,7 @@ router.use('/compliance/settlement-batch', settlementBatchRouter);
 
 // ── Public Status Page & Uptime History API (PLT10 / #1031) ─────────────────
 router.use('/status', statusRouter);
+
+// ── On-demand contract audit report generator (VE01 / #1042) ─────────────────
+import { auditReportRouter } from './audit-report';
+router.use('/audit-reports', auditReportRouter);
