@@ -311,6 +311,8 @@ import { dtccSettlementRouter } from './dtcc-settlement';
 import { settlementBatchRouter } from './settlement-batch';
 router.use('/compliance/commodity', commodityComplianceRouter);
 router.use('/compliance/rwa', rwaComplianceRouter);
+import { tokenLabelsRouter } from './token-labels';
+router.use('/compliance/token-labels', tokenLabelsRouter);
 router.use('/compliance/dtcc-settlement', dtccSettlementRouter);
 router.use('/compliance/settlement-batch', settlementBatchRouter);
 
