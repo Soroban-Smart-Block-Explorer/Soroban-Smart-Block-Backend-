@@ -52,6 +52,8 @@
     "prepare": "husky",
     "validate-routes": "ts-node scripts/validate-routes.ts",
     "validate-routes:ci": "ts-node scripts/validate-routes.ts --max-orphans 15",
+    "postman:generate": "node scripts/generate-postman.js",
+    "postman:check": "node scripts/generate-postman.js --check",
     "audit:indexes": "ts-node scripts/audit-indexes.ts",
     "audit:cycles": "ts-node -P tsconfig.scripts.json scripts/detect-import-cycles.ts",
     "test:routes": "vitest run tests/orphaned-routers-integration.test.ts",

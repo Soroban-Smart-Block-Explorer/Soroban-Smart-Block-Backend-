@@ -17,6 +17,7 @@ import { config } from './config';
 import { router } from './api/router';
 import { billingRouter } from './services/stripe-billing';
 import { correlationMiddleware } from './middleware/correlation';
+import { versioningMiddleware } from './middleware/versioning';
 import { tieredRateLimit } from './middleware/rateLimit';
 import { metricsMiddleware } from './middleware/metricsMiddleware';
 import { sanitizeInputs, requestSizeGuard } from './middleware/sanitize';
@@ -224,7 +225,7 @@ export function createApp(options: AppOptions): express.Express {
 
   app.use('/api/graphql', yogaHandler as unknown as express.RequestHandler);
 
-  app.use('/api/v1', router);
+  app.use('/api/v1', versioningMiddleware, router);
   app.use('/api/billing', billingRouter);
 
   // #907 — /metrics is rate-limited and gated behind an IP allowlist or

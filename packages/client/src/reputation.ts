@@ -1,7 +1,22 @@
+import { errorFromResponse } from './errors';
+import type {
+  BadgeList,
+  Leaderboard,
+  OracleAttestation,
+  ReputationScore,
+  TrustPath,
+} from './models';
+
 type Fetcher = (
   input: string,
   init?: Record<string, unknown>,
-) => Promise<{ ok: boolean; statusText: string; json: () => Promise<unknown> }>;
+) => Promise<{
+  ok: boolean;
+  status?: number;
+  statusText: string;
+  headers?: { get(name: string): string | null };
+  json: () => Promise<unknown>;
+}>;
 
 export interface ReputationClientOptions {
   baseUrl: string;
@@ -19,42 +34,42 @@ export class ReputationClient {
       ((input: string, init?: Record<string, unknown>) => fetch(input as any, init as any));
   }
 
-  score(address: string, chainData?: unknown): Promise<unknown> {
+  score(address: string, chainData?: unknown): Promise<ReputationScore> {
     if (chainData) {
       return this.post('/api/v1/reputation/score', { address, chainData });
     }
     return this.get(`/api/v1/reputation/score/${encodeURIComponent(address)}`);
   }
 
-  leaderboard(category = 'overall', limit = 10): Promise<unknown> {
+  leaderboard(category = 'overall', limit = 10): Promise<Leaderboard> {
     return this.get(
       `/api/v1/reputation/leaderboards/${encodeURIComponent(category)}?limit=${limit}`,
     );
   }
 
-  badges(address: string): Promise<unknown> {
+  badges(address: string): Promise<BadgeList> {
     return this.get(`/api/v1/reputation/badges/${encodeURIComponent(address)}`);
   }
 
-  oracle(address: string): Promise<unknown> {
+  oracle(address: string): Promise<OracleAttestation> {
     return this.get(`/api/v1/reputation/oracle/${encodeURIComponent(address)}`);
   }
 
-  trustPath(from: string, to: string): Promise<unknown> {
+  trustPath(from: string, to: string): Promise<TrustPath> {
     return this.get(
       `/api/v1/reputation/trust/path?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`,
     );
   }
 
-  private get(path: string): Promise<unknown> {
+  private get<T>(path: string): Promise<T> {
     return this.request(path, { method: 'GET' });
   }
 
-  private post(path: string, body: unknown): Promise<unknown> {
+  private post<T>(path: string, body: unknown): Promise<T> {
     return this.request(path, { method: 'POST', body: JSON.stringify(body) });
   }
 
-  private async request(path: string, init: Record<string, unknown>): Promise<unknown> {
+  private async request<T>(path: string, init: Record<string, unknown>): Promise<T> {
     const response = await this.fetcher(`${this.baseUrl}${path}`, {
       headers:
         path.startsWith('/api/v1/reputation/score') && init.method === 'POST'
@@ -64,9 +79,14 @@ export class ReputationClient {
     });
     const data = await response.json();
     if (!response.ok) {
-      const errorBody = data as { error?: string };
-      throw new Error(errorBody.error ?? response.statusText);
+      const retryAfter = Number(response.headers?.get('retry-after'));
+      throw errorFromResponse(
+        response.status ?? 500,
+        data,
+        response.statusText,
+        Number.isFinite(retryAfter) && retryAfter > 0 ? retryAfter : undefined,
+      );
     }
-    return data;
+    return data as T;
   }
 }

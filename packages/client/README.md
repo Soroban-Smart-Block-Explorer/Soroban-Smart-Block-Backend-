@@ -45,3 +45,18 @@ const score = await reputation.score('G...');
 ## License
 
 MIT
+
+## Typed responses and errors
+
+`ReputationClient` methods return typed models (`ReputationScore`, `Leaderboard`, `BadgeList`, `TrustPath`). Failures throw a `SorobanApiError` subclass by HTTP status: `ValidationError` (400/422), `AuthenticationError` (401), `ForbiddenError` (403), `NotFoundError` (404), `RateLimitError` (429, with `retryAfter` seconds), `ServerError` (5xx). Each has `category`, `status`, `code` and `details`.
+
+```ts
+import { ReputationClient, retryOnRateLimit, NotFoundError } from '@soroban-explorer/client';
+
+const client = new ReputationClient({ baseUrl: 'http://localhost:3000' });
+try {
+  const score = await retryOnRateLimit(() => client.score('G...'), { maxRetries: 3 });
+} catch (err) {
+  if (err instanceof NotFoundError) { /* unknown address */ }
+}
+```

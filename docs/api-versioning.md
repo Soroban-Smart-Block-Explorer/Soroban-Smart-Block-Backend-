@@ -36,3 +36,17 @@ To allow the platform to evolve while supporting existing integrations, versions
 1. **Active**: The version is fully supported, actively maintained, and recommended for new integrations.
 2. **Deprecated**: The version is functional but scheduled for retirement. A `Deprecation` header is attached, and a `Sunset` date is set. New features are not backported.
 3. **Retired**: The version is no longer available. Requests to retired paths or versions will return `406 Not Acceptable` or `404 Not Found`.
+
+## Version Registry
+
+Supported versions live in `API_VERSIONS` in `src/middleware/versioning.ts` (`active`, `deprecated` with a `sunset` date, or `retired`). `versioningMiddleware` is mounted on `/api/v1`; `Deprecation`, `Sunset` and `Link` headers are emitted only for versions marked `deprecated`. `v1` is currently `active`.
+
+## No Breaking Changes Within a Version
+
+Within a major version only additive changes are allowed: new endpoints, new optional request fields, new response fields. Removing or renaming fields/endpoints, changing types, or tightening validation requires a new major version.
+
+## Deprecation Policy
+
+1. Mark the old version `deprecated` in the registry with a `sunset` date at least 6 months out.
+2. Announce in release notes; the `Deprecation`/`Sunset`/`Link` headers signal it to clients.
+3. After the sunset date, mark it `retired`; requests for it receive `406 Not Acceptable`.
