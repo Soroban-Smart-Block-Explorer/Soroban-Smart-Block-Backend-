@@ -262,6 +262,32 @@ jobs:
       - name: Validate Prometheus alert rules
         run: promtool check rules prometheus/alerts.yml
 
+  # #1036: Postman collection + SDK bundle are generated from the mounted
+  # routes; drift against src/api/router.ts fails the build.
+  client-artifacts:
+    name: Client Artifacts
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+
+      - name: Postman collection drift check
+        run: node scripts/generate-postman.js --check
+
+      - name: Generate Postman collection and SDK bundle
+        run: |
+          node scripts/generate-postman.js --out artifacts
+          tar -czf artifacts/client-sdk.tgz -C packages/client package.json README.md src
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: client-artifacts
+          path: artifacts/
+          retention-days: 30
+
   security:
     name: Security
     runs-on: ubuntu-latest
