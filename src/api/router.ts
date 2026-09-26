@@ -324,3 +324,7 @@ router.use('/scans/scheduled', scheduledScansRouter);
 // ── Consolidated compliance report bundle (VE04 / #1045) ────────────────────
 import { complianceBundleRouter } from './compliance-bundle';
 router.use('/compliance/bundle', requireApiKey, complianceBundleRouter);
+
+// ── Freeze-system incident alert channel (VE05 / #1046) ─────────────────────
+import { freezeIncidentsRouter } from './freeze-incidents';
+router.use('/freeze-incidents', freezeIncidentsRouter);

@@ -12,6 +12,7 @@ import { xdr } from '@stellar/stellar-sdk';
 import { prismaWrite as prisma } from '../db';
 import { logger } from '../logger';
 import { safePost, SsrfBlockedError } from '../webhooks/ssrf-guard';
+import { freezeIncidentChannel, FreezeSeverity } from './freeze-incident-channel';
 
 // ── In-memory cache of active frozen keys ────────────────────────────────────
 
@@ -130,6 +131,14 @@ export async function recordFreezeViolation(
       data: { status: 'freeze_flagged' },
     }),
   ]);
+
+  freezeIncidentChannel.publish({
+    transactionHash,
+    contractAddress,
+    ledgerSequence,
+    severity: severity as FreezeSeverity,
+    frozenKeys,
+  });
 
   if (severity === 'critical') {
     const webhookUrl = process.env.FREEZE_ALERT_WEBHOOK_URL;
