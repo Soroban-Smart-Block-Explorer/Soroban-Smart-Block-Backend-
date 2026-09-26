@@ -108,6 +108,8 @@ router.use('/freeze', adminAuth, freezeRouter);
 router.use('/i18n', i18nRouter);
 router.use('/transactions', transactionRouter);
 router.use('/events', eventRouter);
+import { contractLicensesRouter } from './contract-licenses';
+router.use('/contracts/licenses', contractLicensesRouter);
 router.use('/contracts', contractRouter);
 router.use('/wallets', walletRouter);
 router.use('/tokens', tokenRouter);
@@ -259,6 +261,10 @@ router.use('/feed/sse', feedSSERouter);
 router.use('/arbitrage', arbitrageRouter);
 // Smart Contract Audit Trail & Certificate Platform
 router.use('/audit', auditRouter);
+import { vendorAuditsRouter } from './vendor-audits';
+router.use('/vendor-audits', vendorAuditsRouter);
+import { securityScansRouter } from './security-scans';
+router.use('/security-scans', securityScansRouter);
 
 // ── Analytics & Dashboards (#839) ─────────────────────────────────────────────
 import { analyticsRouter } from './analytics';
@@ -311,6 +317,8 @@ import { dtccSettlementRouter } from './dtcc-settlement';
 import { settlementBatchRouter } from './settlement-batch';
 router.use('/compliance/commodity', commodityComplianceRouter);
 router.use('/compliance/rwa', rwaComplianceRouter);
+import { tokenLabelsRouter } from './token-labels';
+router.use('/compliance/token-labels', tokenLabelsRouter);
 router.use('/compliance/dtcc-settlement', dtccSettlementRouter);
 router.use('/compliance/settlement-batch', settlementBatchRouter);
 
