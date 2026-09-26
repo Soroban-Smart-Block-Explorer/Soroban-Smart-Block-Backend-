@@ -261,6 +261,8 @@ router.use('/feed/sse', feedSSERouter);
 router.use('/arbitrage', arbitrageRouter);
 // Smart Contract Audit Trail & Certificate Platform
 router.use('/audit', auditRouter);
+import { vendorAuditsRouter } from './vendor-audits';
+router.use('/vendor-audits', vendorAuditsRouter);
 
 // ── Analytics & Dashboards (#839) ─────────────────────────────────────────────
 import { analyticsRouter } from './analytics';
