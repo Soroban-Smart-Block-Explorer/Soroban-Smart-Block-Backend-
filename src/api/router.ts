@@ -108,6 +108,8 @@ router.use('/freeze', adminAuth, freezeRouter);
 router.use('/i18n', i18nRouter);
 router.use('/transactions', transactionRouter);
 router.use('/events', eventRouter);
+import { contractLicensesRouter } from './contract-licenses';
+router.use('/contracts/licenses', contractLicensesRouter);
 router.use('/contracts', contractRouter);
 router.use('/wallets', walletRouter);
 router.use('/tokens', tokenRouter);
