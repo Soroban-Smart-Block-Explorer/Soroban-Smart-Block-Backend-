@@ -733,3 +733,7 @@ See `docs/sandbox-jit-design.md` for the target architecture including:
 - Deterministic execution (float trapping, no wall clock, no threads)
 - Mainnet replay parity (<10% real execution time)
 - Side-channel hardening (constant-time metering, Spectre fences)
+
+## Tutorials
+
+Step-by-step developer tutorials live in [docs/tutorials](docs/tutorials/README.md).
