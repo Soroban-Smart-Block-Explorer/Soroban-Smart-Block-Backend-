@@ -328,3 +328,7 @@ router.use('/compliance/bundle', requireApiKey, complianceBundleRouter);
 // ── Freeze-system incident alert channel (VE05 / #1046) ─────────────────────
 import { freezeIncidentsRouter } from './freeze-incidents';
 router.use('/freeze-incidents', freezeIncidentsRouter);
+
+// ── Verifiable build & bytecode provenance (VE06 / #1047) ───────────────────
+import { provenanceRouter } from './provenance';
+router.use('/provenance', provenanceRouter);
