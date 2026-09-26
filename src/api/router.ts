@@ -320,3 +320,7 @@ router.use('/status', statusRouter);
 // ── Scheduled reentrancy & overflow scanning (VE03 / #1044) ─────────────────
 import { scheduledScansRouter } from './scheduled-scans';
 router.use('/scans/scheduled', scheduledScansRouter);
+
+// ── Consolidated compliance report bundle (VE04 / #1045) ────────────────────
+import { complianceBundleRouter } from './compliance-bundle';
+router.use('/compliance/bundle', requireApiKey, complianceBundleRouter);
