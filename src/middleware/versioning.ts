@@ -1,30 +1,54 @@
 import type { Request, Response, NextFunction } from 'express';
 
+export type VersionStatus = 'active' | 'deprecated' | 'retired';
+
+export interface ApiVersionInfo {
+  version: string;
+  status: VersionStatus;
+  /** RFC 7231 date; required when status is deprecated. */
+  sunset?: string;
+}
+
+/**
+ * Version registry. Policy (docs/api-versioning.md): no breaking changes within
+ * a version; a version is deprecated at least 6 months before it is retired.
+ */
+export const API_VERSIONS: readonly ApiVersionInfo[] = [{ version: 'v1', status: 'active' }];
+
+export const DEFAULT_API_VERSION = 'v1';
+export const DEPRECATION_POLICY_URL = 'https://api.example.com/docs/versioning';
+
+/** Normalizes "v1", "1", "1.0", "1.x" -> "v1"; returns null when malformed. */
+export function normalizeVersion(raw: string): string | null {
+  const m = /^v?(\d+)(\.(\d+|x))*$/.exec(raw.trim().toLowerCase());
+  return m ? `v${m[1]}` : null;
+}
+
+export function resolveVersion(raw: string | undefined): ApiVersionInfo | null {
+  const normalized = normalizeVersion(raw ?? DEFAULT_API_VERSION);
+  if (!normalized) return null;
+  const info = API_VERSIONS.find((v) => v.version === normalized);
+  return info && info.status !== 'retired' ? info : null;
+}
+
 /**
  * API Versioning Middleware
  *
- * Performs version negotiation using the `Accept-Version` header.
- * - Supports `v1` (with variations like `1.0`, `1.x`, `1`).
- * - For unsupported versions, returns `406 Not Acceptable` in the standard error format.
- * - Sets RFC-compliant deprecation headers (`Deprecation`, `Sunset`, `Link`) for older versions.
+ * Negotiates the version via the `Accept-Version` header (default v1), rejects
+ * unknown/retired versions with 406, and emits `X-API-Version` plus
+ * `Deprecation`/`Sunset`/`Link` headers only for deprecated versions.
  */
 export function versioningMiddleware(req: Request, res: Response, next: NextFunction): void {
-  // Read Accept-Version header or fall back to 'v1'
-  const acceptVersion =
-    (req.headers['accept-version'] as string | undefined)?.toLowerCase() ?? 'v1';
+  const raw = req.headers['accept-version'] as string | undefined;
+  const info = resolveVersion(raw);
 
-  // Normalize request version: e.g. "v1", "1.0", "1.x", "1" -> "v1"
-  let matchedVersion: string | null = null;
-  if (/^v?1(\.0)?(\.x)?$/.test(acceptVersion)) {
-    matchedVersion = 'v1';
-  }
-
-  if (!matchedVersion) {
+  if (!info) {
+    const supported = API_VERSIONS.filter((v) => v.status !== 'retired').map((v) => v.version);
     res.status(406).json({
       success: false,
       error: {
         code: 'NOT_ACCEPTABLE',
-        message: `Unsupported API version requested: "${acceptVersion}". Supported versions: v1`,
+        message: `Unsupported API version requested: "${raw}". Supported versions: ${supported.join(', ')}`,
       },
       meta: {
         requestId: req.requestId ?? 'unknown',
@@ -34,16 +58,12 @@ export function versioningMiddleware(req: Request, res: Response, next: NextFunc
     return;
   }
 
-  // Set API version header
-  res.setHeader('X-API-Version', 'v1');
-
-  // Deprecation headers for older version (v1) according to RFC 8594 / RFC 7231
-  res.setHeader('Deprecation', 'true');
-  res.setHeader('Sunset', 'Wed, 11 Nov 2026 23:59:59 GMT');
-  res.setHeader(
-    'Link',
-    '<https://api.example.com/docs/versioning>; rel="deprecation"; type="text/html"',
-  );
+  res.setHeader('X-API-Version', info.version);
+  if (info.status === 'deprecated') {
+    res.setHeader('Deprecation', 'true');
+    if (info.sunset) res.setHeader('Sunset', info.sunset);
+    res.setHeader('Link', `<${DEPRECATION_POLICY_URL}>; rel="deprecation"; type="text/html"`);
+  }
 
   next();
 }
