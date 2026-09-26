@@ -23,6 +23,7 @@ import { eventBus } from './events/eventBus';
 import { logger } from './logger';
 import { featureFlags } from './feature-flags';
 import { reconcileOrphanedFuzzJobs } from './fuzzing/fuzzer';
+import { registerScheduledScanner } from './scanning/scheduled-scanner';
 
 let isShuttingDown = false;
 const SERVICE_START_TIME = Date.now();
@@ -203,6 +204,7 @@ async function main() {
 
   // Reconcile any orphaned fuzzing jobs from previous startup
   await reconcileOrphanedFuzzJobs();
+  registerScheduledScanner();
 
   server.httpServer.listen(config.port, () => {
     logger.info('Soroban Explorer API started', { port: config.port });

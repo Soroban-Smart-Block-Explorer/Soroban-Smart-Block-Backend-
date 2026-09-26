@@ -316,3 +316,19 @@ router.use('/compliance/settlement-batch', settlementBatchRouter);
 
 // ── Public Status Page & Uptime History API (PLT10 / #1031) ─────────────────
 router.use('/status', statusRouter);
+
+// ── Scheduled reentrancy & overflow scanning (VE03 / #1044) ─────────────────
+import { scheduledScansRouter } from './scheduled-scans';
+router.use('/scans/scheduled', scheduledScansRouter);
+
+// ── Consolidated compliance report bundle (VE04 / #1045) ────────────────────
+import { complianceBundleRouter } from './compliance-bundle';
+router.use('/compliance/bundle', requireApiKey, complianceBundleRouter);
+
+// ── Freeze-system incident alert channel (VE05 / #1046) ─────────────────────
+import { freezeIncidentsRouter } from './freeze-incidents';
+router.use('/freeze-incidents', freezeIncidentsRouter);
+
+// ── Verifiable build & bytecode provenance (VE06 / #1047) ───────────────────
+import { provenanceRouter } from './provenance';
+router.use('/provenance', provenanceRouter);
