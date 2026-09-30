@@ -311,6 +311,14 @@ export class GracefulDegradationService {
 
       const stats = result.rows[0] || {};
 
+      // =========================================================================
+      // Issue #1118: parseInt below is missing radix `, 10`.
+      // FIX: parseInt(stats.skipped_events || '0', 10)
+      //      parseInt(stats.backfill_queue || '0', 10)
+      // PREFERRED: replace with Number(stats.skipped_events || 0) which never
+      // does octal parsing regardless of the input string.
+      // See src/indexer/dataPruner.ts for the full issue documentation.
+      // =========================================================================
       return {
         currentLevel: this.currentLevel,
         levelChangedAt: this.levelChangeTime,

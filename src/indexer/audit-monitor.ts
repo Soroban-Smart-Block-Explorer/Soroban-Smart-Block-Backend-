@@ -30,6 +30,8 @@ import { notifyUpgrade } from '../lib/audit-notifier';
 // ── Configuration ─────────────────────────────────────────────────────────────
 
 const POLL_INTERVAL_MS = parseInt(process.env.AUDIT_MONITOR_POLL_MS ?? '60000'); // 1 min
+// TODO (#1118): Add radix → parseInt(process.env.AUDIT_MONITOR_POLL_MS ?? '60000', 10)
+// PREFERRED: migrate to config.auditMonitorPollMs via the typed config module (issue #1120).
 const TVL_DROP_PCT = parseFloat(process.env.AUDIT_TVL_DROP_PCT ?? '15'); // 15% drop
 const USER_DROP_PCT = parseFloat(process.env.AUDIT_USER_DROP_PCT ?? '20'); // 20% drop
 
