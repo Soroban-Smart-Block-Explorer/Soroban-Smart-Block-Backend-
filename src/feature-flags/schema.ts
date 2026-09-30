@@ -10,6 +10,47 @@
  * the boot path can read it synchronously after an async warm-up.
  */
 
+// =============================================================================
+// Issue #1121 — Migrate $queryRawUnsafe usages to parameterized Prisma.sql
+// https://github.com/Soroban-Smart-Block-Explorer/Soroban-Smart-Block-Backend-/issues/1121
+//
+// ─── SITE IN THIS FILE ───────────────────────────────────────────────────────
+//
+// loadExistingTables() uses $queryRawUnsafe to query information_schema.tables.
+// Like replicaGateway.ts, the SQL string is a compile-time literal with no
+// runtime values. The fix is identical:
+//
+// BEFORE (unsafe):
+//   const rows = await client.$queryRawUnsafe<Array<{ table_name: string }>>(
+//     "SELECT table_name FROM information_schema.tables WHERE table_schema = 'public'",
+//   );
+//
+// AFTER (safe — Prisma.sql tagged template):
+//   import { Prisma } from '@prisma/client';
+//
+//   const rows = await client.$queryRaw<Array<{ table_name: string }>>(
+//     Prisma.sql`
+//       SELECT table_name
+//       FROM information_schema.tables
+//       WHERE table_schema = 'public'
+//     `
+//   );
+//
+// ─── NOTE ON THE CACHED SET ──────────────────────────────────────────────────
+//
+// The result is converted to a Set<string> and cached. The migration to
+// Prisma.sql does not affect the caching behavior, TTL, or the
+// invalidateSchemaCache() function — only the query call site changes.
+//
+// ─── CI ALLOWLIST ────────────────────────────────────────────────────────────
+//
+// If migration is blocked, add the following comment to the call site:
+//   // @audit-safe: literal SQL, no runtime interpolation, no user input
+//
+// See src/services/search/semantic.ts for the full CI guard specification.
+//
+// =============================================================================
+
 import type { PrismaClient } from '@prisma/client';
 import { prismaRead } from '../db';
 import { logger } from '../logger';
