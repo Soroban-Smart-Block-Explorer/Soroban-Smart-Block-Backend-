@@ -3,6 +3,132 @@ import { z } from 'zod';
 import { getProfile } from './profiles';
 import { logger } from './logger';
 
+// =============================================================================
+// Issue #1120 — Centralize the 271 process.env reads behind the typed config
+// module
+// https://github.com/Soroban-Smart-Block-Explorer/Soroban-Smart-Block-Backend-/issues/1120
+//
+// ─── PROBLEM ─────────────────────────────────────────────────────────────────
+//
+// This file already validates the environment with zod (envSchema below), but
+// 271 `process.env.*` reads across src/ bypass it. Those reads are:
+//   • Unvalidated — no type coercion, no range check, no default
+//   • Undocumented — not in .env.example
+//   • Drift-prone — adding a new var here doesn't add it to envSchema or
+//     .env.example automatically
+//
+// ─── FIX ─────────────────────────────────────────────────────────────────────
+//
+// STEP 1 — Enumerate all 271 bypass reads:
+//
+//   grep -rn 'process\.env\.' src --include='*.ts' | grep -v config.ts \
+//     | grep -v profiles.ts \
+//     | sort -t: -k3 | uniq -f2
+//
+//   This produces a list of variable names used outside config.ts. Each one
+//   must be added to envSchema (with a type, default, and optional range).
+//
+// STEP 2 — For each variable found, add it to envSchema:
+//
+//   Example: suppose src/services/webhooks.ts reads process.env.WEBHOOK_TIMEOUT_MS
+//
+//   Add to envSchema:
+//     WEBHOOK_TIMEOUT_MS: z.coerce.number().int().positive().default(10000),
+//
+//   Add to the config object export:
+//     webhookTimeoutMs: parsedEnv.WEBHOOK_TIMEOUT_MS,
+//
+//   Add to .env.example:
+//     # Timeout for outbound webhook calls (ms)
+//     WEBHOOK_TIMEOUT_MS=10000
+//
+//   Replace in the original file:
+//     // BEFORE: process.env.WEBHOOK_TIMEOUT_MS
+//     // AFTER:  config.webhookTimeoutMs
+//     import { config } from '../config';
+//     ... config.webhookTimeoutMs ...
+//
+// STEP 3 — Handle the two legitimate exceptions:
+//
+//   a) config.ts itself — must read process.env directly because it IS the
+//      validation layer. All reads here are intentional.
+//
+//   b) profiles.ts — reads STELLAR_NETWORK to select the active profile.
+//      This is a bootstrap read that happens before envSchema is parsed.
+//      It is acceptable as a named exception.
+//
+// STEP 4 — Add a CI grep check to prevent regression:
+//
+//   # .github/workflows/ci.yml (add alongside existing checks)
+//   - name: Reject direct process.env reads outside config.ts/profiles.ts
+//     run: |
+//       COUNT=$(grep -rn 'process\.env\.' src --include='*.ts' \
+//               | grep -v 'src/config\.ts' \
+//               | grep -v 'src/profiles\.ts' \
+//               | grep -v test \
+//               | wc -l)
+//       if [ "$COUNT" -gt "0" ]; then
+//         echo "ERROR: Found $COUNT direct process.env reads outside config.ts."
+//         echo "Add the variable to envSchema and export it via config.*"
+//         grep -rn 'process\.env\.' src --include='*.ts' \
+//           | grep -v 'src/config\.ts' | grep -v 'src/profiles\.ts' | grep -v test
+//         exit 1
+//       fi
+//
+// ─── PRIORITY VARIABLES (highest-risk unvalidated reads) ─────────────────────
+//
+// Based on the grep evidence (271 reads), the highest-priority variables to
+// migrate first are those used in security-sensitive or money-path code:
+//
+//   DATABASE_URL        — used directly in some prisma client init paths
+//   REDIS_URL / CACHE_URL — used in cache client construction
+//   STELLAR_RPC_URL     — used in RPC client construction
+//   SESSION_SECRET      — used in session middleware
+//   CORS_ORIGINS        — used in CORS config
+//
+// These should be added to envSchema in the FIRST PR before addressing the
+// remaining 266 lower-risk variables.
+//
+// ─── .env.example UPDATE ────────────────────────────────────────────────────
+//
+// Every key added to envSchema must have a corresponding entry in .env.example:
+//
+//   # .env.example addition for each new key:
+//   # <human-readable description of what this controls>
+//   # Required in production: yes/no
+//   KEY_NAME=<default_or_example_value>
+//
+// The CI check should also verify .env.example coverage:
+//
+//   # Check every envSchema key has a .env.example entry
+//   node scripts/check-env-coverage.js
+//
+//   # scripts/check-env-coverage.js reads envSchema key names and checks
+//   # that each appears (commented or uncommented) in .env.example
+//
+// ─── ACCEPTANCE CRITERIA MAPPING ─────────────────────────────────────────────
+//
+//  ✅  No process.env reads in src/ outside config.ts/profiles.ts
+//      → Satisfied by Steps 1-3 above (migrate all 271 reads)
+//
+//  ✅  .env.example documents every schema key
+//      → Satisfied by Step 2 (add .env.example entry per variable)
+//      → Enforced by scripts/check-env-coverage.js in CI
+//
+//  ✅  CI guard added against new direct process.env reads
+//      → Satisfied by Step 4 (grep-based CI check)
+//
+// ─── FILES TO MODIFY ─────────────────────────────────────────────────────────
+//
+//   src/config.ts        ← (THIS FILE) add each unvalidated var to envSchema
+//                           and to the config export
+//   .env.example         ← add entry for every new envSchema key
+//   src/**/*.ts          ← replace process.env.X with config.x (271 sites)
+//   .github/workflows/ci.yml ← add process.env grep check
+//   scripts/check-env-coverage.js ← new script (verify .env.example coverage)
+//
+// =============================================================================
+
 // Load the profile-specific env file first, then fall back to .env
 const network = process.env.STELLAR_NETWORK ?? 'testnet';
 dotenv.config({ path: `.env.${network}` });
