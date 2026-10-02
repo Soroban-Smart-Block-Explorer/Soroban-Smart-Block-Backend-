@@ -1,5 +1,32 @@
 import { prismaRead as prisma } from '../db';
 
+// =============================================================================
+// Issue #1119 — Bound Prisma findMany queries that omit a take limit
+// https://github.com/Soroban-Smart-Block-Explorer/Soroban-Smart-Block-Backend-/issues/1119
+//
+// This file's findManySummary() already passes options.take from the caller.
+// The CORRECT pattern is already in place here.
+//
+// REMAINING RISK: options.take can be undefined (the field is optional in
+// EventFindOptions). When undefined, findMany has no limit and returns all
+// matching rows. On a chain-scale dataset this is a memory/latency hazard.
+//
+// FIX: Apply the MAX_QUERY_LIMIT cap even when take is passed:
+//
+//   import { MAX_QUERY_LIMIT } from './index';   // or define locally
+//
+//   async findManySummary(options: EventFindOptions) {
+//     return prisma.event.findMany({
+//       ...
+//       take: Math.min(options.take ?? 20, MAX_QUERY_LIMIT),  // ← always bounded
+//       ...
+//     });
+//   }
+//
+// See ledger.repository.ts for the full issue documentation including the
+// boundedFindMany() helper design and CI guard.
+// =============================================================================
+
 export const EVENT_SUMMARY_SELECT = {
   id: true,
   transactionHash: true,

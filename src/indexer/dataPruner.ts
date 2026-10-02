@@ -2,6 +2,83 @@ import { prismaWrite as prisma } from '../db';
 import { archiveRawXdr } from '../archival/archiver';
 import { logger } from '../logger';
 
+// =============================================================================
+// Issue #1118 — Add the missing radix argument to parseInt calls in
+// indexer/env parsing
+// https://github.com/Soroban-Smart-Block-Explorer/Soroban-Smart-Block-Backend-/issues/1118
+//
+// ─── SITES IN THIS FILE ──────────────────────────────────────────────────────
+//
+// Line ~4: PRUNE_INTERVAL_MS
+//   parseInt(process.env.PRUNE_INTERVAL_MS ?? '86400000')
+//
+// Line ~41 (getRetentionPolicies): FAILED_ITEM_RETENTION_DAYS
+//   parseInt(process.env.FAILED_ITEM_RETENTION_DAYS ?? '7')
+//
+// Line ~44: VERIFICATION_JOB_RETENTION_DAYS
+//   parseInt(process.env.VERIFICATION_JOB_RETENTION_DAYS ?? '90')
+//
+// Line ~47: DEAD_LETTER_RETENTION_DAYS
+//   parseInt(process.env.DEAD_LETTER_RETENTION_DAYS ?? '30')
+//
+// Line ~50: EVENT_RETENTION_DAYS
+//   parseInt(process.env.EVENT_RETENTION_DAYS ?? '180')
+//
+// ─── RISK ─────────────────────────────────────────────────────────────────────
+//
+// All five values are retention-day counts read from environment variables.
+// Without a radix argument, parseInt uses base 10 by default in modern JS
+// engines, EXCEPT when the string starts with "0" — in that case it may be
+// interpreted as octal (base 8) in legacy environments. A value of "07" would
+// parse as 7 in base-10 mode but as 7 also (octal 7 = decimal 7). However:
+//
+//   - "08" would parse as 0 in strict octal mode (8 is not a valid octal digit)
+//   - An operator who sets FAILED_ITEM_RETENTION_DAYS=08 expecting 8 days
+//     would get 0 days, causing ALL failed items to be immediately pruned.
+//
+// This is a real data-loss risk. The radix argument also makes intent
+// unambiguous for future readers and satisfies the ESLint `radix: error` rule
+// that this issue requires.
+//
+// ─── FIX ─────────────────────────────────────────────────────────────────────
+//
+// PREFERRED: use the typed config module (see issue #1120) once env vars are
+// centralized there. The zod schema already handles coercion correctly:
+//   z.coerce.number().int().positive().default(86400000)
+// avoids parseInt entirely.
+//
+// IMMEDIATE FIX: Add `, 10` to each parseInt call here:
+//
+//   // BEFORE:
+//   const PRUNE_INTERVAL_MS = parseInt(process.env.PRUNE_INTERVAL_MS ?? '86400000');
+//
+//   // AFTER:
+//   const PRUNE_INTERVAL_MS = parseInt(process.env.PRUNE_INTERVAL_MS ?? '86400000', 10);
+//
+//   // Also in getRetentionPolicies():
+//   parseInt(process.env.FAILED_ITEM_RETENTION_DAYS ?? '7', 10)
+//   parseInt(process.env.VERIFICATION_JOB_RETENTION_DAYS ?? '90', 10)
+//   parseInt(process.env.DEAD_LETTER_RETENTION_DAYS ?? '30', 10)
+//   parseInt(process.env.EVENT_RETENTION_DAYS ?? '180', 10)
+//
+// ─── ESLINT CONFIG ────────────────────────────────────────────────────────────
+//
+// Add to .eslintrc.js / .eslintrc.json:
+//   "rules": {
+//     "radix": "error"
+//   }
+//
+// This makes any future parseInt without a radix a hard CI failure.
+//
+// ─── FILES TO MODIFY ─────────────────────────────────────────────────────────
+//
+//   src/indexer/dataPruner.ts         ← (THIS FILE) 5 sites
+//   src/indexer/audit-monitor.ts      ← 1 site (POLL_INTERVAL_MS)
+//   src/indexer/graceful-degradation.ts ← 2 sites (skipped_events, backfill_queue)
+//   .eslintrc.js / .eslintrc.json     ← add "radix": "error"
+//
+// =============================================================================
+
 const PRUNE_INTERVAL_MS = parseInt(process.env.PRUNE_INTERVAL_MS ?? '86400000'); // 24h default
 
 /** Compliance and audit tables that must NEVER be pruned under any circumstances */
