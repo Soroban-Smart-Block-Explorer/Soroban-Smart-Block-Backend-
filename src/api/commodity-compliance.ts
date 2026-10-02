@@ -5,6 +5,11 @@
  * GET   /api/v1/commodity-compliance              — list logs (filterable)
  * GET   /api/v1/commodity-compliance/:txHash      — get by transaction hash
  * PATCH /api/v1/commodity-compliance/:txHash/sign — record a signer approval
+ *
+ * #1029 — Scheduled compliance report generator
+ * GET   /api/v1/commodity-compliance/report       — render a human-reviewable
+ *                                                    compliance report document
+ *                                                    with an evidence snapshot
  */
 
 import { Router, Request, Response } from 'express';
@@ -50,6 +55,15 @@ const signSchema = z.object({
   approved: z.boolean(),
 });
 
+// #1029 — report query schema: bounded window for a reproducible evidence snapshot
+const reportSchema = z.object({
+  from: z.string().datetime().optional(),
+  to: z.string().datetime().optional(),
+  jurisdiction: z.string().optional(),
+  commodityType: z.enum(['crude_oil', 'natural_gas', 'gold', 'wheat', 'other']).optional(),
+  limit: z.coerce.number().min(1).max(1000).default(500),
+});
+
 // POST /commodity-compliance — log a new dual-signer verification event
 commodityComplianceRouter.post(
   '/',
@@ -75,6 +89,78 @@ commodityComplianceRouter.post(
         },
       });
       res.status(201).json(record);
+    } catch (e) {
+      res.status(400).json({ error: String(e) });
+    }
+  }),
+);
+
+// GET /commodity-compliance/report — render a compliance report document with evidence snapshot
+commodityComplianceRouter.get(
+  '/report',
+  asyncHandler(async (req: Request, res: Response) => {
+    try {
+      const q = reportSchema.parse(req.query);
+      const where = {
+        ...(q.jurisdiction && { regulatoryJurisdiction: q.jurisdiction }),
+        ...(q.commodityType && { commodityType: q.commodityType }),
+        ...((q.from !== undefined || q.to !== undefined) && {
+          ledgerCloseTime: {
+            ...(q.from !== undefined && { gte: new Date(q.from) }),
+            ...(q.to !== undefined && { lte: new Date(q.to) }),
+          },
+        }),
+      };
+
+      const records = await prisma.commodityDualSignerLog.findMany({
+        where,
+        orderBy: { ledgerSequence: 'desc' },
+        take: q.limit,
+      });
+
+      const byStatus: Record<string, number> = {};
+      let notionalTotal = 0;
+      for (const r of records) {
+        byStatus[r.complianceStatus] = (byStatus[r.complianceStatus] ?? 0) + 1;
+        if (r.notionalValueUsd) notionalTotal += Number(r.notionalValueUsd);
+      }
+
+      const generatedAt = new Date().toISOString();
+      const evidenceSnapshot = {
+        module: 'commodity-compliance',
+        generatedAt,
+        filters: q,
+        recordCount: records.length,
+        recordHashes: records.map((r) => r.transactionHash),
+      };
+
+      const lines: string[] = [
+        '# Commodity Compliance Report',
+        '',
+        `Generated: ${generatedAt}`,
+        `Jurisdiction: ${q.jurisdiction ?? 'all'}`,
+        `Commodity type: ${q.commodityType ?? 'all'}`,
+        `Window: ${q.from ?? 'beginning'} → ${q.to ?? 'now'}`,
+        '',
+        '## Summary',
+        `- Records: ${records.length}`,
+        `- Notional (USD): ${notionalTotal.toFixed(2)}`,
+        ...Object.entries(byStatus).map(([status, count]) => `- ${status}: ${count}`),
+        '',
+        '## Records',
+        ...records.map(
+          (r) =>
+            `- ${r.transactionHash} | ${r.commodityCode} | ${r.complianceStatus} | ledger ${r.ledgerSequence}`,
+        ),
+      ];
+
+      res.json({
+        module: 'commodity-compliance',
+        generatedAt,
+        document: lines.join('\n'),
+        summary: { recordCount: records.length, notionalTotalUsd: notionalTotal, byStatus },
+        evidenceSnapshot,
+      });
     } catch (e) {
       res.status(400).json({ error: String(e) });
     }

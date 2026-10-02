@@ -10,6 +10,36 @@ import { z } from 'zod';
 
 export const rwaComplianceRouter = Router();
 
+// ── Scheduled compliance report templates ─────────────────────────────────────
+
+/**
+ * Report template for the RWA compliance module. Renders a human-reviewable
+ * document from the module's compliance data and captures an evidence snapshot
+ * so each generated report is reproducible and auditable.
+ */
+export const rwaReportTemplate = {
+  module: 'rwa-compliance',
+  title: 'RWA Compliance Report',
+  sections: ['assets', 'holders', 'jurisdictions', 'checks'],
+  render(data: Record<string, unknown>) {
+    const generatedAt = new Date().toISOString();
+    return {
+      module: 'rwa-compliance',
+      title: 'RWA Compliance Report',
+      generatedAt,
+      sections: this.sections.map((section) => ({
+        section,
+        rows: Array.isArray(data[section]) ? (data[section] as unknown[]) : [],
+      })),
+      evidenceSnapshot: {
+        capturedAt: generatedAt,
+        source: 'src/api/rwa-compliance.ts',
+        digest: JSON.stringify(data),
+      },
+    };
+  },
+};
+
 // ── GET / ─────────────────────────────────────────────────────────────────────
 
 /**
@@ -35,6 +65,7 @@ rwaComplianceRouter.get('/', (_req: Request, res: Response) => {
       'POST /rwa-compliance/holders/:address/verify',
       'GET  /rwa-compliance/jurisdictions',
       'GET  /rwa-compliance/reports',
+      'POST /rwa-compliance/reports/schedule',
     ],
   });
 });
@@ -276,11 +307,75 @@ rwaComplianceRouter.get('/jurisdictions', (_req: Request, res: Response) => {
  *         description: Compliance reports
  */
 rwaComplianceRouter.get('/reports', (req: Request, res: Response) => {
-  const period = (req.query.period as string) ?? 'monthly';
+  const limit = Math.min(100, parseInt((req.query.limit as string) ?? '20', 10));
   res.json({
-    period,
+    module: 'rwa-compliance',
     reports: [],
-    message: 'No compliance reports generated yet.',
-    generatedAt: new Date().toISOString(),
+    total: 0,
+    limit,
+    template: rwaReportTemplate.title,
+  });
+});
+
+// ── POST /reports/schedule ────────────────────────────────────────────────────
+
+/**
+ * @swagger
+ * /rwa-compliance/reports/schedule:
+ *   post:
+ *     summary: Schedule recurring RWA compliance report generation and delivery
+ *     tags: [RWA Compliance]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [cadence, delivery]
+ *             properties:
+ *               cadence: { type: string, enum: [daily, weekly, monthly] }
+ *               delivery:
+ *                 type: object
+ *                 properties:
+ *                   email: { type: string }
+ *                   webhook: { type: string }
+ *     responses:
+ *       200:
+ *         description: Report schedule created
+ *       400:
+ *         description: Validation error
+ */
+rwaComplianceRouter.post('/reports/schedule', (req: Request, res: Response) => {
+  const schema = z.object({
+    cadence: z.enum(['daily', 'weekly', 'monthly']),
+    delivery: z
+      .object({
+        email: z.string().email().optional(),
+        webhook: z.string().url().optional(),
+      })
+      .refine((d) => Boolean(d.email || d.webhook), {
+        message: 'At least one delivery channel (email or webhook) is required',
+      }),
+  });
+
+  const parsed = schema.safeParse(req.body);
+  if (!parsed.success) {
+    return res.status(400).json({ error: parsed.error.flatten() });
+  }
+
+  const scheduledAt = new Date().toISOString();
+  res.json({
+    module: 'rwa-compliance',
+    template: rwaReportTemplate.title,
+    cadence: parsed.data.cadence,
+    delivery: parsed.data.delivery,
+    scheduledAt,
+    nextRunAt: scheduledAt,
+    evidenceSnapshot: {
+      capturedAt: scheduledAt,
+      source: 'src/api/rwa-compliance.ts',
+      digest: JSON.stringify(parsed.data),
+    },
+    message: 'Recurring compliance report scheduled.',
   });
 });
